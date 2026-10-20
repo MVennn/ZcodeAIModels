@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108" width="512" height="512" role="img" aria-label="AI 模型供应商接入 ZCode">
+  <defs>
+    <linearGradient id="bg" gradientUnits="userSpaceOnUse" x1="54" y1="0" x2="54" y2="108">
+      <stop offset="0" stop-color="#2B3242"/>
+      <stop offset="1" stop-color="#161A22"/>
+    </linearGradient>
+    <linearGradient id="line" gradientUnits="userSpaceOnUse" x1="33.08" y1="75.39" x2="67.4" y2="29.79">
+      <stop offset="0" stop-color="#FFC24A"/>
+      <stop offset="1" stop-color="#FF7A00"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="108" height="108" rx="24" ry="24" fill="url(#bg)"/>
+  <g stroke="url(#line)" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <circle cx="25" cy="31" r="5" fill="url(#line)" stroke="none"/>
+    <circle cx="25" cy="54" r="5" fill="url(#line)" stroke="none"/>
+    <circle cx="25" cy="77" r="5" fill="url(#line)" stroke="none"/>
+    <path d="M30.00,31.00 Q50.00,31.00 62.00,45.00" stroke-width="6.6"/>
+    <path d="M30.00,54.00 Q50.00,54.00 62.00,54.00" stroke-width="6.6"/>
+    <path d="M30.00,77.00 Q50.00,77.00 62.00,63.00" stroke-width="6.6"/>
+    <rect x="63" y="42" width="24" height="24" rx="7" fill="url(#line)" stroke="none"/>
+  </g>
+</svg>

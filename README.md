@@ -1,5 +1,9 @@
 <div align="center">
 
+<img src="assets/logo.png" width="128" alt="AI 模型供应商接入 ZCode">
+
+</div>
+
 # ZcodeAIModels
 
 > **可见性**：公开 —— 凭据全部走环境变量，仓内**零明文凭据**；vendored 是 zai-org/ZCode（Apache-2.0）与 ZCodium（MIT）。第三方组件声明见 [NOTICE](NOTICE)。
