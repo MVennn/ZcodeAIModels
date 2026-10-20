@@ -2,7 +2,7 @@
 
 > **一句话**：把 AI 模型供应商接进 ZCode（OpenCode-Go 探测与同步 / WorkBuddy2API 网关 / 思考参数矩阵）。
 >
-> 仓库路径：`F:\Project\ZcodeAIModels`
+> 仓库路径：本仓库根目录（`ZcodeAIModels/`，实际路径以 git remote 为准）
 > 记忆文件一条一件事，**只记非看代码/读文档就能知道的结论**；
 > 交叉引用用 `[[记忆名]]`。
 

@@ -1,0 +1,11 @@
+image: python:3.12
+
+stages: [test]
+
+.python:
+  before_script:
+    - apt-get update && apt-get install -y nodejs npm
+  script:
+    - python3 -c "import ast,glob,sys; [ast.parse(open(f,encoding='utf-8').read(), f) for f in glob.glob('**/*.py', recursive=True)]"
+    - for f in $(find . -name '*.js' -not -path './third-party/*'); do node --check "$f"; done
+    - python3 tools/check-docs.py

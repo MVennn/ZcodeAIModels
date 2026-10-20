@@ -1,6 +1,14 @@
 #!/usr/bin/env python3
 r"""Probe WorkBuddy gateway models with the EXACT body ZCode will send.
 
+Scope
+-----
+**This is the WorkBuddy2API adapter, not a generic framework.**  It talks to a
+WorkBuddy2API gateway (`/v1/chat/completions`, OpenAI-compatible) and reads that
+gateway's account pool.  To onboard a *different* provider, write a sibling
+script with the same shape: reuse `zcode_effective_body.js` (vendor-neutral),
+point the request at your own base URL, and keep the same status vocabulary.
+
 ZCode's builtin `modelConfigRules.modelApiRules` inject extra thinking fields
 into every `openai-chat-completions` request (resources/config/provider/
 zcode-builtin.json):
@@ -212,7 +220,11 @@ def main() -> int:
 
     pricing = load_pricing()
     if not pricing:
-        print("wb_pricing.json missing - fetch pricing first", file=sys.stderr)
+        print(
+            "wb_pricing.json missing - fetch pricing first "
+            "(WorkBuddy 侧：python workbuddy_fetch_pricing.py)",
+            file=sys.stderr,
+        )
         return 1
 
     cache: dict[str, dict] = {}

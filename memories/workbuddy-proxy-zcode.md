@@ -7,8 +7,8 @@ metadata:
   originSessionId: session_550e6ccf44a392219d274ea2dc3f8921
 ---
 
-2026-10-20：把腾讯 CodeBuddy 反代 `E:\Tool\AITool\workbuddy2api-panel`（WorkBuddy2API Panel）
-接进 ZCode，在 `<USER>\.zcode\v2\provider_config.json` 建了三个 provider：
+2026-10-20：把腾讯 CodeBuddy 反代（WorkBuddy2API Panel，本机安装）
+接进 ZCode，在 `~/.zcode/v2/provider_config.json` 建了三个 provider：
 
 | providerId | 显示名 | 模型数 | 倍率区间 |
 |---|---|---|---|
@@ -48,7 +48,7 @@ metadata:
   `thinking` + `enable_thinking` + `reasoning_effort` + `reasoning` 四件套；
   但 `.*deepseek-v4[.-]1-flash.*`（idx 67）只发 `thinking` + `reasoning_effort`，
   `.*kimi-k2\.6.*`（idx 33）只发 `thinking`。**手写规则表极易错**。
-- 已写 `F:\Project\ZcodeAIModels\workbuddy\zcode_effective_body.js`：复刻引擎解析顺序并用 Node
+- 已写 `workbuddy/zcode_effective_body.js`：复刻引擎解析顺序并用 Node
   `new Function` 求值 `optionSpecs.reasoningLevel.map`，直接算出某 modelId 的**真实请求体**。
 - 网关**不删** ZCode 发的 thinking 类字段，原样透传上游 → 上游不认就 400。
   所以探测必须用 ZCode 真实 body，不能用裸 body（否则会漏判）。
@@ -58,13 +58,13 @@ metadata:
 - ZCode 热加载 `provider_config.json`（~1s 轮询）——改完无需重启，用 `ListModels` 工具
   即可确认新 provider 是否已生效。
 
-**脚本产物**（都在 `F:\Project\ZcodeAIModels\`）
+**脚本产物**（都在仓内 `workbuddy/`）
 
 | 文件 | 作用 |
 |---|---|
-| `wb_pricing.json` | 网关 56 模型倍率/上下文/输出上限/effort 档快照 |
+| `cache/wb_pricing.json` | 网关 56 模型倍率/上下文/输出上限/effort 档快照 |
 | `workbuddy_probe_zcode.py` | 用 ZCode 真实 body 探测（可断点续跑，逐条写缓存） |
-| `wb_zcode_probe.json` | 探测缓存（status/variant/http/detail/rate） |
+| `cache/wb_zcode_probe.json` | 探测缓存（status/variant/http/detail/rate） |
 | `zcode_effective_body.js` | 复刻引擎规则解析，算真实请求体 |
 | `workbuddy_zcode_sync.py` | 按倍率分档生成三个 provider 并写配置（`--apply` 才写） |
 

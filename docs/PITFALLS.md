@@ -2,10 +2,19 @@
 
 > **一句话**：这里解释**为什么**会出这些故障 —— 每一条都对应一次真实的排查，
 > 机制讲清楚，步骤去 [TROUBLESHOOTING.md](TROUBLESHOOTING.md)。
+>
+> **读法**：标 **【通用】** 的坑换任何供应商都成立（ZCode 客户端侧的行为）；
+> 标 **【实例 A】/【实例 B】** 的是本仓两个示例供应商特有的上游行为。
+
+| 标记 | 适用范围 |
+|---|---|
+| **【通用】** | ZCode 客户端侧 —— 换任何供应商都成立 |
+| **【实例 A】** | OpenCode-Go 特有 |
+| **【实例 B】** | WorkBuddy2API 网关特有 |
 
 ---
 
-## 1. 协议放错 → 400 `ModelProtocolUnsupported`
+## 1. 协议放错 → 400 `ModelProtocolUnsupported` 【通用】
 
 **现象**：模型在某个 provider 下请求直接 400，报错里带 `ModelProtocolUnsupported`
 或 `does not support this protocol`。
@@ -33,7 +42,7 @@ ZCode 的 provider 由 `api.type` 决定端点。**把模型塞进错误协议�
 
 ---
 
-## 2. ZCode 内置通用规则无条件发思考字段 → 400
+## 2. ZCode 内置通用规则无条件发思考字段 → 400 【通用】
 
 **现象**：`curl` 手搓同样的模型能通，**在 ZCode 里一发就 400**。
 
@@ -71,7 +80,7 @@ WorkBuddy 网关更糟一层：它的出站逻辑**只**重写 `reasoning_effort
 
 ---
 
-## 3. `modelMatch` 是全匹配正则，不是子串匹配
+## 3. `modelMatch` 是全匹配正则，不是子串匹配 【通用】
 
 **机制**：ZCode 匹配规则用的正则是 `^(?:pattern)$`（大小写不敏感）。
 所以：
@@ -90,7 +99,7 @@ WorkBuddy 网关更糟一层：它的出站逻辑**只**重写 `reasoning_effort
 
 ---
 
-## 4. 规则按序叠加，后者胜
+## 4. 规则按序叠加，后者胜 【通用】
 
 **机制**：ZCode 的 `ModelConfigRules.resolve()` **按规则列表顺序**遍历，
 把每条命中规则的 config **覆盖**到累加器上 —— **后面的规则覆盖前面的**。
@@ -111,7 +120,7 @@ WorkBuddy 网关更糟一层：它的出站逻辑**只**重写 `reasoning_effort
 
 ---
 
-## 5. 探测必须用 ZCode 真实 body，且间隔 ≥ 20 秒
+## 5. 探测必须用 ZCode 真实 body，且间隔 ≥ 20 秒 【通用机制 + 实例 B 的间隔值】
 
 **现象（其一）**：探测结果全是 200，但 ZCode 里实际用不了（→ 见 §2）。
 
@@ -134,7 +143,7 @@ WorkBuddy 网关更糟一层：它的出站逻辑**只**重写 `reasoning_effort
 
 ---
 
-## 6. 免费池日配额耗尽 → 429（**不是配置问题，也不是模型下线**）
+## 6. 免费池日配额耗尽 → 429（**不是配置问题，也不是模型下线**） 【通用】
 
 **现象**：某个模型突然开始 429，错误里的 `Retry-After` 指向**次日 00:00 UTC**。
 
@@ -150,7 +159,7 @@ WorkBuddy 网关更糟一层：它的出站逻辑**只**重写 `reasoning_effort
 
 ---
 
-## 7. `modelProtocolUnsupported` 样本与协议归属
+## 7. `modelProtocolUnsupported` 样本与协议归属 【实例 A 的样本】
 
 **现象**：批量探测里大量 400，全是 `ModelProtocolUnsupported`。
 
@@ -167,7 +176,7 @@ WorkBuddy 网关更糟一层：它的出站逻辑**只**重写 `reasoning_effort
 
 ---
 
-## 8. ZCode 配置会被界面覆盖
+## 8. ZCode 配置会被界面覆盖 【通用】
 
 **现象**：脚本写完配置、ZCode 也热重载了，但过了几分钟配置又变回原样。
 
@@ -178,7 +187,7 @@ WorkBuddy 网关更糟一层：它的出站逻辑**只**重写 `reasoning_effort
 
 ---
 
-## 9. 明文凭据会随仓库一起走
+## 9. 明文凭据会随仓库一起走 【通用】
 
 **现象（未来）**：仓库上传到公开 GitLab，**API key 一起公开了**。
 
@@ -196,21 +205,27 @@ WorkBuddy 网关更糟一层：它的出站逻辑**只**重写 `reasoning_effort
 
 ---
 
-## 10. 硬编码路径在拆仓后失效
+## 10. 硬编码路径在拆仓后失效 【通用】
 
 **现象**：脚本跑完了，但产物没落在预期位置。
 
-**现状**：`opencode-go/ops/go_model_sync.py` 的 `REPORT_DIR` 原先写着
-`F:\Project\Openwrt\audit` —— 那是拆仓前的旧目录，报告会落到旧仓库去。
-**拆仓时已修**：改为按脚本位置推导的本仓 `evidence/` 目录，并保留 `GO_SYNC_REPORT_DIR`
-环境变量覆盖口。
+**机制**：脚本里写死了某个绝对路径（尤其是**写死某个人的主目录**），
+换台机器就失效 —— 报告落到旧目录、配置读的是不存在的路径。
 
-**解法**：保持"路径由脚本自身位置推导"这条约定 —— 新增脚本时用
-`os.path.dirname(os.path.abspath(__file__))` 而不是写死绝对路径。
+**历史实例**：`opencode-go/ops/go_model_sync.py` 的 `REPORT_DIR` 原先指着拆仓前的旧仓库目录，
+报告会落到旧仓库去；ZCode 配置路径原先写死成某个开发者的主目录路径。
+**拆仓时已修**：报告目录改为按脚本位置推导的本仓 `evidence/`（保留 `GO_SYNC_REPORT_DIR` 覆盖口）；
+配置路径默认值改为按**当前用户主目录**推导（仍可用 `--config` 覆盖）。
+
+**解法**：保持"路径由脚本自身位置推导 / 按当前用户主目录推导"这条约定 ——
+
+- 新增脚本时用 `os.path.dirname(os.path.abspath(__file__))` 推导仓内路径；
+- 涉及用户主目录的路径用 `os.path.expanduser("~")`，**不要写死用户名**；
+- 提供环境变量或命令行参数覆盖口。
 
 ---
 
-## 11. `wb_pricing.json` 的生成脚本（已补上，但别再手工维护）
+## 11. `wb_pricing.json` 的生成脚本（已补上，但别再手工维护） 【实例 B】
 
 **现象**：想重探 WorkBuddy，脚本直接退出：
 `wb_pricing.json missing - fetch pricing first`。
@@ -231,4 +246,5 @@ python workbuddy_fetch_pricing.py --dry-run  # 只看差异
 ```
 
 字段含义见 [MODEL-PROVIDERS.md](MODEL-PROVIDERS.md) §4；
-刷表频率与注意事项见 [MAINTENANCE.md](MAINTENANCE.md) §1.2。
+刷表频率与注意事项见 [MAINTENANCE.md](MAINTENANCE.md) §1.3；
+**通用做法**（换供应商照这个做）见 [MAINTENANCE.md](MAINTENANCE.md) §1.1。

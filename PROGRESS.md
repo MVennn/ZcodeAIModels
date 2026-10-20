@@ -1,10 +1,11 @@
 # PROGRESS — AI 模型接入 ZCode
 
-> **一句话**：把 OpenCode-Go 与 WorkBuddy2API 两个模型网关接入 ZCode 的台账。
+> **一句话**：把模型供应商接进 ZCode 的台账 —— 本仓已跑通两个实例
+> （OpenCode-Go 套餐、WorkBuddy2API 网关）。
 >
 > 本文件是本仓库**唯一**的进度台账（追加式批次日志）。
 > 规则正本见 [docs/DOC-RULES.md](docs/DOC-RULES.md) 与 [docs/MAINTENANCE.md](docs/MAINTENANCE.md)。
-> 拆分自原单文件 `PROGRESS.md`（2026-10-20 之前的 AX3000T 联合调优记录）。
+> 拆分自原单文件 `PROGRESS.md`（2026-10-20 之前与路由器运维线合并的调优记录）。
 
 ---
 
@@ -17,7 +18,7 @@ ZCode 的 chat 模型原按用途分组（速度/经济），组名与价格脱�
 - [x] `provider_config.json` 重排为 6 个 provider：主力 / 免费（新建 `opencode-go-chat-free`）/ 低耗 / 高耗 / 对话 / 备用；providerId 保留以兼容旧会话引用。
 - [x] 各档模型：免费 = beam-free、minimax-m3.1-flash-free、longcat-2.5-preview-free；低耗 = glm-5.3-flash、mimo-v2.6-flash、mimo-v2.5、hy3；高耗 = minimax-m3、longcat-2.0；主力/对话/备用不变。
 - [x] 给 minimax-m3.1-flash-free、minimax-m3 加空 map 覆盖（`optionSpecs.reasoningLevel.map="{}"`，不发送思考参数），与 beam-free 一致；三个模型不再受 UI 思考等级影响。
-- [x] 脚本 `<USER>\.zcode\v2\apply-chat-regroup.js`（默认 dry-run，--apply 才写；备份 + 原子替换 + 写前哈希校验）；备份 `provider_config.json.bak-regroup-20261019150317`。
+- [x] 脚本 `~/.zcode/v2/apply-chat-regroup.js`（默认 dry-run，--apply 才写；备份 + 原子替换 + 写前哈希校验）；备份 `provider_config.json.bak-regroup-20261019150317`。
 - [x] 重写 `模型速查表.md`：新增"额度可撑输出"列、关思考写法表、调用硬约束；实测脚本 `scripts/thinking-off-probe.js`、`scripts/opencode-header-proxy.js`。
 
 ## 验收

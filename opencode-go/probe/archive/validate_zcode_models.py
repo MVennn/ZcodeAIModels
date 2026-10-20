@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Validate every model configured in ZCode against its provider protocol."""
-import json, time, urllib.request, urllib.error
+import json, os, time, urllib.request, urllib.error
 
-CFG = r"<USER>\.zcode\v2\provider_config.json"
+# ZCode 客户端配置：按「当前用户主目录」推导，不要写死某个人的用户名
+CFG = os.path.join(os.path.expanduser("~"), ".zcode", "v2", "provider_config.json")
 d = json.load(open(CFG, encoding="utf-8"))
 cfg = d["config"]
 

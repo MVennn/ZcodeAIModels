@@ -2,12 +2,15 @@
 
 > **一句话**：本仓涉及哪些凭据、**分别从哪儿读**、活数据缓存在哪儿、上传公开仓库前该怎么处理 ——
 > 本篇**只写位置，不写值**。
+>
+> **通用规则**：**任何**供应商的凭据都**只走环境变量** —— 读环境变量、缺失就明确报错退出。
+> 本仓只列两个示例供应商（OpenCode-Go / WorkBuddy）的具体变量名；接别的供应商照同一模式加一行即可。
 
 ---
 
 ## 1. 为什么单独立一篇
 
-本仓的两个凭据（OpenCode-Go API key、WorkBuddy 网关 key）原先**明文写在探测脚本里**，
+本仓的两个示例凭据（OpenCode-Go API key、WorkBuddy 网关 key）原先**明文写在探测脚本里**，
 会随仓库一起走；拆仓时已改为从**环境变量**读（见 §2）。
 但「改成环境变量」只解决了一半 —— 还剩下这些容易被忽略的敞口：
 
@@ -25,9 +28,15 @@
 |---|---|---|---|
 | **OpenCode-Go API key**（`oc_sk_…`） | ZCode 的 `provider_config.json` 里的 `apiKey` 字段；也可从 OpenCode 控制台重新签发 | 5 个探测脚本从环境变量 **`OPENCODE_GO_KEY`** 读；**未设置时明确报错退出**，不会带着空 key 去请求 | **不入库**。轮换后重新 `export` |
 | **WorkBuddy 网关 key** | 本机 `wb2api` 网关自己的 `api_key`（网关面板 / 配置里） | 2 个 WorkBuddy 脚本从环境变量 **`WB_GATEWAY_KEY`** 读 | **不入库**。网关换账号池时一并轮换 |
+| **其它供应商的凭据**（你自己接的） | 该服务商自己的控制台 / 账号设置 | **一律走环境变量**，不落进源码、文档、缓存、日志。命名建议 `<供应商>_KEY` / `<供应商>_BASE`，与 §3.5 的表同格式 | **不入库**。加变量时同步补 §3.5 的表 |
 | **ZCode provider 配置**（含各 provider 的 `apiKey`） | 本机 `~/.zcode/v2/provider_config.json` | 不在本仓；`--apply` 产生的 `provider_config.json.bak-*` 备份同样含 key，已被 `.gitignore` 排除 | **不入库**。回退步骤见 [MAINTENANCE.md](MAINTENANCE.md) §4 |
 | **网关模型目录快照** | 网关 `/panel/api/models` | `evidence/wb_panel_models.json` —— 目录结构证据，**不含凭据**，随仓库分发 | 可入库 |
 | **探测原始结果 / 账号池探测结果** | 本机探测输出 | `workbuddy/cache/wb_zcode_probe.json`、`opencode-go/probe/results/` —— `.gitignore` 已排除 | **不入库**（体积大 + 含账号池信息） |
+
+> **加新供应商时的完整清单**（三件事，缺一不可）：
+> ① 脚本读 `os.environ.get("<供应商>_KEY")`，**不设就报错退出**；
+> ② 在 §3.5 的环境变量表里补一行（谁在读、默认值、缺失时什么表现）；
+> ③ 在本表补一行（真源在哪儿、值不进仓）。
 
 ---
 
@@ -80,9 +89,10 @@ export WB_GATEWAY_KEY='<网关 api_key>'
 | 覆盖方式 | 环境变量 **`ZCODE_PERSONAL_PROVIDER_CONFIG_FILE`** |
 | 谁在读 | `workbuddy/workbuddy_zcode_sync.py` |
 
-> **已知缺口（待补）**：`opencode-go/ops/go_model_sync.py` **不读**这个环境变量 ——
-> 它用 `--config` 参数，默认值是硬编码的 `<USER>\.zcode\v2\provider_config.json`。
-> 换机器时要么带 `--config`，要么改脚本让它也认 `ZCODE_PERSONAL_PROVIDER_CONFIG_FILE`。
+> **已知缺口**：`opencode-go/ops/go_model_sync.py` **不读**这个环境变量 ——
+> 它用 `--config` 参数，默认值按**当前用户主目录**推导
+> （`~/.zcode/v2/provider_config.json`）。换机器时要么带 `--config`，要么改脚本让它也认
+> `ZCODE_PERSONAL_PROVIDER_CONFIG_FILE`。
 > 缺什么：脚本侧的环境变量兜底。
 
 ### 3.5 环境变量 → 谁在读
@@ -98,6 +108,10 @@ export WB_GATEWAY_KEY='<网关 api_key>'
 | `GO_SYNC_REPORT_DIR` | `opencode-go/ops/go_model_sync.py` | 本仓 `evidence/` | 用默认值 |
 | `ZCODE_BUILTIN` / `ZCODE_API_TYPE` | `workbuddy/zcode_effective_body.js` | 见脚本 | 用默认值 —— **不是凭据**，是协议开关 |
 | `OPENCODE_SESSION` | `opencode-go/ops/opencode-header-proxy.js` | `local-client-session` | 用默认值 —— **不是凭据**，是会话标识 |
+
+> **接新供应商**：照这张表的格式加自己的行 ——
+> `<供应商>_KEY`（必填、无默认、缺失即报错）、`<供应商>_BASE`（有默认地址）、
+> 必要时 `<供应商>_PRICING_FILE` / `<供应商>_PROBE_FILE`（活数据落盘位置）。
 
 ---
 

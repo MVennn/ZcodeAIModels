@@ -8,9 +8,25 @@
 
 ---
 
-## 1. 价格表刷新
+## 1. 价格表 / 模型目录刷新
 
-### 1.1 OpenCode-Go —— 不用手工刷
+### 1.1 通用做法（换供应商照这个做）
+
+**任何**供应商的目录接口都会变：涨价、促销到期、模型下架、新模型上架。
+所以「价格表」一定会过期，**必须有一个可重跑的取数脚本**，不能手工维护 JSON。
+
+通用三步：
+
+| 步 | 做什么 | 要点 |
+|---|---|---|
+| 1 | 找到该供应商的**模型目录接口** | 通常是 OpenAI 兼容的 `/v1/models`，或带价格字段的面板接口；本仓两个实例的地址见 §1.2 / §1.3 |
+| 2 | 把返回**归一化**成一张统一字段的价格表 | 字段集照 [MODEL-PROVIDERS.md](MODEL-PROVIDERS.md) 的实例表：id / 单价或倍率 / 上下文 / 输出上限 / 工具调用 / 思考档位 / 能否关思考 |
+| 3 | 写盘 + 打**变动摘要** | 写前自动备份；摘要要能一眼看出「倍率变了 / 新增了 / 下架了」 |
+
+**分档是纯本地计算** —— 归一化做完之后，换档数、换阈值都不用动取数脚本。
+探针部分（哪些模型真能调通）是另一条线，见 §2。
+
+### 1.2 实例 A：OpenCode-Go —— 不用手工刷
 
 `go_model_sync.py` 每次运行都现拉：
 
@@ -25,7 +41,10 @@
 `/models` 清单里但三协议全 200；弃用表第一列是显示名不是 id；价格表要
 「显示名去括号后归一化」再对 id）。
 
-### 1.2 WorkBuddy —— 价格表由 `workbuddy_fetch_pricing.py` 生成
+> 这条「四源并集」是**通用教训**：单一目录接口几乎从不完整。
+> 接新供应商时，先想清楚「有哪些源能拿到模型 id」，取并集。
+
+### 1.3 实例 B：WorkBuddy —— 价格表由 `workbuddy_fetch_pricing.py` 生成
 
 `workbuddy/cache/wb_pricing.json`（模型倍率 / 上下文 / 输出上限 / effort 档位）
 由 **`workbuddy_fetch_pricing.py`** 生成：它 `GET /panel/api/models`，把上游条目
@@ -64,9 +83,16 @@ curl -s http://127.0.0.1:7863/panel/api/models \
 **多久刷一次**：限时免费会到期（网关日志里有 `free tier ended, now 0.227 credits/1k`），
 倍率也会调整。**建议每月一次**，以及**每次准备大规模探测之前**。
 
+> **接别的供应商**：§1.1 讲的是通用做法；这里只是把「本仓实例 B 的目录接口与字段」
+> 具体化了。换成你的供应商，改的是**取数那一段**（接口地址 + 字段映射），
+> 归一化之后的字段集、备份与变动摘要的逻辑照抄即可。
+
 ---
 
 ## 2. 探测的频率与限速
+
+> **通用原则**：探测会消耗额度，也会触发上游限流，**不要挂成高频定时任务**。
+> 限速的具体数值取决于对方的账号池规模 —— 池子越小，越要拉长间隔。
 
 ### 2.1 频率
 
@@ -88,6 +114,11 @@ curl -s http://127.0.0.1:7863/panel/api/models \
 | 路由侧（若同时跑别的线） | 批量探测必须**串行化** | 历史上 10 个子代理同时密集探测 → 负载冲到 2.6 → 看门狗复位 |
 
 **探测前先确认网关活着**：`curl http://127.0.0.1:7863/status`。
+
+> **换供应商时**：上表的 20 秒与 4 个号是**实例 B 的实测值** ——
+> 池子只有 4 个号、其中一个号被冷却就没号可用，所以间隔要拉到 20 秒。
+> 池子大的供应商可以放宽，但**先小批量试**（比如 `--only <前缀>` 跑几个），
+> 看有没有 `no_healthy_account` 这类症状再定间隔。
 
 ### 2.3 探测必须用 ZCode 真实 body
 
@@ -190,6 +221,7 @@ python workbuddy/workbuddy_zcode_sync.py           # 只打印计划
 | **每天** | `python opencode-go/ops/go_model_sync.py --apply`（新模型自动收录） |
 | **每月** | 手工刷新 `workbuddy/cache/wb_pricing.json`；复核 [MODEL-PROVIDERS.md](MODEL-PROVIDERS.md) 里的价格 / 额度 |
 | **换套餐 / 换账号池后** | 全量重探 WorkBuddy（`--sleep 20`）+ 重跑同步 |
+| **每次接入新供应商** | 照 §1.1 的通用做法写一份取数脚本 + 在 [MODEL-PROVIDERS.md](MODEL-PROVIDERS.md) §0 的表里补一行；凭据按 [SECRETS.md](SECRETS.md) §2、§3.5 加环境变量 |
 | **每次改动脚本** | 同步根 [README.md](../README.md) 的「文件清单」表 |
 | **每次新增 / 删除文档** | 同步 [docs/README.md](README.md) 索引（孤儿文档零容忍） |
 | **每次踩新坑** | 写进 [PITFALLS.md](PITFALLS.md)；有对应排错条目的同步 [TROUBLESHOOTING.md](TROUBLESHOOTING.md) |
@@ -201,7 +233,7 @@ python workbuddy/workbuddy_zcode_sync.py           # 只打印计划
 
 | # | 事项 | 影响 | 详见 |
 |---|---|---|---|
-| 1 | ~~`wb_pricing.json` **没有生成脚本**~~ **已修** | 已有 `workbuddy_fetch_pricing.py`：拉网关 → 归一化 → 写 `cache/wb_pricing.json`（自动备份 + 变动摘要） | §1.2、[PITFALLS.md](PITFALLS.md) §11 |
+| 1 | ~~`wb_pricing.json` **没有生成脚本**~~ **已修** | 已有 `workbuddy_fetch_pricing.py`：拉网关 → 归一化 → 写 `cache/wb_pricing.json`（自动备份 + 变动摘要） | §1.3、[PITFALLS.md](PITFALLS.md) §11 |
 | 2 | ~~探测脚本里**仍有明文 API key**~~ **已修** | 5 个探测脚本改为读 `OPENCODE_GO_KEY`，**未设置时明确报错退出**；凭据不再随源码分发 | [SECRETS.md](SECRETS.md)、[PITFALLS.md](PITFALLS.md) §9 |
 | 3 | ~~`go_model_sync.py` 的 `REPORT_DIR` 仍硬编码旧仓库路径~~ **已修** | 拆仓时改为本仓内 `evidence/`，可用 `GO_SYNC_REPORT_DIR` 覆盖 | [PITFALLS.md](PITFALLS.md) §10 |
 | 4 | ~~根 `LICENSE` 文件未创建~~ **已修** | 仓库根已有 MIT 全文（见 [LICENSE](../LICENSE)），不再只有 `README.md` 里的一句话 | [CHANGELOG.md](../CHANGELOG.md) 「待补」 |

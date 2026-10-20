@@ -1,7 +1,9 @@
 # PROGRESS — WorkBuddy2API 反代接入 ZCode（独立任务文件）
 
-> 根目录 `PROGRESS.md` 是 AX3000T 路由器任务的文件，其头部明确要求后续任务写各自独立文件，
+> 根目录 `PROGRESS.md` 是路由器运维线任务的文件，其头部明确要求后续任务写各自独立文件，
 > 故本任务单独维护 `PROGRESS.workbuddy.md`，不覆盖根文件。
+>
+> 本篇是**历史台账**（探测于 2026-10-20 在本地开发机上采集），结论与数据一律按原样保留。
 
 ## 任务目标
 
@@ -20,7 +22,7 @@
 ## 已确认的事实（2026-10-20 实测）
 
 ### 网关与目录
-- 网关进程 `wb2api.exe -config config.json`（`E:\Tool\AITool\workbuddy2api-panel`），监听 `:7863`。
+- 网关进程 `wb2api.exe -config config.json`（本机的 WorkBuddy2API Panel 安装目录），监听 `:7863`。
 - 模型清单 56 个：`/panel/api/models` 与 `/v1/models` 同源。**注意**：`/panel/api/models`
   在网关未重启时只返回 34 个 global 模型，重启后返回全部 56 个（cn 22 + global 34）。
 - 路由别名（无自身价格、只是路由到别的模型）：`cn:auto` `global:auto-chat`

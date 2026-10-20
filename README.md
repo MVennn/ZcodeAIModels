@@ -4,13 +4,16 @@
 
 > **可见性**：公开 —— 凭据全部走环境变量，仓内**零明文凭据**；vendored 是 zai-org/ZCode（Apache-2.0）与 ZCodium（MIT）。第三方组件声明见 [NOTICE](NOTICE)。
 
-**把 OpenCode-Go 套餐与 WorkBuddy2API 网关接进 ZCode 客户端的脚本与文档**
+**把模型供应商接进 ZCode 客户端的脚本与文档 —— 以 WorkBuddy2API 网关与 OpenCode-Go 套餐为例**
 
 </div>
 
 > **一句话**：这里放的是「**把模型接进 ZCode**」这一条线的全部脚本与文档 ——
 > 探测哪些模型能用、走哪种协议、思考参数怎么关，再把结果写进 ZCode 的
 > `provider_config.json`。
+>
+> **方法与供应商无关**：WorkBuddy2API 与 OpenCode-Go 是本仓跑通的**两个完整示例**；
+> 接你自己的供应商，照「[通用方法](#connect-new-provider)」那四步做即可。
 
 ---
 
@@ -18,11 +21,10 @@
 
 一个**工具仓库**，不是一个应用。
 
-它做三件事：
+它做三件事（**通用能力**，与具体供应商无关）：
 
-1. **探测** —— 对 OpenCode-Go 套餐（`https://opencode.ai/zen/go/v1`）和
-   WorkBuddy2API 网关（`http://127.0.0.1:7863`）逐个模型试：能不能连、走哪种协议、
-   工具调用能不能用、思考参数怎么关、还剩多少额度。
+1. **探测** —— 逐个模型试：能不能连、走哪种协议、工具调用能不能用、
+   思考参数怎么关、还剩多少额度。
 2. **同步** —— 把探测结论整理成 provider 分组（按成本档 / 积分倍率），
    写进 ZCode 客户端的 `provider_config.json`，让 ZCode 的模型列表里出现它们。
 3. **记录** —— 把踩过的坑、模型的协议归属、关思考的参数矩阵固化成文档，
@@ -31,6 +33,23 @@
 **它不改 ZCode 的代码，只改它的配置文件。** 全部副作用集中在
 `~/.zcode/v2/provider_config.json` 一个文件（以及脚本自己产生的备份与缓存）。
 
+### 通用能力 vs 本次实例
+
+文档里每条结论都会标明它属于哪一类 —— 换供应商时照「通用能力」那一列做，
+「本次实例」那一列是**随服务商变动的数据快照**（带采集时点）。
+
+| 主题 | 通用能力（换供应商也成立） | 本次实例（随服务商变动） |
+|---|---|---|
+| 怎么判断模型走哪种协议 | 模型只认自己那一种协议，塞错上游直接拒 | OpenCode-Go 分 chat / messages / responses 三种；WorkBuddy 全是 OpenAI 兼容 |
+| 怎么分 provider | 按成本档切，档内按单价（或倍率）升序 | WorkBuddy 按积分倍率切三档；OpenCode-Go 按「额度可撑输出」切六组 |
+| ZCode 侧怎么配 | `provider_config.json` 里只有三个落点（见「与 ZCode 的关系」） | 本仓已配好 9 个 provider（六个 `opencode-go-*` + 三个 `workbuddy-*`） |
+| 思考参数怎么关 | ZCode 内置通用规则无条件注入思考字段 → 用 `optionSpecs.reasoningLevel.map` 覆盖 | 具体哪个模型配空 map、哪个配 `{"thinking":{"type":"disabled"}}`，见参数矩阵 |
+| 探测怎么打 | 必须用 ZCode 真实请求体、必须限速 | 限速值取决于对方的账号池大小（本仓示例：≥ 20 秒） |
+| 数据 | —— | 价格、额度、倍率、实测速度（**带采集时点**的快照） |
+
+**本仓的两个接入器**（`opencode-go/`、`workbuddy/`）就是照这套结构写的参照实现：
+目录名带供应商名，是**刻意**的 —— 它们是示例，不是通用框架。
+
 ---
 
 ## 适用环境
@@ -38,13 +57,14 @@
 | 项 | 值 |
 |---|---|
 | 客户端 | ZCode（Windows 桌面端） |
-| 配置文件 | `C:\Users\<你的用户名>\.zcode\v2\provider_config.json`；可用环境变量 `ZCODE_PERSONAL_PROVIDER_CONFIG_FILE` 覆盖 |
+| 配置文件 | `~/.zcode/v2/provider_config.json`（Windows：`C:\Users\<你的用户名>\.zcode\v2\provider_config.json`）；可用环境变量 `ZCODE_PERSONAL_PROVIDER_CONFIG_FILE` 覆盖 |
 | 运行时 | Python 3（**只用标准库**，无第三方依赖）+ Node.js（跑 `.js` 脚本） |
-| 网络 | 能直连 `opencode.ai`；WorkBuddy 侧需要本地网关 `wb2api` 在 `127.0.0.1:7863` 在跑（`WB_GATEWAY_BASE` 可覆盖） |
-| 网关账号 | OpenCode-Go 用 `oc_sk_…` 凭据，**从环境变量 `OPENCODE_GO_KEY` 读**；WorkBuddy 用网关自己的 `api_key`（`WB_GATEWAY_KEY`） |
+| 网络 | 能直连你的供应商。示例：直连 `opencode.ai`；WorkBuddy 侧需要本地网关 `wb2api` 在 `127.0.0.1:7863` 在跑（`WB_GATEWAY_BASE` 可覆盖） |
+| 凭据 | **一律走环境变量**，见 [docs/SECRETS.md](docs/SECRETS.md)。示例：`OPENCODE_GO_KEY`（OpenCode-Go）、`WB_GATEWAY_KEY`（网关） |
 
-> ⚠️ **凭据不要写进代码或文档。** 两个凭据分别从环境变量 **`OPENCODE_GO_KEY`**
-> （OpenCode-Go 探测脚本）与 **`WB_GATEWAY_KEY`**（WorkBuddy）取。
+> ⚠️ **凭据不要写进代码或文档。** 两个示例凭据分别从环境变量 **`OPENCODE_GO_KEY`**
+> （OpenCode-Go 探测脚本）与 **`WB_GATEWAY_KEY`**（WorkBuddy）取；
+> 接你自己的供应商时，按同样的模式加一个环境变量即可。
 > **探测脚本里的明文 key 已全部删除**（见「已知坑」第 6 条），
 > 未设置对应环境变量时脚本会**明确报错退出**。
 
@@ -54,6 +74,10 @@
 
 顺序不能乱：**先刷价格表 → 再探测 → 最后同步**。探测要慢（≥20 秒一个模型），
 同步是秒级。
+
+下面这条流水线**以本仓的两个示例供应商跑通一遍**。接别的供应商时：
+第 1、2 步换成你自己的目录接口与探测脚本，第 3 步的**分档口径**按你的计价单位换；
+**但第 3 步写 ZCode 配置的方式完全一样，不用改**。
 
 ### 0. 准备环境变量
 
@@ -67,6 +91,8 @@ export ZCODE_PERSONAL_PROVIDER_CONFIG_FILE="$HOME/.zcode/v2/provider_config.json
 > `bench_models.py`、`bench_clean.py`、`thinking-off-probe.js`）**都从
 > `OPENCODE_GO_KEY` 读 key**；**没设就明确报错退出**，不会带着空 key 去请求。
 > 当前值从 ZCode 的 `provider_config.json` 里取（脚本自己读同一份配置）。
+> **接别的供应商**：照这个模式加一个自己的环境变量（名字、读取方写进
+> [docs/SECRETS.md](docs/SECRETS.md) §3.5）。
 
 ### 1. 刷价格表（只有 WorkBuddy 侧需要）
 
@@ -117,6 +143,58 @@ python workbuddy/workbuddy_zcode_sync.py --apply
 
 ---
 
+<a id="connect-new-provider"></a>
+
+## 通用方法：接一个新的模型供应商
+
+**四步，与具体供应商无关。** 本仓的两个接入器（`opencode-go/`、`workbuddy/`）
+就是照这套结构写的参照实现。
+
+### 第 1 步：摸清接口面
+
+先问清三件事 —— 答不上来就别写脚本：
+
+| 要问的 | 为什么 | 本仓实例（示例） |
+|---|---|---|
+| 模型目录从哪个接口拿？ | 探测清单、价格表、分档都要它 | OpenCode-Go `/zen/go/v1/models`；WorkBuddy `/panel/api/models` |
+| 每个模型走哪种协议？ | 塞错协议上游直接拒 | OpenCode-Go 分 chat / messages / responses 三种；WorkBuddy 全 OpenAI 兼容 |
+| 怎么计价？ | 分档依据 | OpenCode-Go 按 $/M token；WorkBuddy 按积分倍率 |
+
+### 第 2 步：取目录与价格，归一化成一张表
+
+把目录接口的返回**归一化成一张价格表**（模型 id、单价 / 倍率、上下文、输出上限、
+工具调用、思考档位、能否关思考）。归一化之后，**分档就是纯本地计算**，
+换供应商只需换「取数 + 归一化」那一段。
+
+- 参照实现（落盘）：`workbuddy/workbuddy_fetch_pricing.py` → `workbuddy/cache/wb_pricing.json`
+- 参照实现（现拉现算，不落盘）：`opencode-go/ops/go_model_sync.py`
+
+### 第 3 步：探测 —— 用 ZCode 真实请求体 + 限速
+
+裸 body 能通 ≠ ZCode 能通（ZCode 会注入思考字段，上游不认就 400）。
+探测必须先算出 ZCode **真实会发的 body** 再发出去；间隔要按对方的账号池规模定
+（本仓示例：≥ 20 秒，太密会把账号池打爆）。
+
+- 参照实现：`workbuddy/zcode_effective_body.js`（复刻引擎规则解析）+
+  `workbuddy/workbuddy_probe_zcode.py`（失败再退 slim variant）
+
+### 第 4 步：分档并写配置
+
+- **分档**：按成本档切，档内按单价（或倍率）升序。档数与阈值由你的计价口径决定。
+- **写配置**：只碰 `provider_config.json` 的三个位置（见下节「与 ZCode 的关系」），
+  先备份再原子替换；写完等 1~2 秒看 ZCode 是否热重载。
+
+### 换一个供应商要改什么
+
+| 要改 | 不要改 |
+|---|---|
+| 探测脚本的 base URL 与凭据来源 | ZCode 配置的写入方式（三个落点） |
+| 目录 / 价格的取数与归一化 | 思考参数覆盖机制（`optionSpecs.reasoningLevel.map`） |
+| 分档口径与阈值 | 探测必须用真实 body、必须限速这两条原则 |
+| providerId 与显示名 | —— |
+
+---
+
 ## 目录结构
 
 ```
@@ -129,7 +207,7 @@ ZcodeAIModels/
 ├── .gitignore
 ├── PROGRESS.md                # 本仓唯一进度台账（追加式批次日志）
 │
-├── opencode-go/               # OpenCode-Go 套餐线
+├── opencode-go/               # 示例接入器一：OpenCode-Go 套餐线
 │   ├── ops/                   # 长期运维脚本
 │   │   ├── go_model_sync.py           # 新模型自动收录（每天跑）
 │   │   └── opencode-header-proxy.js   # 请求头注入代理（常驻）
@@ -140,7 +218,7 @@ ZcodeAIModels/
 │       ├── archive/validate_zcode_models.py
 │       └── results/20261019/         # 探测原始结果（本地留存，不随仓库分发）
 │
-├── workbuddy/                 # WorkBuddy2API 网关线
+├── workbuddy/                 # 示例接入器二：WorkBuddy2API 网关线
 │   ├── workbuddy_probe_zcode.py      # 用 ZCode 真实 body 探测
 │   ├── workbuddy_zcode_sync.py       # 按积分倍率分三档写配置
 │   ├── zcode_effective_body.js       # 复刻 ZCode 引擎规则，算真实请求体
@@ -168,10 +246,14 @@ ZcodeAIModels/
 
 ## 文件清单
 
+> 下表列的是**两个示例接入器**的脚本。换供应商时照同样的结构加一份
+> （见「[通用方法](#connect-new-provider)」）。
+
 | 脚本 | 作用 | 输出产物 | 长期 |
 |---|---|---|---|
 | `opencode-go/ops/go_model_sync.py` | 四源并集检测 Go 套餐新模型 → 三协议探测 → 按成本档分组 → 写 `provider_config.json` | 报告 `go-model-sync-<时间戳>.md`；备份 `provider_config.json.bak-gosync-<时间戳>` | ✅ 长期 |
 | `opencode-go/ops/opencode-header-proxy.js` | 给不支持自定义头的客户端（ChatBox / Open WebUI 等）补 `x-opencode-session` | 常驻 HTTP 代理，默认 `127.0.0.1:8787` | ✅ 长期 |
+| `workbuddy/workbuddy_fetch_pricing.py` | 拉网关目录接口 → 归一化 → 写价格表（打印倍率变化 / 新增 / 下架摘要） | `workbuddy/cache/wb_pricing.json`（写前自动备份） | ✅ 长期 |
 | `workbuddy/workbuddy_probe_zcode.py` | 用 **ZCode 真实 body** 探测网关模型可用性，可断点续跑 | `workbuddy/cache/wb_zcode_probe.json`；`workbuddy/logs/wb_zcode_probe.log` | ✅ 长期 |
 | `workbuddy/workbuddy_zcode_sync.py` | 按积分倍率分免代 / 低代 / 高代三档写 provider | 备份 `provider_config.json.bak-wbproxy-<时间戳>` | ✅ 长期 |
 | `workbuddy/zcode_effective_body.js` | 复刻 ZCode 引擎的规则解析顺序，算某 modelId **真实会发的请求体** | stdout JSON | ✅ 长期（`probe_zcode.py` 依赖它，必须同目录） |
@@ -182,7 +264,7 @@ ZcodeAIModels/
 | `opencode-go/probe/thinking-off-probe.js` | 逐模型试「关思考」参数 | 只打印 | ❌ 一次性 |
 | `opencode-go/probe/archive/validate_zcode_models.py` | 校验 ZCode 已配模型与其 provider 协议是否一致 | 只打印 | ❌ 一次性（已归档） |
 | `workbuddy/archive/workbuddy_probe_models.py` | 早期裸 body 探测（已被 `workbuddy_probe_zcode.py` 完全取代） | — | ❌ 已归档 |
-| `workbuddy/cache/wb_pricing.json` | 网关 56 个模型的倍率 / 上下文 / 输出上限 / effort 档位快照 | 被上面两个脚本读取 | ⚠️ 活数据，**无生成脚本** |
+| `workbuddy/cache/wb_pricing.json` | 网关 56 个模型的倍率 / 上下文 / 输出上限 / effort 档位快照 | 由 `workbuddy_fetch_pricing.py` 生成 | ⚠️ 活数据 |
 | `workbuddy/cache/wb_zcode_probe.json` | 探测结果缓存（status / variant / http / detail / rate） | 被 `workbuddy_zcode_sync.py` 读取 | ⚠️ 活数据 |
 | `evidence/wb_panel_models.json` | 网关模型目录原始快照 | 只读证据 | — |
 | `third-party/zcodium/reasoning-rules.js` | 按协议算「最小且正确」的思考字段；并比对本机 ZCode 内置规则与上游切片，报漂移 | stdout | ✅ 长期 |
@@ -236,15 +318,18 @@ ZcodeAIModels/
 3. **规则按序叠加、后者胜** —— 通用规则写在前面，专属规则写在后面才盖得住。
 4. **探测必须用 ZCode 真实 body，且间隔 ≥ 20 秒** —— 否则「curl 能通但 ZCode 400」，
    或者把网关账号池打爆（`no_healthy_account`）。
+   *（间隔的具体数值取决于对方的账号池大小；本仓示例是 4 个号的池子，故 ≥ 20 秒。）*
 5. **免费池日配额耗尽会返回 429**，`Retry-After` 落在次日 00:00 UTC ——
    这不是配置错，也不是模型下线，**等到次日再试**。
 6. ⚠️ **探测脚本的 API key 已改为环境变量读取** —— `opencode-go/probe/` 下的 5 个脚本
    （`probe_models.py`、`probe_protocols.py`、`bench_models.py`、`bench_clean.py`、
    `thinking-off-probe.js`）里的明文 `oc_sk_…` **已全部删除**，改为读
    **`OPENCODE_GO_KEY`**；**未设置时明确报错退出**（不会带着空 key 去请求，
-   再拿一个含义不明的 401 当结果）。
-7. ⚠️ **`go_model_sync.py` 的报告目录仍硬编码** 指向旧仓库 `F:\Project\Openwrt\audit`，
-   跑完报告不会落在本仓。
+   再拿一个含义不明的 401 当结果）。**接别的供应商照这个模式做**。
+7. ⚠️ **`go_model_sync.py` 的 ZCode 配置路径默认值按「当前用户主目录」推导**，
+   可用 `--config` 覆盖；它**不读** `ZCODE_PERSONAL_PROVIDER_CONFIG_FILE`（已知缺口，见
+   [docs/SECRETS.md](docs/SECRETS.md) §3.4）。
+   报告目录同理：从脚本自身位置推导本仓 `evidence/`，可用 `GO_SYNC_REPORT_DIR` 覆盖。
 
 ---
 
@@ -264,9 +349,10 @@ ZcodeAIModels/
 - 本仓库**不上传、不收集任何数据**；所有脚本只与你自己机器上的配置和你自己的
   模型网关交互。
 - 脚本会修改**你自己的** ZCode 配置文件。写之前请备份（脚本也会自动备份）。
-- `opencode.ai` 与 WorkBuddy2API 是**第三方服务**，本项目与它们不存在任何隶属、
-  合作、授权或认可关系。模型价格、额度、可用性、隐私策略（部分模型会用请求数据
-  训练）**一律以服务商当时的说明为准**，本仓库的文档只是某一时刻的快照。
+- 本仓示例涉及的 `opencode.ai` 与 WorkBuddy2API，以及**你自行接入的其它供应商**，
+  都是**第三方服务**，本项目与它们不存在任何隶属、合作、授权或认可关系。
+  模型价格、额度、可用性、隐私策略（部分模型会用请求数据训练）
+  **一律以服务商当时的说明为准**，本仓库的文档只是某一时刻的快照。
 - 本仓库的模型清单与分组是**按成本档 / 积分倍率**排的，是主观取舍，不是推荐。
 - 使用本项目产生的任何后果由使用者自行承担。
 
@@ -310,6 +396,15 @@ ZcodeAIModels/
 > 它们让本仓能离线复刻客户端的请求体语义，来源凭证见
 > [third-party/zcode/UPSTREAM.md](third-party/zcode/UPSTREAM.md)。
 > **AGPL 项目（`zcode2api` 两家）与无 LICENSE 项目（`zcode-api`）只读不抄。**
+
+---
+
+## 参与与治理
+
+- [CONTRIBUTING.md](CONTRIBUTING.md) —— 怎么跑、**怎么接一个新供应商**、凭据只走环境变量这条硬规矩
+- [SECURITY.md](SECURITY.md) —— 安全问题怎么报、探测脚本的速率与影响面
+- [tools/check-docs.py](tools/check-docs.py) —— 文档自检（链接 / 锚点 / 引言块 / 孤儿），CI 里跑的就是它
+- CI：`.gitlab-ci.yml`（Python 语法 + Node 语法 + 文档自检）
 
 ---
 

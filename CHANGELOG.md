@@ -16,16 +16,16 @@
 
 ## [未发布] — 2026-10-20
 
-本仓**首次建仓**：从 `F:\Project\Openwrt`（原「OpenWrt 工作目录」）里把
+本仓**首次建仓**：从同级的「OpenWrt 工作目录」里把
 **AI 模型接入**这一条线整体拆出来，成为独立仓库 `ZcodeAIModels`。
 
 拆分只做两件事：**搬文件** 与 **补文档**。**没有改动任何脚本逻辑**，
 **没有改动 ZCode 的 `provider_config.json`**，也没有动原目录里的其它线
-（路由器运维、ShellCrash、前端控制台等仍留在 `F:\Project\Openwrt`）。
+（路由器运维、ShellCrash、前端控制台等仍留在 OpenWrt 工作目录）。
 
 ### 调整
 
-- 调整 仓库 —— 从 `F:\Project\Openwrt` 拆出独立仓库 `ZcodeAIModels`，可独立上传 GitLab。
+- 调整 仓库 —— 从 OpenWrt 工作目录拆出独立仓库 `ZcodeAIModels`，可独立上传 GitLab。
 - 调整 目录 —— `opencode-go/ops/`：长期运维脚本（模型自动收录 + 请求头注入代理）。
 - 调整 目录 —— `opencode-go/probe/`：一次性探测脚本（连通性 / 协议 / 基准 / 关思考）。
 - 调整 目录 —— `opencode-go/probe/archive/`：已被取代的 `validate_zcode_models.py`。
@@ -95,4 +95,29 @@
 ### 新增
 
 - 新增 `workbuddy_fetch_pricing.py` —— WorkBuddy 侧；`python workbuddy_fetch_pricing.py`
-  一条命令刷新价格表，取代手工维护（详见 `docs/MAINTENANCE.md` §1.2）。
+  一条命令刷新价格表，取代手工维护（详见 `docs/MAINTENANCE.md` §1.3）。
+
+### 通用化（2026-10-20）
+
+> 这一轮把仓库从「只对某一台机器/某一个人成立」改成「**任何用 ZCode 的人都能照着做**」。
+> **规则与做法用通用措辞；WorkBuddy2API 与 OpenCode-Go 这两个具体实例单列。**
+
+- 调整 定位 —— 根 [README.md](README.md) 从「把 OpenCode-Go 与 WorkBuddy2API 接进 ZCode」
+  改成「把**任意**模型供应商接进 ZCode（以这两个为例）」，并新增
+  「通用方法：接一个新的模型供应商」四步（摸清接口面 → 归一化价格表 → 用 ZCode 真实 body 探测 → 分档写配置）。
+- 调整 文档 —— [docs/MODEL-PROVIDERS.md](docs/MODEL-PROVIDERS.md) 新增 §0「接一个新的模型供应商」
+  与「通用概念 ↔ 本仓叫法」对照表；§2 / §4 标注为本次实例。
+- 调整 文档 —— [docs/MAINTENANCE.md](docs/MAINTENANCE.md) §1 拆成「§1.1 通用做法（换供应商照这个做）」
+  + 「§1.2 / §1.3 两个实例」，并给出「取目录 → 归一化 → 写盘 + 变动摘要」的三步通用做法。
+- 调整 文档 —— [docs/SECRETS.md](docs/SECRETS.md) 凭据位置表补一行「其它供应商的凭据」，
+  明确**任何**供应商的凭据都只走环境变量，并给出加新供应商时的三步清单。
+- 调整 文档 —— [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) 与
+  [docs/PITFALLS.md](docs/PITFALLS.md) 每条加【通用】/【实例 A】/【实例 B】标记，
+  区分「换供应商也成立」与「只有本仓实例才有」。
+- 修复 路径 —— 文档与脚本里的**本机绝对路径**（写死的用户名主目录、旧仓库目录）改为
+  仓内相对路径 / `~/.zcode/...` / 按脚本位置与当前用户主目录推导。
+- 修复 路径 —— `go_model_sync.py` 的 ZCode 配置路径默认值改为按当前用户主目录推导
+  （**在本机解析结果不变**），仍可用 `--config` 覆盖。
+- 调整 文档 —— `PROGRESS.md`、`evidence/PROGRESS.workbuddy.md` 里的设备型号改为通用措辞
+  （历史探测结论与数据一律保留原样，并保留采集时点）。
+- 调整 文档 —— `memories/` 下四个文件里的绝对路径改为仓内相对路径。

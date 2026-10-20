@@ -1,6 +1,15 @@
 #!/usr/bin/env python3
 """Sync WorkBuddy2API gateway models into ZCode as tiered personal providers.
 
+Scope
+-----
+**This is the WorkBuddy2API adapter, not a generic framework.**  The tiering
+below is driven by the gateway's credit multiplier, which is WorkBuddy-specific.
+To onboard a different provider, write a sibling script with the same shape:
+read your own normalized pricing table, apply your own tier thresholds, and
+write the same three places of `provider_config.json` (see docs/MODEL-PROVIDERS.md
+§1).  The ZCode-side write path itself is provider-neutral.
+
 The gateway bills by a credit multiplier ("倍率"): smaller = cheaper. Models are
 split into three providers by that multiplier, each ordered cheapest-first:
 

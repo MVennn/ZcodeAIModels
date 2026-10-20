@@ -8,7 +8,7 @@ metadata:
   originSessionId: sess_45231509-4e0a-42d5-b258-b22ab0e27a40
 ---
 
-用户通过 **OpenCode Go** 订阅（Go $10/月、Go Plus $40/月）在 ZCode 里用第三方模型，API key 配在 `<USER>\.zcode\v2\provider_config.json`。2026-10-19 做过一次全量实测。
+用户通过 **OpenCode Go** 订阅（Go $10/月、Go Plus $40/月）在 ZCode 里用第三方模型，API key 配在 `~/.zcode/v2/provider_config.json`。2026-10-19 做过一次全量实测。
 
 **额度机制**：按模型分别计算美元额度，5 小时 = 月度 20%、每周 50%、每月 100%。DeepSeek V4.1 Flash 月额度 $80（全表最高），GLM-5.3-Flash/MiMo Flash/LongCat-2.0/MiniMax M3/Hy3 各 $60，Qwen3.8 Flash/Space Bunny/Hy4 $30，Claude Haiku 5.5、GPT Luna、Grok、GLM-5.3、DeepSeek V4 Pro 各 $15。
 
@@ -32,7 +32,7 @@ metadata:
 
 **成本分档（额度可撑输出 token，按输出单价）**：mimo-flash/mimo-v2.5 各 214M（每美元最耐用）、deepseek-v4.1-flash 133M（谷 $0.60）/67M（峰 $1.20）、glm-5.3-flash 120M、hy3 103M、qwen3.8-flash 64M、minimax-m3 与 longcat-2.0 各 50M、qwen3.7-plus 37.5M、claude-haiku/gpt-6-luna 各 30M、mimo-pro 17M、gpt-5.6-luna 12.5M。结论：deepseek 峰谷双价夹住列表中部，是最耐用的付费模型之一（$80 额度全场最大）；真正贵的是 gpt-5.6-luna、mimo-pro、claude-haiku、qwen3.7-plus、minimax-m3、longcat-2.0。
 
-**思考参数覆盖（`optionSpecs.reasoningLevel.map="{}"` = 不发送任何思考参数）**：beam-free、minimax-m3.1-flash-free、minimax-m3 已配，使其在任意思考等级下都不会 400（beam-free 上游拒收 thinking；m3.1 拒收 `thinking:disabled`/`reasoning_effort:none`；m3 拒收 `thinking:enabled`）。重排脚本 `<USER>\.zcode\v2\apply-chat-regroup.js`（默认 dry-run，--apply 才写，原子替换+写前校验），备份 `.bak-regroup-20261019150317`。
+**思考参数覆盖（`optionSpecs.reasoningLevel.map="{}"` = 不发送任何思考参数）**：beam-free、minimax-m3.1-flash-free、minimax-m3 已配，使其在任意思考等级下都不会 400（beam-free 上游拒收 thinking；m3.1 拒收 `thinking:disabled`/`reasoning_effort:none`；m3 拒收 `thinking:enabled`）。重排脚本 `~/.zcode/v2/apply-chat-regroup.js`（默认 dry-run，--apply 才写，原子替换+写前校验），备份 `.bak-regroup-20261019150317`。
 
 baseUrl 均为 `https://opencode.ai/zen/go/v1`（三种路径都实测可用）。`opencode-go-chat` 这个 providerId 必须保留（当前会话的默认模型挂在它下面）。改配置前先备份为 `provider_config.json.bak-YYYYMMDD-HHMMSS`。引擎对 `provider_config.json` 默认每 1s 轮询热加载（`NodePersonalProviderConfigRepository`，`pollingIntervalMs` 默认 1000），外部编辑通常无需重启；若模型选择器没刷新再重启 ZCode。避免在 UI 改 provider 设置的同时外部写文件（原子写竞态）。19/19 模型按各自协议实测 HTTP 200。ZCode 是 opencode 官方 listed validated client。
 
@@ -44,7 +44,7 @@ baseUrl 均为 `https://opencode.ai/zen/go/v1`（三种路径都实测可用）�
 
 **2026-10-19 22:40 配置收尾**：beam-fix 已应用（beam-free 带 `optionSpecs.reasoningLevel.map="{}"`，备份 `.bak-beamfix-20261019143257`）；速度组已把 `space-bunny` 换成 `minimax-m3.1-flash-free`（备份 `.bak-speedgroup-20261019143939`），实测新模型带 ZCode 全套 thinking 参数体 200。当前速度组：glm-5.3-flash、beam-free、minimax-m3.1-flash-free、minimax-m3。
 
-**非 ZCode 客户端补 session 头**：其他客户端（ChatBox/Open WebUI 等）若不支持自定义请求头，用本地注入代理 `F:\Project\ZcodeAIModels\opencode-header-proxy.js`（`node` 启动，监听 127.0.0.1:8787，客户端 base URL 填 `http://127.0.0.1:8787/v1`；优先透传客户端自带 x-session-id，否则用固定值/`--session`）。已实测 longcat-2.0、glm-5.3-flash、minimax-m3.1-flash-free 非流式与流式全部 200。客户端“自定义请求头”要写成 JSON 键值对 `{"x-opencode-session":"my-client-001"}`（个别客户端要求数组 `[{"name":...,"value":...}]`）；“提供商选项”同理。**2026-10-19 22:50 复测**：longcat-2.0 关思考后首字 1.7s（基线 3.6s）、longcat-2.5-preview-free 7.4–8.7s，好于白天最差的 17–24s，波动很大；关思考写法见 [[beam-free-thinking-param-fix]]。
+**非 ZCode 客户端补 session 头**：其他客户端（ChatBox/Open WebUI 等）若不支持自定义请求头，用本地注入代理 `opencode-go/ops/opencode-header-proxy.js`（`node` 启动，监听 127.0.0.1:8787，客户端 base URL 填 `http://127.0.0.1:8787/v1`；优先透传客户端自带 x-session-id，否则用固定值/`--session`）。已实测 longcat-2.0、glm-5.3-flash、minimax-m3.1-flash-free 非流式与流式全部 200。客户端“自定义请求头”要写成 JSON 键值对 `{"x-opencode-session":"my-client-001"}`（个别客户端要求数组 `[{"name":...,"value":...}]`）；“提供商选项”同理。**2026-10-19 22:50 复测**：longcat-2.0 关思考后首字 1.7s（基线 3.6s）、longcat-2.5-preview-free 7.4–8.7s，好于白天最差的 17–24s，波动很大；关思考写法见 [[beam-free-thinking-param-fix]]。
 
 **自动收录新模型的数据源（2026-10-19 23:5x 实测，四个源都可脚本化）**：
 1. `GET https://opencode.ai/zen/go/v1/models` → 200，返回 37 个 id（**不需要** Authorization）。**但它不是完整目录**：`deepseek-v4-flash-vision-exp` 实测三协议都能跑，却在列表里没有；而 `space-bunny` 已 410 弃用且已从列表消失。所以"不在列表"≠不可用，只按它做差集既会漏新增也会误报消失——检测源必须取并集：`/models` ∪ 文档价格表 ∪ 现有 provider_config ∪ 主动探测。
@@ -61,14 +61,14 @@ baseUrl 均为 `https://opencode.ai/zen/go/v1`（三种路径都实测可用）�
 - apiKey 实际存放路径：`config.providerConfigRules.providerRules[i].config.access.apiKey`（**不是** `config.api.apiKey`；`config.api` 里只有 type + baseUrl）。`go_model_sync.py` 里 `api_key()` 读的正是 `access.apiKey`，路径正确。
 
 **2026-10-20 00:00 自动收录落地**：
-- 脚本 `F:\Project\ZcodeAIModels\opencode-go\ops\go_model_sync.py`（`--apply` 才写配置；先备份 `.bak-gosync-<ts>`，原子替换）；定时任务"每天 10:00 自动收录 Go 套餐新模型"（ZCode cron，automationId `automation-5ad749e3-0d25-4323-afbc-7ae30cdc7288`）。
+- 脚本 `opencode-go/ops/go_model_sync.py`（`--apply` 才写配置；先备份 `.bak-gosync-<ts>`，原子替换）；定时任务"每天 10:00 自动收录 Go 套餐新模型"（ZCode cron，automationId `automation-5ad749e3-0d25-4323-afbc-7ae30cdc7288`）。
 - 数据源补全：`https://opencode.ai/v2/docs/console/models` 有**全量目录**（Model→Model ID→Endpoint=协议、公开价、"Free" 标记、**弃用日期表**）；`/v2/docs/console/go/` 有 Go 套餐的模型表 + 定价表（Go $10 档第一张 / Go Plus 第二张）。官方弃用表已过期 18 个（含 minimax-m2.5 2026-08-05、minimax-m2.7 **未**过期）。
 - **鉴权头分协议**：`chat/completions`、`responses` 用 `Authorization: Bearer <apiKey>`；`anthropic/messages` 只认 `x-api-key: <apiKey>`（用 Bearer 会 401 `Go requires a credential`）——这解释了之前 muse-spark 在 messages 上 401 而 responses 200。
 - **ZCode 请求体形态**（从 `resources/glm/zcode.cjs` 读出，探测要照抄）：chat/messages 带思考时是 `thinking:{type:"enabled",budget_tokens:1024}` 且删掉 temperature；responses 用 `reasoning_effort`。
 - **训练开关打开后** muse-spark-1.2/1.3-contributor 可用（只支持 openai-responses），$0.10/$0.20、月额度 $60 → **额度可撑 300M，全场最耐用**；已自动收录进"响应"组并配 `optionSpecs.reasoningLevel.map="{}"`（带 reasoning_effort 会报错）。`gemini-4-argon-contributor` 三协议仍不通（401，权限没给到它）。
 - 收藏门限：输出单价 ≤ $1.60（现有配置里最贵的 qwen3.7-plus）；主力组人工精选不自动进；价格查不到的模型只列候选。
 - **定时任务能不能指定模型**：`automations` 表有 `model/provider/mode/thought_level/model_selection` 字段，但 **CronCreate 工具入参没有 model**，会自动继承"创建时那个会话"的模型；**CronUpdate 明确不能改 model/provider/mode/thought_level**，只能改标题/提示词/时间。实测本次继承到 `opencode-go-chat-free/minimax-m3.1-flash-free`（免费模型，正好零成本）。另外同一会话内**第二次 CronCreate 会被拒**（"session that already belongs to a scheduled task"），需先用 CronUpdate 改现有任务。
-- **Agent 固定模型**（原生支持）：agent 目录 = 用户级 `<USER>\.zcode\agents\` + 项目级 `<工作区>\.zcode\agents\`；frontmatter 支持 `model:`（如 `model: opencode-go-chat/deepseek-v4.1-flash`）、`thoughtLevel`、`tools`。这是"按用途分模型"零延迟的官方做法。
+- **Agent 固定模型**（原生支持）：agent 目录 = 用户级 `~/.zcode/agents/` + 项目级 `<工作区>\.zcode\agents\`；frontmatter 支持 `model:`（如 `model: opencode-go-chat/deepseek-v4.1-flash`）、`thoughtLevel`、`tools`。这是"按用途分模型"零延迟的官方做法。
 - **ZCode hook 事件**只有 `SessionStart / UserPromptSubmit / PreToolUse / PermissionRequest / PostToolUse / PostToolUseFailure / Stop`，`UserPromptSubmit` 只能返回 `additionalContext`（注入上下文），**不能改模型**——所以"前置 AI 换模型"不能在 hook 层做。
 
-完整报告：`F:\Project\ZcodeAIModels\docs\archive\OPENCODE-GO-模型与订阅优化分析.md`；速查表：`F:\Project\ZcodeAIModels\docs\模型速查表.md`（2026-10-19 23:03 重写：按主力/免费/低耗/高耗 + 对话/备用分组，含价格、月额度、额度可撑输出、快慢、关思考写法）；实测脚本在 `F:\Project\ZcodeAIModels\`。相关：[[shellcrash-ai-routing-fix]]、[[zcode-ui-ordering-preferences]]
+完整报告：`docs/archive/OPENCODE-GO-模型与订阅优化分析.md`；速查表：`docs/模型速查表.md`（2026-10-19 23:03 重写：按主力/免费/低耗/高耗 + 对话/备用分组，含价格、月额度、额度可撑输出、快慢、关思考写法）；实测脚本在 `opencode-go/probe/`。相关：[[shellcrash-ai-routing-fix]]、[[zcode-ui-ordering-preferences]]

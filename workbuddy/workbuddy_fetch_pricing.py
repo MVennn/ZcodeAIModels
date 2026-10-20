@@ -2,6 +2,16 @@
 # -*- coding: utf-8 -*-
 """抓取 WorkBuddy2API 网关的模型价格表，写入 cache/wb_pricing.json。
 
+适用范围
+--------
+**这是 WorkBuddy 侧的接入器**，不是通用框架 —— 它认的是 WorkBuddy2API 网关的
+目录接口与字段。接别的供应商时**照这个结构再写一份**：
+
+1. 换成你自己的目录接口地址（`fetch_models()` 里那一行）；
+2. 把上游条目归一化成**同一套字段**（下面那张表）—— 归一化之后，
+   分档脚本（`workbuddy_zcode_sync.py`）就不用改；
+3. 保留「写前备份 + 打印变动摘要」这两条约定。
+
 为什么需要这个脚本
 ------------------
 `wb_pricing.json` 是 `workbuddy_zcode_sync.py` 的**唯一价格输入**：
@@ -168,14 +178,18 @@ def fetch_models(base: str, key: str, timeout: int = 25) -> list[dict]:
             payload = json.load(resp)
     except urllib.error.URLError as e:
         raise RuntimeError(
-            f"连不上网关 {base}（{e.reason}）。\n"
-            f"  先确认 WorkBuddy2API 面板在跑，或用 WB_GATEWAY_BASE 指定别的地址。"
+            f"连不上 WorkBuddy2API 网关 {base}（{e.reason}）。\n"
+            f"  先确认 WorkBuddy2API 面板在跑，或用 WB_GATEWAY_BASE 指定别的地址。\n"
+            f"  （本脚本是 WorkBuddy 侧的接入器；接别的供应商请照同样的结构另写一份，"
+            f"换掉取数接口与字段映射即可。）"
         ) from e
     if not isinstance(payload, dict):
-        raise RuntimeError("网关返回的不是预期结构（应为 {\"models\": [...]}）")
+        raise RuntimeError(
+            "WorkBuddy2API 面板返回的不是预期结构（应为 {\"models\": [...]}）"
+        )
     models = payload.get("models") or []
     if not models:
-        raise RuntimeError("网关返回了空的模型列表")
+        raise RuntimeError("WorkBuddy2API 面板返回了空的模型列表")
     return models
 
 

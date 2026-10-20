@@ -2,6 +2,14 @@
 """
 OpenCode Go 套餐模型自动收录同步脚本
 
+适用范围
+--------
+**这是 OpenCode-Go 侧的接入器**，不是通用框架 —— 数据源（文档页结构、端点路径、
+鉴权头）与分档口径都是这个供应商特有的。接别的供应商时照同样的结构另写一份：
+① 换成你自己的目录接口；② 逐协议探测；③ 按你自己的计价口径分档；
+④ 写进 ZCode 配置的同三个落点（见 docs/MODEL-PROVIDERS.md §1）。
+**与供应商无关的部分**：ZCode 侧的写入方式、思考参数覆盖机制、探测必须用真实 body。
+
 用途
 ----
 每天跑一次，检测 Go 套餐是否新增模型，对符合收录标准的模型自动写进 ZCode 的
@@ -44,7 +52,11 @@ import urllib.request
 BASE = "https://opencode.ai/zen/go/v1"
 GO_DOCS = "https://opencode.ai/v2/docs/console/go/"
 CATALOG_DOCS = "https://opencode.ai/v2/docs/console/models"
-DEFAULT_CONFIG = r"<USER>\.zcode\v2\provider_config.json"
+# ZCode 客户端配置：默认按「当前用户主目录」推导，不要写死某个人的用户名。
+# 换机器时用 --config 覆盖即可（本脚本不读 ZCODE_PERSONAL_PROVIDER_CONFIG_FILE）。
+DEFAULT_CONFIG = os.path.join(
+    os.path.expanduser("~"), ".zcode", "v2", "provider_config.json"
+)
 # 报告默认写进本仓的 evidence/（可用环境变量覆盖）
 REPORT_DIR = os.environ.get(
     "GO_SYNC_REPORT_DIR",
