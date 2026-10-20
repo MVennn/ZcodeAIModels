@@ -9,7 +9,7 @@
 
 ## 一、结论先行
 
-1. **订阅本身是健康的**：MoJie 剩余 85.48 GB，长期有效，28 个可用节点。
+1. **订阅本身是健康的**：机场订阅有效，28 个可用节点。
 2. **"切换模型用不了" 的根因不是网络，而是协议**：opencode Go 的模型分三种协议
    （`chat/completions`、`anthropic/messages`、`openai/responses`），把模型塞进错误的
    provider 会直接 400 `ModelProtocolUnsupported`。ZCode 必须按协议分三个 provider。
@@ -117,7 +117,7 @@ workspace Privacy 里开启「允许训练数据的付费端点」，否则全�
 
 ### 6.1 现状
 ```
-MoJie 订阅 (43.129.78.33:5000)
+机场订阅 (<REDACTED-sub-host>:5000)
   → api.v1.mk (server_link=2) + ShellClash.ini (rule_link=1)
   → /etc/ShellCrash/yamls/config.yaml
   → starts/clash_modify.sh 打补丁
@@ -178,7 +178,7 @@ MoJie 订阅 (43.129.78.33:5000)
    - 更致命的是记忆里那条：订阅一旦自带顶层 `rule-providers:`，和 `clash_modify.sh`
      注入的会撞键，mihomo 直接拒载。现在这套是验证过不会撞的。
 
-4. **MoJie 更新节点后的重转**：其实不需要手工转换。ShellCrash 自带：
+4. **机场更新节点后的重转**：其实不需要手工转换。ShellCrash 自带：
    ```sh
    /etc/ShellCrash/task/task.sh hotupdate      # 热更新订阅，不重启
    /etc/ShellCrash/task/task.sh update_config  # 更新并重启
