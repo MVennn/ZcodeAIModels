@@ -2,6 +2,8 @@
 
 # ZcodeAIModels
 
+> **可见性**：公开 —— 凭据全部走环境变量，仓内**零明文凭据**；vendored 是 zai-org/ZCode（Apache-2.0）与 ZCodium（MIT）。第三方组件声明见 [NOTICE](NOTICE)。
+
 **把 OpenCode-Go 套餐与 WorkBuddy2API 网关接进 ZCode 客户端的脚本与文档**
 
 </div>
