@@ -1,0 +1,300 @@
+> **一句话**：本仓库是驱动几个第三方服务与组件（WorkBuddy2API Panel、OpenCode Go、
+> ZCode、Python、Node.js）的工具；`third-party/` 下**随仓分发**少量上游文件
+> （ZCode 的规则数据与规则引擎源码、ZCodium 的规则切片），下面逐个说明来源、许可与使用理由。
+
+zcode-ai-models
+Copyright 2026 zcode-ai-models contributors
+
+This product is licensed under the MIT License. See the LICENSE file in the
+repository root for the full text.
+
+The OpenCode-Go API key used by the probe scripts is **not** stored in this
+repository: it is read from the `OPENCODE_GO_KEY` environment variable, and the
+WorkBuddy gateway key from `WB_GATEWAY_KEY`. Where each credential comes from
+is documented in docs/SECRETS.md (locations only, never values).
+
+==============================================================================
+Third-party services and components
+==============================================================================
+
+This project drives, but does NOT redistribute, the following third-party
+software and services. No third-party source code is included in this
+repository.
+
+- WorkBuddy2API Panel (a multi-account gateway for Tencent CodeBuddy)
+  https://github.com/linguo2625469/workbuddy2api-panel
+  Original project: https://github.com/Sliverkiss/workbuddy2api
+  Licensed under the MIT License.
+  Why used: it exposes a Tencent CodeBuddy account pool as an
+  OpenAI-compatible HTTP endpoint on 127.0.0.1:7863, which lets the
+  WorkBuddy models be used from the ZCode client. This repository only
+  sends HTTP requests to it; the gateway binary and its source are NOT
+  part of this repository. The MIT license text of the upstream project is
+  reproduced below for reference.
+
+- OpenCode Zen / Go (opencode.ai)
+  https://opencode.ai/
+  A commercial, subscription-based model service. Not open source; it is
+  governed by the OpenCode terms of service, not by an open-source license.
+  Why used: it provides the "Go" model plan and the
+  https://opencode.ai/zen/go/v1 API endpoint that this repository probes and
+  syncs into the ZCode client. No OpenCode code is included here.
+
+- ZCode (the target client) — **Apache-2.0**, open-sourced by Zhipu on 2026-09-21
+  https://github.com/zai-org/ZCode
+  Why used: it is the client whose model list this repository populates. This
+  repository reads and writes the user's own configuration file
+  (~/.zcode/v2/provider_config.json) and reproduces the client's request-body
+  semantics by replaying the engine's own rule resolution.
+  **Files distributed in this repository** (see third-party/zcode/UPSTREAM.md
+  for the pinned commit):
+    - config/provider/zcode-builtin.json  — the built-in rule data
+    - packages/provider/src/config/model-config.ts — ModelConfigRules.resolve()
+    - packages/provider/src/config/schema.ts — rule flattening order
+    - packages/provider/src/config/rule-data-schema.ts — rule schema
+  These are unmodified upstream files, redistributed under Apache-2.0; the
+  Apache-2.0 license text is reproduced in third-party/zcode/LICENSE.
+
+- Python 3 (Python Software Foundation)
+  https://www.python.org/
+  Licensed under the Python Software Foundation License.
+  Why used: runtime for the .py scripts (standard library only).
+
+- Node.js (OpenJS Foundation)
+  https://nodejs.org/
+  Licensed under the MIT License.
+  Why used: runtime for the .js scripts (header-injection proxy, effective-body
+  resolver, thinking-off probe).
+
+- MetaCubeX / mihomo / ShellCrash
+  NOT used by this repository. Those components belong to the router /
+  proxy line of the original working directory and were not carried over
+  into this split. No MetaCubeX code or data is present here.
+
+==============================================================================
+Third-party open-source projects referenced by this repository
+==============================================================================
+
+This repository is an independent utility. The projects listed below were
+studied during the ecosystem survey documented in docs/UPSTREAM.md. Their
+presence here is an acknowledgement of where the ideas came from, NOT an
+endorsement. Unless explicitly stated under "Code copied into this
+repository", NO third-party source code from these projects is redistributed
+here.
+
+Snapshot date: 2026-10-20. Each entry lists the repository URL, the commit SHA
+that was read, and the license as verified from that commit's LICENSE file.
+
+- soulvon/AnyBridge
+  https://github.com/soulvon/AnyBridge
+  commit f40dcc23c76f1b641462fb2a5544a252c5738b27
+  Licensed under the MIT License.
+  Why referenced: the only surveyed project that implements ZCode
+  provider_config.json writing. Its per-protocol reasoning-field mapping
+  informed the implementation in upstream/reasoning-rules.js.
+  No code is redistributed from this project.
+
+- 12errh/zen-proxy
+  https://github.com/12errh/zen-proxy
+  commit b107e45e4f1b940f9bba6c022fe3ac6254bce72b
+  Licensed under the MIT License.
+  Why referenced: targets the same upstream (opencode.ai) that this
+  repository's OpenCode-Go line talks to. Its session-header handling and
+  error-classification / fallback-chain rules are documented in
+  docs/UPSTREAM.md as design references.
+  No code is redistributed from this project.
+
+- hkqr/my-free-code
+  https://github.com/hkqr/my-free-code
+  commit 6a88525f70f310f5befc3e4004905faa7251ea17
+  Licensed under the MIT License.
+  Why referenced: its tier routing, ordered fallback and per-provider
+  rate-limit model is the reference for upgrading this repository's static
+  cost tiers into a degradation chain.
+  No code is redistributed from this project.
+
+- ZCodium-project/ZCodium
+  https://github.com/ZCodium-project/ZCodium
+  commit 192f9b8c7b7b61c694920203f1b5c7524bdc7d09
+  Licensed under the MIT License.
+  Why referenced: an independent, telemetry-free audit fork of ZCode that
+  contains the client's built-in rule file (config/provider/zcode-builtin.json).
+  It provides a citable source for the reasoning-rule behaviour this
+  repository documents in docs/PITFALLS.md.
+
+- musistudio/claude-code-router
+  https://github.com/musistudio/claude-code-router
+  commit 057abaa1f95519ab8faf999e1ccef2b80ccdeb9e
+  Licensed under the MIT License.
+  Why referenced: its model-catalog capability reader (reasoning support and
+  supported effort levels) is the reference for reading capabilities from an
+  upstream catalog rather than from a gateway panel.
+  No code is redistributed from this project.
+
+- mozilla-ai/otari
+  https://github.com/mozilla-ai/otari
+  commit ba9498fcdf9686a58017f5b77d38b5f28a10443b
+  Licensed under the Apache License, Version 2.0.
+  Why referenced: virtual keys and per-key budget enforcement are the
+  reference for a future shared-gateway variant of this repository's quota
+  tiers.
+  No code is redistributed from this project.
+
+- decolua/9router
+  https://github.com/decolua/9router
+  commit 87a74e1bda3677193c6f71a7e2100c90311f0689
+  Licensed under the MIT License.
+  Why referenced: free-model routing with automatic fallback to cheaper
+  models.
+  No code is redistributed from this project.
+
+- ZepiGit/ZCode-Agent-Kit
+  https://github.com/ZepiGit/ZCode-Agent-Kit
+  commit 9e45d05e32d520ace464c7169bb368dc3cdd8d23
+  Licensed under the MIT License (verified from the LICENSE file at that
+  commit; GitHub's automatic license detection reports NOASSERTION for this
+  repository).
+  Why referenced: its EFFORT_MAPPING.json independently corroborates the
+  reasoning effort levels this repository records for ZCode models.
+  No code is redistributed from this project.
+
+- xhwxt/zcode-token-usage-statusbar
+  https://github.com/xhwxt/zcode-token-usage-statusbar
+  commit 7e35a6f99b0ffe6fbabf00942f0f042921c16ea1
+  Licensed under the MIT License.
+  Why referenced: read-only local usage/quota reporting for the ZCode
+  desktop client.
+  No code is redistributed from this project.
+
+- techysy/CreditDaddy
+  https://github.com/techysy/CreditDaddy
+  commit 85e354766c3fdff8a5cf01b9f5c4de4d349e63e9
+  Licensed under the MIT License.
+  Why referenced: local multi-account management and daily credit handling
+  for ZCode / WorkBuddy / Qoder.
+  No code is redistributed from this project.
+
+- zai-org/ZCode
+  https://github.com/zai-org/ZCode
+  commit 3c5b227649371507ddc4eb46ac5133afe6db1cab
+  Licensed under the Apache License, Version 2.0.
+  Why referenced: the upstream client this repository configures. No client
+  source code is redistributed here.
+
+- TriDefender/zcode-api
+  https://github.com/TriDefender/zcode-api
+  commit e025baaa390a2205c5116cb39ce1bd11bc7a5be2
+  NO LICENSE FILE at this commit, so no permission to copy or redistribute is
+  granted. Studied for context only; no code and no substantial excerpt is
+  reproduced anywhere in this repository.
+
+- dengyie/zcode2api
+  https://github.com/dengyie/zcode2api
+  commit bda8ea15793764dec3dd748e2d17702a85084854
+  Licensed under the GNU Affero General Public License, Version 3.
+  Why referenced: ZCode account operations and reverse-proxy gateway.
+  The AGPL's strong copyleft is incompatible with redistributing its code in
+  this MIT-licensed repository, so it is read-only reference material; no
+  code is copied.
+
+- liu5269/zcode2api
+  https://github.com/liu5269/zcode2api
+  commit 925e929ccb9dddc6c9aa73b30d369090f1e59722
+  Licensed under the GNU Affero General Public License, Version 3.
+  Why referenced: reverse proxy for ZCode free quota.
+  The AGPL's strong copyleft is incompatible with redistributing its code in
+  this MIT-licensed repository, so it is read-only reference material; no
+  code is copied.
+
+-------------------------------------------------------------------------------
+Code copied into this repository
+-------------------------------------------------------------------------------
+
+Two files under upstream/ contain material derived from the projects above.
+Both upstream projects are MIT licensed, which permits reuse provided the
+copyright notice and permission notice accompany the material.
+
+1) upstream/zcode-builtin-reasoning-rules.json
+   Source: https://github.com/ZCodium-project/ZCodium
+            @ 192f9b8c7b7b61c694920203f1b5c7524bdc7d09
+            config/provider/zcode-builtin.json — MIT License
+            Copyright (c) 2026 ZCodium contributors
+   What was copied: four reasoningLevel.map expressions, reproduced
+   verbatim — the three generic modelApiRules (modelMatch ".*") for
+   anthropic-messages, openai-chat-completions and openai-responses, plus
+   one model-specific rule (*.deepseek-v4[.-]1-flash.*) as a worked example.
+   The file also carries a "_source" object recording the URL, SHA and
+   license, and a "_cross_check" object recording that the same three
+   generic expressions appear verbatim in the upstream client's own
+   config/provider/zcode-builtin.json at
+   https://github.com/zai-org/ZCode commit
+   3c5b227649371507ddc4eb46ac5133afe6db1cab (Apache License 2.0,
+   Copyright 2026 Z.ai / Zhipu AI).
+
+2) upstream/reasoning-rules.js
+   Sources: https://github.com/soulvon/AnyBridge
+            @ f40dcc23c76f1b641462fb2a5544a252c5738b27
+            sidecar/lib/thinking-effort.js — MIT License
+            Copyright (c) 2026 soulvon
+            https://github.com/ZCodium-project/ZCodium
+            @ 192f9b8c7b7b61c694920203f1b5c7524bdc7d09
+            config/provider/zcode-builtin.json — MIT License
+            Copyright (c) 2026 ZCodium contributors
+   What was copied: the idea of a per-protocol reasoning-field mapping
+   (anthropic -> thinking + output_config, openai/responses -> reasoning,
+   openai/chat/completions -> reasoning_effort) and the expression shapes
+   used by the built-in rules. The implementation itself is original to this
+   repository; no file was copied verbatim. The header comment records both
+   sources with URL, SHA and license.
+
+==============================================================================
+Third-party data referenced by this repository
+==============================================================================
+
+- Model identifiers, pricing tables, quota figures and protocol attributions
+  for the OpenCode Go plan and for the WorkBuddy gateway originate from
+  those services' own documentation pages, model-list endpoints and admin
+  panel. They are reproduced here as factual, point-in-time observations
+  (see docs/MODEL-PROVIDERS.md) and remain the property of their respective
+  owners. They are subject to change at any time and carry no warranty.
+
+- Model names such as "Claude", "GPT", "Gemini", "DeepSeek", "Qwen", "GLM",
+  "MiniMax", "LongCat", "Hy" / "Hunyuan" and "Kimi" are trademarks of their
+  respective owners. Their appearance here identifies which model is being
+  configured; it does not imply endorsement, affiliation or sponsorship.
+
+==============================================================================
+MIT License (WorkBuddy2API Panel, for reference)
+==============================================================================
+
+MIT License
+
+Copyright (c) 2026 Sliverkiss (original project)
+Copyright (c) 2026 linguo2625469 (this fork)
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+==============================================================================
+Trademarks and endorsement
+==============================================================================
+
+"ZCode", "OpenCode", "WorkBuddy" and "CodeBuddy" are the names of their
+respective owners. This project is an independent utility that configures a
+user's own client; it is not affiliated with, endorsed by, or sponsored by
+any of them.

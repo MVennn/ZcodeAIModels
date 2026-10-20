@@ -1,0 +1,54 @@
+{
+  "_comment": "本仓从 ZCodium（ZCode 的 MIT 授权独立审计 fork）抄录的思考参数规则最小切片。仅供比对/生成参考，不含 ZCode 其它源码。",
+  "_source": {
+    "repo": "https://github.com/ZCodium-project/ZCodium",
+    "sha": "192f9b8c7b7b61c694920203f1b5c7524bdc7d09",
+    "path": "config/provider/zcode-builtin.json",
+    "license": "MIT",
+    "copyright": "Copyright (c) 2026 ZCodium contributors",
+    "sourceSchemaVersion": 1,
+    "sourceRevision": 32
+  },
+  "_cross_check": {
+    "repo": "https://github.com/zai-org/ZCode",
+    "sha": "3c5b227649371507ddc4eb46ac5133afe6db1cab",
+    "path": "config/provider/zcode-builtin.json",
+    "license": "Apache-2.0",
+    "sourceRevision": 33,
+    "note": "zai-org/ZCode 本体的内置规则（revision 33，73 条）与 ZCodium（revision 32，72 条）的这三条通用规则逐字一致 —— 切片对上游客户端同样成立。"
+  },
+  "rules": [
+    {
+      "index": 1,
+      "apiTypeMatch": "anthropic-messages",
+      "modelMatch": ".*",
+      "values": null,
+      "map": "reasoningLevel == \"disabled\"\n  ? {\n      \"thinking\": {\n        \"type\": \"disabled\"\n      }\n    }\n  : {\n      \"thinking\": {\n        \"type\": \"adaptive\"\n      },\n      \"output_config\": {\n        \"effort\": reasoningLevel == \"enabled\" ? \"high\" : reasoningLevel\n      }\n    }",
+      "_note": "通用规则"
+    },
+    {
+      "index": 2,
+      "apiTypeMatch": "openai-chat-completions",
+      "modelMatch": ".*",
+      "values": null,
+      "map": "{\n  \"thinking\": {\n    \"type\": reasoningLevel == \"disabled\" || reasoningLevel == \"none\" ? \"disabled\" : \"enabled\"\n  },\n  \"enable_thinking\": reasoningLevel != \"disabled\" && reasoningLevel != \"none\",\n  \"reasoning_effort\": reasoningLevel == \"disabled\" ? \"none\" : reasoningLevel == \"enabled\" ? \"high\" : reasoningLevel,\n  \"reasoning\": {\n    \"effort\": reasoningLevel == \"disabled\" ? \"none\" : reasoningLevel == \"enabled\" ? \"high\" : reasoningLevel\n  }\n}",
+      "_note": "通用规则"
+    },
+    {
+      "index": 3,
+      "apiTypeMatch": "openai-responses",
+      "modelMatch": ".*",
+      "values": null,
+      "map": "{\n  \"reasoning\": {\n    \"effort\": reasoningLevel == \"disabled\" ? \"none\" : reasoningLevel == \"enabled\" ? \"high\" : reasoningLevel\n  }\n}",
+      "_note": "通用规则"
+    },
+    {
+      "index": 66,
+      "apiTypeMatch": "openai-chat-completions",
+      "modelMatch": ".*deepseek-v4[.-]1-flash(?:[.\\-:/\\[].*)?",
+      "values": null,
+      "map": "reasoningLevel == \"disabled\"\n  ? {\n      \"thinking\": {\n        \"type\": \"disabled\"\n      }\n    }\n  : {\n      \"thinking\": {\n        \"type\": \"enabled\"\n      },\n      \"reasoning_effort\": reasoningLevel\n    }",
+      "_note": "模型专属规则（覆盖通用规则）"
+    }
+  ]
+}

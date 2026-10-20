@@ -1,0 +1,74 @@
+# =============================================================
+# zcode-ai-models —— 忽略规则
+#
+# 原则：源码与文档【不排除】；凭据、活数据缓存、日志、大体积探测结果
+#      与字节码【排除】。
+# =============================================================
+
+# ⚠️ 注意：`opencode-go/probe/` 下 5 个**源码文件**内含明文 `oc_sk_…` API key ——
+#    源码不能靠 gitignore 脱敏，必须改环境变量读取。
+#    在脱敏完成前，不要执行 `git add .`。
+
+# ---- 凭据与密钥（绝对不能进版本库）----
+*.key
+*.pem
+*.p12
+*.pfx
+*.keystore
+*_key*
+*key*.json
+*.env
+.env
+.env.*
+secrets.json
+credentials.json
+
+# provider_config.json 及其备份里带着 apiKey
+*.bak-*
+*.bak
+*.tmp
+*.tmp-*
+
+# ---- WorkBuddy 活数据（本地留存：含账号池探测结果）----
+# 注意：wb_pricing.json（网关倍率快照）与 wb_zcode_probe.json（账号池探测结果）
+#       都不随仓库分发。克隆后要重跑探测，需先按 docs/MAINTENANCE.md §1
+#       手工重建 wb_pricing.json。
+/workbuddy/cache/*.json
+/workbuddy/logs/
+/workbuddy/cache/*.log
+
+# ---- OpenCode-Go 探测原始结果（体积大、可重跑再生，本地留存）----
+/opencode-go/probe/results/
+
+# ---- Python 字节码 ----
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ---- Node ----
+node_modules/
+npm-debug.log*
+yarn-error.log*
+
+# ---- 本地工具与索引（可再生）----
+.codegraph/
+.vscode/
+.idea/
+*.swp
+*~
+
+# ---- 系统文件 ----
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ---- 脱敏未完成前的临时拦截（见 PRIVACY-INVENTORY.md P0-6）----
+# 探测脚本里内嵌明文 API key —— 这些是**源码**，不能靠 gitignore 脱敏，
+# 必须改成环境变量读取（见 docs/PITFALLS.md §9）。在此之前不要提交它们。
+
+# 本机私有凭据回退文件
+.env.local
+.opencode-key

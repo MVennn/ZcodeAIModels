@@ -1,0 +1,290 @@
+{
+ "cn:deepseek-v4.1-flash": {
+  "status": "ok",
+  "http": 200,
+  "detail": "",
+  "checked_at": "2026-10-20T15:34:17"
+ },
+ "global:deepseek-v4.1-flash": {
+  "status": "ok",
+  "http": 200,
+  "detail": "",
+  "checked_at": "2026-10-20T15:37:05"
+ },
+ "cn:glm-5.3-flash": {
+  "status": "ok",
+  "http": 200,
+  "detail": "",
+  "checked_at": "2026-10-20T15:34:23"
+ },
+ "cn:deepseek-v4-pro": {
+  "status": "ok",
+  "http": 200,
+  "detail": "",
+  "checked_at": "2026-10-20T15:35:30"
+ },
+ "cn:kimi-k2.6": {
+  "status": "ok",
+  "http": 200,
+  "detail": "",
+  "checked_at": "2026-10-20T15:35:57"
+ },
+ "cn:minimax-m3": {
+  "status": "ok",
+  "http": 200,
+  "detail": "",
+  "checked_at": "2026-10-20T15:35:07"
+ },
+ "global:deepseek-v4.1-flash-sg": {
+  "status": "rate_limited",
+  "http": 503,
+  "detail": "{\"code\": \"no_healthy_account\", \"gateway_hint\": \"no healthy account available in pool; check /status or retry later\", \"message\": \"all accounts are temporarily unavailable, please retry later\", \"type\": ",
+  "checked_at": "2026-10-20T15:38:03"
+ },
+ "global:step-5-preview": {
+  "status": "error",
+  "http": 503,
+  "detail": "HTTP 503: {\"code\": \"upstream_timeout\", \"gateway_hint\": \"no healthy account available in pool; check /status or retry later\", \"message\": \"upstream timed out: rotation stopped (another account would hit the same ",
+  "checked_at": "2026-10-20T15:37:38"
+ },
+ "global:hy3": {
+  "status": "ok",
+  "http": 200,
+  "detail": "",
+  "checked_at": "2026-10-20T15:36:03"
+ },
+ "global:kimi-k2.6": {
+  "status": "rate_limited",
+  "http": 503,
+  "detail": "{\"code\": \"no_healthy_account\", \"gateway_hint\": \"no healthy account available in pool; check /status or retry later\", \"message\": \"all accounts are temporarily unavailable, please retry later\", \"type\": ",
+  "checked_at": "2026-10-20T15:38:44"
+ },
+ "global:gpt-6-luna": {
+  "status": "blocked",
+  "http": 503,
+  "detail": "not allowed for user type",
+  "checked_at": "2026-10-20T15:36:43"
+ },
+ "global:gemini-3.8-flash": {
+  "status": "blocked",
+  "http": 503,
+  "detail": "not allowed for user type",
+  "checked_at": "2026-10-20T15:36:32"
+ },
+ "global:gpt-6-sol": {
+  "status": "rate_limited",
+  "http": 503,
+  "detail": "{\"code\": \"no_healthy_account\", \"gateway_hint\": \"no healthy account available in pool; check /status or retry later\", \"message\": \"all accounts are temporarily unavailable, please retry later\", \"type\": ",
+  "checked_at": "2026-10-20T15:37:57"
+ },
+ "global:grok-4.7": {
+  "status": "blocked",
+  "http": 503,
+  "detail": "not allowed for user type",
+  "checked_at": "2026-10-20T15:36:26"
+ },
+ "global:gpt-5.6-luna": {
+  "status": "rate_limited",
+  "http": 503,
+  "detail": "{\"code\": \"no_healthy_account\", \"gateway_hint\": \"no healthy account available in pool; check /status or retry later\", \"message\": \"all accounts are temporarily unavailable, please retry later\", \"type\": ",
+  "checked_at": "2026-10-20T15:38:08"
+ },
+ "global:gemini-3.5-flash": {
+  "status": "blocked",
+  "http": 503,
+  "detail": "not allowed for user type",
+  "checked_at": "2026-10-20T15:36:54"
+ },
+ "global:o4-mini": {
+  "status": "rate_limited",
+  "http": 503,
+  "detail": "{\"code\": \"no_healthy_account\", \"gateway_hint\": \"no healthy account available in pool; check /status or retry later\", \"message\": \"all accounts are temporarily unavailable, please retry later\", \"type\": ",
+  "checked_at": "2026-10-20T15:39:04"
+ },
+ "cn:glm-5.2": {
+  "status": "ok",
+  "http": 200,
+  "detail": "",
+  "checked_at": "2026-10-20T15:34:59"
+ },
+ "cn:hy3-x": {
+  "status": "ok",
+  "http": 200,
+  "detail": "",
+  "checked_at": "2026-10-20T15:34:53"
+ },
+ "cn:step-5-preview": {
+  "status": "ok",
+  "http": 200,
+  "detail": "",
+  "checked_at": "2026-10-20T15:35:24"
+ },
+ "cn:glm-5.1": {
+  "status": "rate_limited",
+  "http": 503,
+  "detail": "{\"code\": \"no_healthy_account\", \"message\": \"{\\\"code\\\":11150,\\\"msg\\\":\\\"the reasoning effort value is not supported by the current model\\\",\\\"requestId\\\":\\\"d3bbd87669fdd14f8ebd20fcaa7cadbc\\\",\\\"extError\\\":",
+  "checked_at": "2026-10-20T15:35:36"
+ },
+ "cn:kimi-k3-1": {
+  "status": "rate_limited",
+  "http": 429,
+  "detail": "{\"code\": \"rate_limit_exceeded\", \"gateway_hint\": \"rate limited by upstream; retry after reset\", \"message\": \"{\\\"code\\\":6020,\\\"msg\\\":\\\"queue.waiting.title\\\",\\\"requestId\\\":\\\"538c83974c3d110b5bb79f4c9627b7",
+  "checked_at": "2026-10-20T15:35:40"
+ },
+ "cn:kimi-k2.8-preview": {
+  "status": "ok",
+  "http": 200,
+  "detail": "",
+  "checked_at": "2026-10-20T15:34:28"
+ },
+ "cn:hy4-preview": {
+  "status": "ok",
+  "http": 200,
+  "detail": "",
+  "checked_at": "2026-10-20T15:33:54"
+ },
+ "cn:space-bunny": {
+  "status": "ok",
+  "http": 200,
+  "detail": "",
+  "checked_at": "2026-10-20T15:34:12"
+ },
+ "cn:mimo-v2.6-pro": {
+  "status": "ok",
+  "http": 200,
+  "detail": "",
+  "checked_at": "2026-10-20T15:33:47"
+ },
+ "cn:deepseek-v4-flash": {
+  "status": "ok",
+  "http": 200,
+  "detail": "",
+  "checked_at": "2026-10-20T15:34:43"
+ },
+ "cn:hy3": {
+  "status": "ok",
+  "http": 200,
+  "detail": "",
+  "checked_at": "2026-10-20T15:34:48"
+ },
+ "cn:glm-5.3": {
+  "status": "ok",
+  "http": 200,
+  "detail": "",
+  "checked_at": "2026-10-20T15:34:00"
+ },
+ "cn:minimax-m3.1-flash": {
+  "status": "ok",
+  "http": 200,
+  "detail": "",
+  "checked_at": "2026-10-20T15:34:37"
+ },
+ "cn:hy4-preview-f": {
+  "status": "ok",
+  "http": 200,
+  "detail": "",
+  "checked_at": "2026-10-20T15:35:14"
+ },
+ "cn:glm-5v-turbo": {
+  "status": "ok",
+  "http": 200,
+  "detail": "",
+  "checked_at": "2026-10-20T15:35:46"
+ },
+ "cn:kimi-k2.7": {
+  "status": "ok",
+  "http": 200,
+  "detail": "",
+  "checked_at": "2026-10-20T15:35:51"
+ },
+ "global:gpt-5.4": {
+  "status": "blocked",
+  "http": 503,
+  "detail": "not allowed for user type",
+  "checked_at": "2026-10-20T15:36:09"
+ },
+ "global:gpt-5.6-terra": {
+  "status": "blocked",
+  "http": 503,
+  "detail": "not allowed for user type",
+  "checked_at": "2026-10-20T15:36:14"
+ },
+ "global:gpt-5.6-sol": {
+  "status": "blocked",
+  "http": 503,
+  "detail": "not allowed for user type",
+  "checked_at": "2026-10-20T15:36:20"
+ },
+ "global:gpt-6.1-sol": {
+  "status": "blocked",
+  "http": 503,
+  "detail": "not allowed for user type",
+  "checked_at": "2026-10-20T15:36:37"
+ },
+ "global:gpt-5.5": {
+  "status": "blocked",
+  "http": 503,
+  "detail": "not allowed for user type",
+  "checked_at": "2026-10-20T15:36:48"
+ },
+ "global:gpt-6-astra": {
+  "status": "blocked",
+  "http": 503,
+  "detail": "not allowed for user type",
+  "checked_at": "2026-10-20T15:37:00"
+ },
+ "global:kimi-k2.8-preview": {
+  "status": "rate_limited",
+  "http": 503,
+  "detail": "{\"code\": \"no_healthy_account\", \"gateway_hint\": \"no healthy account available in pool; check /status or retry later\", \"message\": \"all accounts are temporarily unavailable, please retry later\", \"type\": ",
+  "checked_at": "2026-10-20T15:37:10"
+ },
+ "global:kimi-k3": {
+  "status": "error",
+  "http": 503,
+  "detail": "HTTP 503: {\"code\": \"upstream_timeout\", \"gateway_hint\": \"no healthy account available in pool; check /status or retry later\", \"message\": \"upstream timed out: rotation stopped (another account would hit the same ",
+  "checked_at": "2026-10-20T15:37:24"
+ },
+ "global:hy4-preview-f": {
+  "status": "rate_limited",
+  "http": 503,
+  "detail": "{\"code\": \"no_healthy_account\", \"gateway_hint\": \"no healthy account available in pool; check /status or retry later\", \"message\": \"all accounts are temporarily unavailable, please retry later\", \"type\": ",
+  "checked_at": "2026-10-20T15:37:46"
+ },
+ "global:minimax-m3.1-flash": {
+  "status": "rate_limited",
+  "http": 503,
+  "detail": "{\"code\": \"no_healthy_account\", \"gateway_hint\": \"no healthy account available in pool; check /status or retry later\", \"message\": \"all accounts are temporarily unavailable, please retry later\", \"type\": ",
+  "checked_at": "2026-10-20T15:37:51"
+ },
+ "global:glm-5.3-flash": {
+  "status": "rate_limited",
+  "http": 503,
+  "detail": "{\"code\": \"no_healthy_account\", \"gateway_hint\": \"no healthy account available in pool; check /status or retry later\", \"message\": \"all accounts are temporarily unavailable, please retry later\", \"type\": ",
+  "checked_at": "2026-10-20T15:38:19"
+ },
+ "global:glm-5.3": {
+  "status": "error",
+  "http": 503,
+  "detail": "HTTP 503: {\"code\": \"upstream_timeout\", \"gateway_hint\": \"no healthy account available in pool; check /status or retry later\", \"message\": \"upstream timed out: rotation stopped (another account would hit the same ",
+  "checked_at": "2026-10-20T15:38:33"
+ },
+ "global:glm-5.2": {
+  "status": "rate_limited",
+  "http": 503,
+  "detail": "{\"code\": \"no_healthy_account\", \"gateway_hint\": \"no healthy account available in pool; check /status or retry later\", \"message\": \"all accounts are temporarily unavailable, please retry later\", \"type\": ",
+  "checked_at": "2026-10-20T15:38:39"
+ },
+ "global:hy4-preview": {
+  "status": "error",
+  "http": 503,
+  "detail": "HTTP 503: {\"code\": \"upstream_timeout\", \"gateway_hint\": \"no healthy account available in pool; check /status or retry later\", \"message\": \"upstream timed out: rotation stopped (another account would hit the same ",
+  "checked_at": "2026-10-20T15:38:58"
+ },
+ "global:gpt-5.3-codex": {
+  "status": "rate_limited",
+  "http": 503,
+  "detail": "{\"code\": \"no_healthy_account\", \"gateway_hint\": \"no healthy account available in pool; check /status or retry later\", \"message\": \"all accounts are temporarily unavailable, please retry later\", \"type\": ",
+  "checked_at": "2026-10-20T15:39:09"
+ }
+}
