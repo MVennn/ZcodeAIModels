@@ -57,8 +57,8 @@ docs/ 分四类（索引见 [README.md](README.md)）：
 3. **`evidence/PROGRESS.workbuddy.md` ↔ 根 `PROGRESS.md`**：前者是 WorkBuddy 接入线
    的历史台账（拆仓前就是独立文件），后者是本仓的总台账。历史台账**只读**，
    新的批次一律写进根 `PROGRESS.md`。
-4. **`README.md` 的「文件清单」表 ↔ 任何脚本目录的 README**：本仓**不设**脚本级
-   README（脚本少且都带 docstring），文件清单只在根 README 维护一份。
+4. **[TOOLS.md](TOOLS.md) 的工具表 ↔ 任何脚本目录的 README**：本仓**不设**脚本级
+   README（脚本少且都带 docstring），工具清单只在 TOOLS.md 维护一份。
 5. **版本规则 ↔ `CHANGELOG.md` 头部**：版本**号本身**（当前是哪个版本）只在
    [CHANGELOG.md](../CHANGELOG.md) 的版本标题里；**进位规则**只在
    [VERSIONING.md](VERSIONING.md) §1–§2。两处都写规则，迟早各改各的。
@@ -100,11 +100,11 @@ docs/ 分四类（索引见 [README.md](README.md)）：
 
 | 变更 | 必须同步 |
 |---|---|
-| 新增 / 删除 provider，或某个模型的归属档位变了 | [MODEL-PROVIDERS.md](MODEL-PROVIDERS.md) 对应表、根 [README.md](../README.md) 的「已知坑」如有涉及 |
+| 新增 / 删除 provider，或某个模型的归属档位变了 | [MODEL-PROVIDERS.md](MODEL-PROVIDERS.md) 对应表、[PITFALLS.md](PITFALLS.md) 如有涉及 |
 | 某个模型的协议类型变了（chat / messages / responses） | [MODEL-PROVIDERS.md](MODEL-PROVIDERS.md) 的协议列 + [PITFALLS.md](PITFALLS.md) §2 |
 | 关思考参数矩阵变化 | [MODEL-PROVIDERS.md](MODEL-PROVIDERS.md) §5 |
 | 新踩一个坑 | [PITFALLS.md](PITFALLS.md)；若已有对应排错条目，同步 [TROUBLESHOOTING.md](TROUBLESHOOTING.md) |
-| 改了脚本的入参 / 输出路径 | 根 [README.md](../README.md) 的「文件清单」表 + [MAINTENANCE.md](MAINTENANCE.md) |
+| 改了脚本的入参 / 输出路径 | [TOOLS.md](TOOLS.md) + [MAINTENANCE.md](MAINTENANCE.md) |
 | 改了价格表 / 倍率的刷新方式 | [MAINTENANCE.md](MAINTENANCE.md) §1 + [CHANGELOG.md](../CHANGELOG.md) 的「待补」 |
 | 改了 Release 说明格式 | [release-notes/README.md](release-notes/README.md)（正本）+ 本篇 §2 映射表 |
 | 改了凭据的存放位置或新增了凭据 | [SECRETS.md](SECRETS.md)（位置清单）、`.gitignore` 的排除项 |

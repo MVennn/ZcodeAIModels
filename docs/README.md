@@ -21,6 +21,7 @@
 |---|---|
 | [DOC-RULES.md](DOC-RULES.md) | **文档规则正本**：分类定位、单一正本映射表、链接纪律、变更触发矩阵、体量预算 |
 | [MAINTENANCE.md](MAINTENANCE.md) | 维护流程：§1.1 刷价格表的**通用做法**（换供应商照这个做）+ §1.2 / §1.3 两个实例、探测频率与限速、结果快照保留、`--apply` 备份与回退、ZCode 热重载注意事项 |
+| [TOOLS.md](TOOLS.md) | 工具清单（**正本**）：每个脚本的产物与去留标记（长期 / 一次性 / 活数据） |
 | [VERSIONING.md](VERSIONING.md) | **版本晋升规则正本**：三段式进位（有功能更新 +0.1.0 / 没有 +0.0.1）、版本号在哪维护、什么时候不动版本号；**发版与交付规则并入本篇**，不另立 `RELEASE.md` |
 | [SECRETS.md](SECRETS.md) | **凭据位置正本**：**任何供应商的凭据都只走环境变量**；OpenCode-Go API key、WorkBuddy 网关 key、ZCode 配置路径、活数据缓存在哪儿 —— **只写位置，不写值**；上传公开仓库前必读 |
 | [release-notes/README.md](release-notes/README.md) | **Release 说明格式正本**：形状、动词、覆盖率红线、别写这些 |
@@ -36,7 +37,7 @@
 
 | 位置 | 一句话定位 |
 |---|---|
-| 仓库根 [README.md](../README.md) | 门面：这是什么（通用能力 vs 本次实例）、适用环境、快速开始、**通用方法：接一个新的模型供应商**、文件清单、与 ZCode 的关系、已知坑 |
+| 仓库根 [README.md](../README.md) | 门面：这是什么、适用环境、快速开始、接一个新的模型供应商（四步）、与 ZCode 的关系、反馈、免责声明、开源鸣谢、许可证 |
 | 仓库根 [AGENTS.md](../AGENTS.md) | 机器协议：PROGRESS 按逻辑任务分家、凭据走环境变量、CodeGraph |
 | 仓库根 [CHANGELOG.md](../CHANGELOG.md) | 更新日志；首段记录本次拆分建仓。**版本号本身**在它的版本标题里，**进位规则**见 [VERSIONING.md](VERSIONING.md) |
 | 仓库根 [PROGRESS.md](../PROGRESS.md) | 本仓唯一进度台账（追加式批次日志） |

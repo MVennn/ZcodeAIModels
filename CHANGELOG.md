@@ -121,3 +121,18 @@
 - 调整 文档 —— `PROGRESS.md`、`evidence/PROGRESS.workbuddy.md` 里的设备型号改为通用措辞
   （历史探测结论与数据一律保留原样，并保留采集时点）。
 - 调整 文档 —— `memories/` 下四个文件里的绝对路径改为仓内相对路径。
+
+### README 收敛批次（2026-10-21）
+
+参照系列仓 gsauxiliary 的门面格式，把根 `README.md` 收敛为**面向用户**的说明，
+开发者向的内容下沉 `docs/`：
+
+- 调整 文档 —— 根 README 重写为 logo 头 + 徽章 + 这是什么 / 适用环境 / 快速开始 /
+  接一个新的模型供应商（四步概览）/ 与 ZCode 的关系 / 反馈 / 免责声明 / 开源鸣谢 / 许可证；
+  删掉「文件清单」「目录结构」「已知坑」「记忆文档」「参与与治理」等开发者向章节
+- 调整 文档 —— 新增 [docs/TOOLS.md](docs/TOOLS.md)：工具清单**正本**（产物与去留标记），
+  取代原根 README 的「文件清单」；「已知坑」统一看 [docs/PITFALLS.md](docs/PITFALLS.md)
+- 调整 文档 —— DOC-RULES / MAINTENANCE / MODEL-PROVIDERS / docs/README 里指向根 README
+  「文件清单 / 已知坑」的引用，同步改指新位置
+- 修复 CI —— `.gitlab-ci.yml` 原先只定义了隐藏模板 `.python`、没有任何可见作业，
+  流水线一创建就失败（零作业）；改为 `syntax` 与 `docs` 两个真实作业

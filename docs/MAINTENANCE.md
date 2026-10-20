@@ -222,7 +222,7 @@ python workbuddy/workbuddy_zcode_sync.py           # 只打印计划
 | **每月** | 手工刷新 `workbuddy/cache/wb_pricing.json`；复核 [MODEL-PROVIDERS.md](MODEL-PROVIDERS.md) 里的价格 / 额度 |
 | **换套餐 / 换账号池后** | 全量重探 WorkBuddy（`--sleep 20`）+ 重跑同步 |
 | **每次接入新供应商** | 照 §1.1 的通用做法写一份取数脚本 + 在 [MODEL-PROVIDERS.md](MODEL-PROVIDERS.md) §0 的表里补一行；凭据按 [SECRETS.md](SECRETS.md) §2、§3.5 加环境变量 |
-| **每次改动脚本** | 同步根 [README.md](../README.md) 的「文件清单」表 |
+| **每次改动脚本** | 同步 [TOOLS.md](TOOLS.md) 的工具表 |
 | **每次新增 / 删除文档** | 同步 [docs/README.md](README.md) 索引（孤儿文档零容忍） |
 | **每次踩新坑** | 写进 [PITFALLS.md](PITFALLS.md)；有对应排错条目的同步 [TROUBLESHOOTING.md](TROUBLESHOOTING.md) |
 | **每次发版** | 按 [VERSIONING.md](VERSIONING.md) §1 定版本号，写 [CHANGELOG.md](../CHANGELOG.md) + `docs/release-notes/<版本>.md` |

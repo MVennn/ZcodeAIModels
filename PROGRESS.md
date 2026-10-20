@@ -121,3 +121,22 @@ ZCode 的 chat 模型原按用途分组（速度/经济），组名与价格脱�
 
 ---
 
+# 2026-10-21 README 收敛 + 流水线修复
+
+## 背景
+- 参照系列仓 gsauxiliary 的门面格式，根 `README.md` 收敛为面向用户的说明。
+- `.gitlab-ci.yml` 只定义了隐藏模板 `.python`（无可见作业），流水线零作业、创建即失败。
+
+## 已完成变更
+- [x] 重写根 `README.md`（logo 头 + 徽章 + 九节用户门面）
+- [x] 新增 `docs/TOOLS.md`（工具清单正本），DOC-RULES / MAINTENANCE / MODEL-PROVIDERS / docs/README 引用同步
+- [x] 重写 `.gitlab-ci.yml`：`syntax` + `docs` 两个真实作业
+- [x] CHANGELOG 增补「README 收敛批次」
+
+## 自检
+- `python tools/check-docs.py` ✓（19 篇）
+- ast.parse 全部 `.py` ✓；`node --check` 全部非 vendored `.js` ✓
+
+## 状态: 已完成
+
+---
