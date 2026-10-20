@@ -17,7 +17,11 @@ import re
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SKIP_DIRS = {".git", "node_modules", "dist", "__pycache__", "third-party", "memories", "evidence"}
+SKIP_DIRS = {".git", "node_modules", "dist", "__pycache__", "third-party", "memories", "evidence",
+            # vault/ 被 .gitignore 排除，不属于版本库里的文档
+            "vault"}
+# 冻结目录：归档 / 拆分记录是**历史**，不套用活文档的规则（引言块、孤儿判定）
+FROZEN_DIRS = ("docs/archive/", "docs/split/", "archive/")
 SKIP_EXT = {".png", ".jpg", ".jpeg", ".gif", ".ico", ".pdf", ".mrs", ".gz", ".pyc", ".woff", ".woff2"}
 LINK = re.compile(r"\[[^\]]*\]\(([^)]+)\)")
 HAS_ONE_LINER = re.compile(r"一句话")
@@ -40,8 +44,13 @@ def collect(dirs):
         for dp, dn, fn in os.walk(base):
             dn[:] = [x for x in dn if x not in SKIP_DIRS]
             for f in fn:
-                if f.endswith(".md"):
-                    mds.append(os.path.normpath(os.path.join(dp, f)))
+                if not f.endswith(".md"):
+                    continue
+                norm = os.path.normpath(os.path.join(dp, f))
+                rel = os.path.relpath(norm, ROOT).replace(os.sep, "/")
+                if any(rel.startswith(fd) or fd in rel for fd in FROZEN_DIRS):
+                    continue
+                mds.append(norm)
     return sorted(set(mds))
 
 
@@ -86,6 +95,12 @@ def main() -> int:
                 problems.append(f"{rel}: 链接目标不存在 → {link}")
                 continue
             linked.add(os.path.abspath(target))
+            # 链接指向**目录**时，目录下的文档也算被引用（索引里常见 `archive/` 这种写法）
+            if os.path.isdir(target):
+                for dp2, dn2, fn2 in os.walk(target):
+                    for f2 in fn2:
+                        if f2.endswith(".md"):
+                            linked.add(os.path.abspath(os.path.join(dp2, f2)))
             if frag and target.endswith(".md") and frag not in anchor_map.get(target, set()):
                 problems.append(f"{rel}: 目标锚点不存在 → {link}")
         if (not HAS_ONE_LINER.search(s)
