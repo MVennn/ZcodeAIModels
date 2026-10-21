@@ -225,5 +225,9 @@ WorkBuddy2API 三个 provider 的模型顺序改为「主力置顶 → CN 优先
 - 调整 文档 —— 按榜单四方向重排本仓在配模型：`BENCHMARKS.md` §5.1 / §5.2 增方向榜与
   每模型最强方向；`MODEL-PROVIDERS.md` §6.1 增方向首选表；**provider 分档未改**，
   方向只作第二轴（理由见 BENCHMARKS §5.3）
+- 调整 文档 —— 以 `deepseek-v4.1-flash`（总分 342.40 / 输出 $1.20/M / 倍率 0.11）
+  为 100 基准，新增 `BENCHMARKS.md` §5.4 与 `MODEL-PROVIDERS.md` §6.2：
+  按智力指数、价格指数、性价比把在配模型分为主力 / 低耗 / 高耗 / 免费 / 备用；
+  未上榜模型保持原组，**provider 分组本身未改**
 
 

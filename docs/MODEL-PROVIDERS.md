@@ -390,6 +390,23 @@ ZCode 的内置规则 `resources/config/provider/zcode-builtin.json` 里：
 > 方向首选只回答「这个用途先试谁」，**不改 provider 分档**；
 > 分数、口径与平台差异见 [BENCHMARKS.md](BENCHMARKS.md) §5.1–§5.3。
 
+### 6.2 按 DeepSeek 基准的性价比分档（外部榜交叉，2026-09-11）
+
+以 `deepseek-v4.1-flash` = 智力 100 / 价格 100；规则与逐项指数见
+[BENCHMARKS.md](BENCHMARKS.md) §5.4。
+
+| 推荐档 | OpenCode-Go | WorkBuddy |
+|---|---|---|
+| 主力 | `deepseek-v4.1-flash`、`qwen3.8-flash`（messages，优先用） | `cn:deepseek-v4.1-flash`、`global:deepseek-v4.1-flash-sg`（global 受限） |
+| 低耗 | `glm-5.3-flash`、`muse-spark-1.3/1.2`（responses）、`hy3` | `cn:glm-5.3-flash`、`global:glm-5.3-flash`、`cn:hy3-x` |
+| 高耗 | — | `global:hy4-preview` |
+| 免费 | `beam-free` 等（未上榜，按原组） | `cn:hy4-preview`（免代最强）、`global:deepseek-v4.1-flash`、`cn/global:hy3` |
+| 备用 | `minimax-m3`（只留 1M 上下文用途） | `cn:deepseek-v4-flash`、`cn:minimax-m3` |
+
+> 未上榜的模型不参与分档，保持当前组。**providerId / 分组本身未改**：
+> 这张表只决定组内优先顺序与「谁该排最后」；要把「备用」落成独立组，
+> 需要新增 provider 并改同步脚本。价格与分数的口径见 BENCHMARKS §5.4。
+
 ---
 
 ## 7. 维护本文档的规则
