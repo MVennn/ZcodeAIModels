@@ -187,8 +187,8 @@ python -c "import json,os; json.load(open(os.path.expanduser('~/.zcode/v2/provid
 
 | 脚本 | 行为 | 风险 |
 |---|---|---|
-| `go_model_sync.py --apply` | 只**追加**模型 + 改一个 provider 显示名（"备用"→"响应"） | 低。已有模型的**组内顺序**可能被打乱（新模型追加到组尾） |
-| `workbuddy_zcode_sync.py --apply` | **整条替换** `workbuddy-free/low/high` 三个 provider 及其全部模型规则 | 中。这三个 provider 上你手工加的模型会被冲掉；其它 provider 不受影响 |
+| `go_model_sync.py --apply` | 只**追加**模型 + 备用档重排（`BACKUP_MODEL_IDS`）+ 改一个 provider 显示名（"备用"→"响应"） | 低。已有模型的**组内顺序**可能被打乱（新模型追加到组尾） |
+| `workbuddy_zcode_sync.py --apply` | **整条替换** `workbuddy-free/low/high/backup` 四个 provider 及其全部模型规则 | 中。这四个 provider 上你手工加的模型会被冲掉；其它 provider 不受影响 |
 
 **正确姿势**：先不带 `--apply` 跑一遍，看清它要写什么，再决定。
 
@@ -268,7 +268,7 @@ GPU / renderer / crashpad / CLI 宿主晚退几秒不会拖住网关。网关「
 | `-DrainTimeoutSeconds` | `30` | 停网关前等在途连接排空的上限，超时才强制停止 |
 | `-ProcessName` | `ZCode` | 被跟随的进程名；换客户端时改这个 |
 
-`-Status` 会顺带读出 `provider_config.json` 里 `workbuddy-*` 三个 provider 的模型数、
+`-Status` 会顺带读出 `provider_config.json` 里 `workbuddy-*` 四个 provider 的模型数、
 `baseUrl` 是否指向本网关、`apiKey` 是否存在（**只报状态，不打印值**）。
 ZCode 每次启动时，守护器也会做同一项校验，发现不匹配就写一条「联动警告」到日志。
 

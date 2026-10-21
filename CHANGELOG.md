@@ -228,6 +228,20 @@ WorkBuddy2API 三个 provider 的模型顺序改为「主力置顶 → CN 优先
 - 调整 文档 —— 以 `deepseek-v4.1-flash`（总分 342.40 / 输出 $1.20/M / 倍率 0.11）
   为 100 基准，新增 `BENCHMARKS.md` §5.4 与 `MODEL-PROVIDERS.md` §6.2：
   按智力指数、价格指数、性价比把在配模型分为主力 / 低耗 / 高耗 / 免费 / 备用；
-  未上榜模型保持原组，**provider 分组本身未改**
+  未上榜模型保持原组（本轮只做选型层，备用档落地见下一条）
+
+### 备用档落地（2026-10-21）
+
+- 新增 provider —— `opencode-go-chat-backup`（备用）：按 DeepSeek 基准性价比 < 1，
+  移入 `minimax-m3`；`opencode-go-chat-slow` 只剩 `longcat-2.0`
+- 新增 provider —— `workbuddy-backup`（备用）：移入 `cn:deepseek-v4-flash`、
+  `cn:minimax-m3`；同时按实时价把 `cn:hy4-preview` 从免代移到高代（x0.29）
+- 变更 脚本 —— `go_model_sync.py` 增 `BACKUP_MODEL_IDS` / `--reclassify-only`；
+  `workbuddy_zcode_sync.py` 增第四档 `backup` / `--reclassify-only`
+- 变更 配置 —— 本机 `provider_config.json` 已写入；备份
+  `.bak-reclassify-20261021-174621`、`.bak-wbproxy-20261021-174621`、
+  `.bak-wbproxy-20261021-174649`
+- 调整 文档 —— MODEL-PROVIDERS §2.1 / §2.5.1 / §4.2 / §4.3 / §4.5.1 / §6.2、
+  TOOLS、MAINTENANCE、TROUBLESHOOTING、BENCHMARKS §5.4
 
 

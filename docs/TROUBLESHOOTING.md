@@ -178,7 +178,7 @@ curl -s http://127.0.0.1:7863/panel/api/models -H "Authorization: Bearer $WB_GAT
 | 原因 | 解法 |
 |---|---|
 | 价格表**忘了刷新** | 跑 `workbuddy/workbuddy_fetch_pricing.py`（`--dry-run` 先看差异）；别的供应商照 [MAINTENANCE.md](MAINTENANCE.md) §1.1 的通用做法用自己的取数脚本 |
-| 限时免费到期（网关日志：`free tier ended, now 0.227 credits/1k`） | 重新取倍率，重排三档 |
+| 限时免费到期（网关日志：`free tier ended, now 0.227 credits/1k`） | 重新取倍率，重排四档 |
 | 网关未重启时 `/panel/api/models` 只返回 34 个 global 模型 | 重启网关再取 |
 
 ---
@@ -212,7 +212,7 @@ for f in [p]+b:
 | 原因 | 适用范围 | 解法 |
 |---|---|---|
 | **ZCode 界面保存时整份写回** | **【通用】** | 写配置期间不要在界面里改；重新跑脚本 |
-| `workbuddy_zcode_sync.py` **整条替换** `workbuddy-free/low/high` 三个 provider | **【实例 B】** | 你在这三个 provider 上手工加的模型会被冲掉 —— 加完要重跑脚本，别手改配置 |
+| `workbuddy_zcode_sync.py` **整条替换** `workbuddy-free/low/high/backup` 四个 provider | **【实例 B】** | 你在这四个 provider 上手工加的模型会被冲掉 —— 加完要重跑脚本，别手改配置 |
 | `go_model_sync.py` 把新模型追加到**组尾**，打乱了手工排的顺序 | **【实例 A】** | 组内顺序由脚本按版本号倒序排；要固定顺序就改脚本后重跑 |
 | 别的脚本 / 别的会话也在写同一份配置 | **【通用】** | 同一时间只跑一个写入者 |
 

@@ -11,15 +11,18 @@ write the same three places of `provider_config.json` (see docs/MODEL-PROVIDERS.
 §1).  The ZCode-side write path itself is provider-neutral.
 
 The gateway bills by a credit multiplier ("倍率"): smaller = cheaper. Models are
-split into three providers by that multiplier. The anchor price is the daily
-driver `cn:deepseek-v4.1-flash` at x0.11; anything above x0.30 (~2.7x) is
-treated as too expensive and excluded ("贵不加"). Inside every provider the
-list is ordered CN-first, then grouped by vendor (company), cheapest-first
-within each vendor; the pinned model goes first:
+split into four providers. The first three are rate tiers; the fourth is a
+value tier for models whose benchmark score per price is below the deepseek
+anchor (see BACKUP_MODEL_IDS and docs/BENCHMARKS.md §5.4). The anchor price is
+the daily driver `cn:deepseek-v4.1-flash` at x0.11; anything above x0.30
+(~2.7x) is treated as too expensive and excluded ("贵不加"). Inside every
+provider the list is ordered CN-first, then grouped by vendor (company),
+cheapest-first within each vendor; the pinned model goes first:
 
     workbuddy-free   "免代"   rate == 0        (限时免费 / Free now / 独家限免)
     workbuddy-low    "低代"   0 < rate <= 0.16 (主力价位，只收这一档)
     workbuddy-high   "高代"   0.16 < rate <= --max-rate (default 0.30)
+    workbuddy-backup "备用"   性价比 < 1（以 deepseek-v4.1-flash 为 100 基准）
 
 The ceiling keeps every listed model priced in the same ballpark as
 deepseek-v4.1-flash (x0.11 list / x0.00 global promo) instead of the x1.3-x6.7
@@ -63,11 +66,13 @@ PROVIDER_IDS = {
     "free": "workbuddy-free",
     "low": "workbuddy-low",
     "high": "workbuddy-high",
+    "backup": "workbuddy-backup",
 }
 PROVIDER_NAMES = {
     "free": "免代",
     "low": "低代",
     "high": "高代",
+    "backup": "备用",
 }
 # Tier boundaries on the effective credit multiplier. Anchor = the pin
 # cn:deepseek-v4.1-flash at x0.11; users only accept that price band, so
@@ -76,6 +81,10 @@ PROVIDER_NAMES = {
 FREE_MAX = 0.0
 LOW_MAX = 0.16
 DEFAULT_MAX_RATE = 0.30
+
+# Value tier: benchmark score per price below the deepseek anchor.
+# See docs/BENCHMARKS.md §5.4; new models must be added by hand.
+BACKUP_MODEL_IDS = {"cn:deepseek-v4-flash", "cn:minimax-m3"}
 
 # User-facing order inside each tier provider:
 #   1. pinned models first (the daily driver)
@@ -94,8 +103,8 @@ VENDOR_ORDER = (
     "other",      # 匿名 / 未标注厂商
 )
 # Reverse-proxy providers: 低代 first (it holds the pinned daily driver), then
-# 免代, then 高代.  ZCode renders personal providers in providerOrder sequence.
-TIER_DISPLAY_ORDER = ("low", "free", "high")
+# 免代, 高代, and 备用 last.  ZCode renders personal providers in providerOrder.
+TIER_DISPLAY_ORDER = ("low", "free", "high", "backup")
 
 GROUP = "standard-personal"
 GATEWAY_BASE = os.environ.get("WB_GATEWAY_BASE", "http://127.0.0.1:7863")
@@ -202,7 +211,9 @@ def load_probe() -> dict[str, dict]:
         return {}
 
 
-def tier_of(rate: float | None) -> str | None:
+def tier_of(rate: float | None, model_id: str | None = None) -> str | None:
+    if model_id in BACKUP_MODEL_IDS:
+        return "backup"
     if rate is None:
         return None
     if rate <= FREE_MAX:
@@ -261,7 +272,7 @@ def build_model_rule(provider_id: str, model: dict, probe_rec: dict | None) -> d
 
 
 def reorder_provider_order(root: dict, active_ids: set[str]) -> None:
-    """Keep the three reverse-proxy providers contiguous, in display order.
+    """Keep the reverse-proxy providers contiguous, in display order.
 
     ZCode renders personal providers in `providerOrder` sequence, so this is
     what decides whether 低代 (holding the pinned daily driver) shows up first.
@@ -286,12 +297,95 @@ def write_config(config: dict) -> Path:
     return backup
 
 
+def provider_rules_of(config: dict) -> list[dict]:
+    root = config.setdefault("config", {})
+    pcr = root.setdefault("providerConfigRules", {})
+    return pcr.setdefault("providerRules", [])
+
+
+def model_rules_of(config: dict) -> list[dict]:
+    root = config.setdefault("config", {})
+    mcr = root.setdefault("modelConfigRules", {})
+    return mcr.setdefault("providerModelRules", [])
+
+
+def ensure_provider(config: dict, tier: str, template_tier: str = "high") -> dict:
+    """Clone the template tier provider under a new id/name; idempotent."""
+    pid = PROVIDER_IDS[tier]
+    rules = provider_rules_of(config)
+    for r in rules:
+        if r.get("providerId") == pid:
+            r["providerName"] = PROVIDER_NAMES[tier]
+            return r
+    template_id = PROVIDER_IDS[template_tier]
+    template = next((r for r in rules if r.get("providerId") == template_id), None)
+    if template is None:
+        raise RuntimeError("template provider not found: " + template_id)
+    new = json.loads(json.dumps(template))
+    new["providerId"] = pid
+    new["providerName"] = PROVIDER_NAMES[tier]
+    new["config"]["personalModelIds"] = []
+    new["config"]["modelOrder"] = []
+    rules.append(new)
+    return new
+
+
+def move_model(config: dict, model_id: str, target_pid: str) -> None:
+    """Move a model out of every provider and into the target one."""
+    for r in provider_rules_of(config):
+        c = r.get("config", {})
+        for key in ("personalModelIds", "modelOrder"):
+            ids = c.get(key)
+            if isinstance(ids, list) and model_id in ids:
+                c[key] = [m for m in ids if m != model_id]
+    target = next((r for r in provider_rules_of(config) if r.get("providerId") == target_pid), None)
+    if target is None:
+        raise RuntimeError("provider not found: " + target_pid)
+    for key in ("personalModelIds", "modelOrder"):
+        ids = target["config"].setdefault(key, [])
+        if model_id not in ids:
+            ids.append(model_id)
+    for m in model_rules_of(config):
+        if m.get("modelId") == model_id:
+            m["providerId"] = target_pid
+            break
+
+
+def reclassify_backup(config: dict) -> list[str]:
+    """Ensure workbuddy-backup exists and holds BACKUP_MODEL_IDS.
+    Returns the list of models actually moved."""
+    present = {
+        mid for mid in BACKUP_MODEL_IDS
+        if any(mid in (r.get("config", {}).get("personalModelIds") or [])
+               for r in provider_rules_of(config))
+    }
+    if not present:
+        return []
+    ensure_provider(config, "backup", "high")
+    moved: list[str] = []
+    for mid in sorted(present):
+        before = next(
+            (r["providerId"] for r in provider_rules_of(config)
+             if mid in (r.get("config", {}).get("personalModelIds") or [])),
+            None,
+        )
+        move_model(config, mid, PROVIDER_IDS["backup"])
+        if before != PROVIDER_IDS["backup"]:
+            moved.append(mid)
+    active = {r.get("providerId") for r in provider_rules_of(config)}
+    reorder_provider_order(config["config"], active)
+    return moved
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--apply", action="store_true", help="write config (default dry run)")
     ap.add_argument("--reorder-only", action="store_true",
                     help="reorder existing workbuddy providers/models only; "
                          "do not change membership or tiers")
+    ap.add_argument("--reclassify-only", action="store_true",
+                    help="only move BACKUP_MODEL_IDS into workbuddy-backup; "
+                         "no gateway fetch")
     ap.add_argument("--api-key", default=GATEWAY_KEY, help="gateway api_key")
     ap.add_argument("--max-rate", type=float, default=DEFAULT_MAX_RATE,
                     help="highest credit multiplier to include, anything above "
@@ -303,6 +397,23 @@ def main() -> int:
     ap.add_argument("--pricing-file", default=str(PRICING_FILE))
     ap.add_argument("--probe-file", default=str(PROBE_FILE))
     args = ap.parse_args()
+
+    if args.reclassify_only:
+        config = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+        moved = reclassify_backup(config)
+        print(f"config      : {CONFIG_FILE}")
+        print("mode        : reclassify only (no gateway fetch)")
+        print("moved       : " + (", ".join(moved) if moved else "(none)"))
+        if not args.apply:
+            print("[dry-run] no changes written; pass --apply to write")
+            return 0
+        if not moved:
+            print("nothing to do")
+            return 0
+        backup = write_config(config)
+        print(f"backup      : {backup.name}")
+        print(f"written     : {CONFIG_FILE}")
+        return 0
 
     pricing = load_pricing_file()
     probe = load_probe()
@@ -360,7 +471,7 @@ def main() -> int:
         return 0
 
     excluded: list[tuple[str, str]] = []
-    tiers: dict[str, list[dict]] = {"free": [], "low": [], "high": []}
+    tiers: dict[str, list[dict]] = {"free": [], "low": [], "high": [], "backup": []}
 
     for rec in sorted(merged, key=model_sort_key):
         mid = str(rec["id"])
@@ -382,7 +493,7 @@ def main() -> int:
             if pstat in ("error", "rate_limited"):
                 excluded.append((mid, pstat or "unprobed"))
                 continue
-        tier = tier_of(rate)
+        tier = tier_of(rate, mid)
         if tier is None:
             excluded.append((mid, "unclassified"))
             continue

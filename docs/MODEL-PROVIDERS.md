@@ -38,7 +38,7 @@
 |---|---|---|
 | 计价单位 | 美元 / M token（输入 / 输出单价） | 积分倍率（`credits` 牌价 / `promo_credits` 生效价） |
 | 「这个模型多耐用」 | 额度可撑输出 = 月额度 ÷ 输出单价 | 倍率越小越便宜 |
-| 分档口径 | 按额度可撑输出切六档（主力人工精选） | 按倍率切三档（免代 / 低代 / 高代） |
+| 分档口径 | 按额度可撑输出切七档（主力人工精选） | 按倍率切三档 + 备用价值档（免代 / 低代 / 高代 / 备用） |
 | 协议种类 | chat / messages / responses 三种并存 | 全部 OpenAI 兼容（`openai-chat-completions`） |
 | 目录接口 | `/zen/go/v1/models` + 文档页 + 全量目录页 + 本地配置（**四源并集**） | `/panel/api/models`（与 `/v1/models` 同源） |
 | 账号池限制 | 套餐额度按模型分别计算 | 账号池有类型限制（`personal_free_user`，见 §4.7） |
@@ -74,14 +74,15 @@
 入口：`https://opencode.ai/zen/go/v1`（Go 套餐，$10 与 $40 两档价格相同、额度不同）。
 限额**按模型分别计算**：5 小时 = 月额度 20%、每周 50%、每月 100%。
 
-### 2.1 六个 provider
+### 2.1 七个 provider
 
 | providerId | 显示名 | 协议 `api.type` | 模型数 | 收录口径 |
 |---|---|---|---:|---|
 | `opencode-go-chat` | 主力 | `openai-chat-completions` | 4 | **人工精选**，自动收录脚本不往这里放 |
 | `opencode-go-chat-free` | 免费 | `openai-chat-completions` | 3 | 输出单价 = 0（含名字带 free 的） |
 | `opencode-go-chat-fast` | 低耗 | `openai-chat-completions` | 4 | 「额度可撑输出」≥ 80M token |
-| `opencode-go-chat-slow` | 高耗 | `openai-chat-completions` | 2 | 其余有价模型（输出单价 ≤ $1.60） |
+| `opencode-go-chat-slow` | 高耗 | `openai-chat-completions` | 1 | 其余有价模型（输出单价 ≤ $1.60） |
+| `opencode-go-chat-backup` | 备用 | `openai-chat-completions` | 1 | 以 DeepSeek 为基准性价比 < 1，人工指定 |
 | `opencode-go-messages` | 对话 | `anthropic-messages` | 4 | 协议归属 = messages |
 | `opencode-go-responses` | 响应 | `openai-responses` | 4 | 协议归属 = responses |
 
@@ -89,6 +90,9 @@
 > 换模型 = 换一份独立额度）。
 > `opencode-go-responses` 的显示名原先叫「备用」，2026-10-20 改名「响应」——
 > 现在装的是最耐用的模型，不再是备胎；**`providerId` 未变**。
+> 2026-10-21 新增的「备用」是另一个 provider `opencode-go-chat-backup`，与这次改名无关。
+> `opencode-go-chat-backup` 是 2026-10-21 新增的**价值档**：不按价格自动进，
+> 只收 `BACKUP_MODEL_IDS`（当前 `minimax-m3`）；依据见 [BENCHMARKS.md](BENCHMARKS.md) §5.4。
 
 ### 2.2 主力 `opencode-go-chat`
 
@@ -120,8 +124,13 @@
 
 | 模型 | 协议 | 工具调用 | 关思考 | 输入/输出 $/M | 月额度 | 额度可撑输出 | 备注 |
 |---|---|---|---|---|---|---|---|
-| minimax-m3 | 仅 chat | ✅ 已实测 | `thinking:{type:"disabled"}`（配了空 map 覆盖） | 0.30 / 1.20 | $60 | 50M | 1M 上下文，单价高，按需用 |
 | longcat-2.0 | 仅 chat | ✅ 已实测 | `thinking:{type:"disabled"}` | 0.30 / 1.20 | $60 | 50M | 慢且贵，只适合批处理 |
+
+### 2.5.1 备用 `opencode-go-chat-backup`
+
+| 模型 | 协议 | 工具调用 | 关思考 | 输入/输出 $/M | 月额度 | 额度可撑输出 | 备注 |
+|---|---|---|---|---|---|---|---|
+| minimax-m3 | 仅 chat | ✅ 已实测 | `thinking:{type:"disabled"}`（配了空 map 覆盖） | 0.30 / 1.20 | $60 | 50M | 1M 上下文；性价比 0.82（DeepSeek 基准），只按需用 |
 
 ### 2.6 对话 `opencode-go-messages`（`anthropic-messages`）
 
@@ -199,19 +208,21 @@
   `cn:auto`、`global:auto-chat`、`global:default-model`、`global:primary-model`、
   `global:deep-model`、`global:fast-model`、`global:balanced-model`、`global:enhance-1.0`。
 
-### 4.2 倍率与三档
+### 4.2 倍率与四档
 
 `credits` = 牌价，`promo_credits` = 生效价（取 `promo_credits` 优先）。
 **倍率越小越便宜**。
 
-| providerId | 显示名 | 倍率区间（按牌价分档） | 模型数 |
+| providerId | 显示名 | 分档口径 | 模型数 |
 |---|---|---|---:|
 | `workbuddy-low` | 低代 | 0 < 倍率 ≤ 0.16（主力价位） | 8 |
-| `workbuddy-free` | 免代 | 生效价 = 0.00 | 6 |
-| `workbuddy-high` | 高代 | 0.16 < 倍率 ≤ 0.30 | 4 |
+| `workbuddy-free` | 免代 | 生效价 = 0.00 | 5 |
+| `workbuddy-high` | 高代 | 0.16 < 倍率 ≤ 0.30 | 3 |
+| `workbuddy-backup` | 备用 | 以 DeepSeek 为基准性价比 < 1（不是倍率区间） | 2 |
 
-**界面顺序是 低代 → 免代 → 高代**（`providerOrder`）。低代排第一，是因为
-日常主力 `cn:deepseek-v4.1-flash` 在这一档；免代虽然免费，但模型不是主力。
+**界面顺序是 低代 → 免代 → 高代 → 备用**（`providerOrder`）。低代排第一，是因为
+日常主力 `cn:deepseek-v4.1-flash` 在这一档；免代虽然免费，但模型不是主力；
+备用是价值档，排最后。
 
 **分价口径（2026-10-21 起）：只接受主力价位的模型。** 锚点是主力的
 `cn:deepseek-v4.1-flash` = **x0.11**——
@@ -220,6 +231,10 @@
 - x0.17 – x0.30（约 1.5–2.7 倍）→ 高代；
 - **x0.30 以上"贵不加"**：同步脚本一律排除，自动收录也不会再引进
   （原高代 x0.50–0.79 = 主力的 **4.5–7.2 倍**，整组移出）。
+
+`workbuddy-backup` **不按倍率区间分**：命中 `BACKUP_MODEL_IDS` 的模型优先于倍率分档，
+用来收「价格仍在 x0.30 以内、但按 DeepSeek 基准性价比 < 1」的模型；
+依据见 [BENCHMARKS.md](BENCHMARKS.md) §5.4。
 
 **组内顺序**（`personalModelIds` 与 `modelOrder` 写同一份列表）：
 
@@ -230,18 +245,18 @@
 4. 同公司内按倍率升序，同倍率按 id 字典序。
 
 排序与分价规则的正本是 `workbuddy/workbuddy_zcode_sync.py` 的 `PINNED_MODEL_IDS`
-/ `VENDOR_ORDER` / `LOW_MAX` / `DEFAULT_MAX_RATE`；改完用 `--reorder-only --apply`
-只重排、不动成员与档位，改分价阈值则重新 `--apply`。
+/ `VENDOR_ORDER` / `LOW_MAX` / `DEFAULT_MAX_RATE` / `BACKUP_MODEL_IDS`；改完用
+`--reorder-only --apply` 只重排、不动成员与档位，改分价阈值则重新 `--apply`；
+只搬备用档用 `--reclassify-only --apply`。
 
-> **2026-10-21 促销漂移已并入分档**：`cn:hy4-preview` 生效价 `0x` → 进免代；
-> `cn:glm-5.2` 促销 x0.50 在新上限之外 → 随原高代一起移出。
+> **2026-10-21 促销漂移已并入分档**：`cn:hy4-preview` 生效价回到 `x0.29` →
+> 从免代移到高代；`cn:glm-5.2` 促销 x0.50 在新上限之外 → 随原高代一起移出。
 
 ### 4.3 免代 `workbuddy-free`（生效倍率 0.00）
 
 | 模型 | 上下文 | 输出上限 | 可关思考 | effort 档位 | 实测 |
 |---|---|---:|---|---|---|
 | cn:hy3 | 192K | 64K | ❌ | low / high | 200 |
-| cn:hy4-preview | 1M | 64K | ❌ | high | 200 |
 | cn:step-5-preview | 1M | 64K | ❌ | low / medium / high | 200 |
 | global:deepseek-v4.1-flash | 1M | 128K | ❌ | high | 200 |
 | global:hy3 | 192K | 64K | ❌ | low / high | 200 |
@@ -264,10 +279,16 @@
 
 | 模型 | 倍率 | 上下文 | 输出上限 | 可关思考 | effort 档位 | 实测 |
 |---|---:|---:|---:|---|---|---|
-| cn:deepseek-v4-flash | 0.17 | 1M | 50K | ✅ | low / high / xhigh | 200 |
-| cn:minimax-m3 | 0.25 | 512K | 524K | ❌ | medium | 200 |
+| cn:hy4-preview | 0.29 | 1M | 64K | ❌ | high | 200 |
 | cn:mimo-v2.6-pro | 0.18 | 1M | 128K | ❌ | 未标 | 200 |
 | global:hy4-preview | 0.29 | 1M | 64K | ❌ | high | 200 |
+
+### 4.5.1 备用 `workbuddy-backup`（性价比 < 1，不受倍率区间约束）
+
+| 模型 | 倍率 | 上下文 | 输出上限 | 可关思考 | effort 档位 | 实测 |
+|---|---:|---:|---:|---|---|---|
+| cn:deepseek-v4-flash | 0.17 | 1M | 50K | ✅ | low / high / xhigh | 200 |
+| cn:minimax-m3 | 0.25 | 512K | 524K | ❌ | medium | 200 |
 
 **全部 18 个模型都支持工具调用**（网关 `supports_tool_call` 全为真）。
 
@@ -395,17 +416,18 @@ ZCode 的内置规则 `resources/config/provider/zcode-builtin.json` 里：
 以 `deepseek-v4.1-flash` = 智力 100 / 价格 100；规则与逐项指数见
 [BENCHMARKS.md](BENCHMARKS.md) §5.4。
 
-| 推荐档 | OpenCode-Go | WorkBuddy |
+| 实际档位 | OpenCode-Go | WorkBuddy |
 |---|---|---|
 | 主力 | `deepseek-v4.1-flash`、`qwen3.8-flash`（messages，优先用） | `cn:deepseek-v4.1-flash`、`global:deepseek-v4.1-flash-sg`（global 受限） |
 | 低耗 | `glm-5.3-flash`、`muse-spark-1.3/1.2`（responses）、`hy3` | `cn:glm-5.3-flash`、`global:glm-5.3-flash`、`cn:hy3-x` |
-| 高耗 | — | `global:hy4-preview` |
-| 免费 | `beam-free` 等（未上榜，按原组） | `cn:hy4-preview`（免代最强）、`global:deepseek-v4.1-flash`、`cn/global:hy3` |
-| 备用 | `minimax-m3`（只留 1M 上下文用途） | `cn:deepseek-v4-flash`、`cn:minimax-m3` |
+| 高耗 | — | `cn:hy4-preview`、`global:hy4-preview` |
+| 免费 | `beam-free` 等（未上榜，按原组） | `global:deepseek-v4.1-flash`、`cn/global:hy3`、`cn/global:step-5-preview` |
+| 备用 | `minimax-m3`（`opencode-go-chat-backup`） | `cn:deepseek-v4-flash`、`cn:minimax-m3`（`workbuddy-backup`） |
 
-> 未上榜的模型不参与分档，保持当前组。**providerId / 分组本身未改**：
-> 这张表只决定组内优先顺序与「谁该排最后」；要把「备用」落成独立组，
-> 需要新增 provider 并改同步脚本。价格与分数的口径见 BENCHMARKS §5.4。
+> 未上榜的模型不参与分档，保持当前组。**备用档已落成独立 provider**
+> （`opencode-go-chat-backup` / `workbuddy-backup`）；`cn:hy4-preview` 的实时价
+> 已回到 x0.29，2026-10-21 全量同步把它从免代移到高代。
+> 价格与分数的口径见 BENCHMARKS §5.4。
 
 ---
 

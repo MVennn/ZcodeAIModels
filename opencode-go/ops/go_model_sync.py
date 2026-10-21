@@ -28,10 +28,11 @@ provider_config.json，并把变化写成报告。
   - 价格未知（不在任何价格表、名字里也没有 free）的模型只报候选，不自动收录
 
 分组规则
-  chat 协议 -> 按成本档：免费 / 低耗（额度可撑输出 >= 80M）/ 高耗
+  chat 协议 -> 按成本档：免费 / 低耗（额度可撑输出 >= 80M）/ 高耗 / 备用
   messages  -> 对话
   responses -> 响应
   主力组是人工精选，不自动进。
+  备用组是人工指定（BACKUP_MODEL_IDS），按性价比 < 1 选，不按价格自动进。
 
 用法
   python go_model_sync.py                 # 只出报告，不改配置
@@ -69,7 +70,17 @@ MAX_OUTPUT_PRICE = 1.60
 # 低耗档阈值：月额度 / 输出单价 >= 80M token
 LOW_COST_MIN_M = 80.0
 
-CHAT_PROVIDER = {"免费": "opencode-go-chat-free", "低耗": "opencode-go-chat-fast", "高耗": "opencode-go-chat-slow"}
+# 备用档：以 deepseek-v4.1-flash 为 100 基准、性价比 < 1 的模型。
+# 依据见 docs/BENCHMARKS.md §5.4；新增模型不要自动进这里，必须人工确认。
+BACKUP_PROVIDER = "opencode-go-chat-backup"
+BACKUP_MODEL_IDS = {"minimax-m3"}
+
+CHAT_PROVIDER = {
+    "免费": "opencode-go-chat-free",
+    "低耗": "opencode-go-chat-fast",
+    "高耗": "opencode-go-chat-slow",
+    "备用": BACKUP_PROVIDER,
+}
 MESSAGES_PROVIDER = "opencode-go-messages"
 RESPONSES_PROVIDER = "opencode-go-responses"
 
@@ -363,9 +374,12 @@ def api_key(cfg):
     return None
 
 
-def tier_for(price):
+def tier_for(price, model=None):
     """按成本档分组。主力组是人工精选，不自动进。
-    没有 Go 额度行（只有公开价）的模型算不出可撑输出，保守放高耗。"""
+    没有 Go 额度行（只有公开价）的模型算不出可撑输出，保守放高耗。
+    BACKUP_MODEL_IDS 是人工按性价比指定的备用档，优先于价格分档。"""
+    if model in BACKUP_MODEL_IDS:
+        return "备用", None
     if price is None or price.get("free"):
         return "免费", None
     out = price.get("out_min")
@@ -414,6 +428,81 @@ def add_model(cfg, model, provider_id, needs_no_thinking, durable):
         rules.append(rule)
 
 
+def ensure_provider(cfg, provider_id, name, template_id):
+    """Clone the template provider under a new id/name; idempotent."""
+    rules = provider_rules(cfg)
+    for r in rules:
+        if r["providerId"] == provider_id:
+            r["providerName"] = name
+            return r
+    template = next((r for r in rules if r["providerId"] == template_id), None)
+    if template is None:
+        raise RuntimeError("template provider not found: " + template_id)
+    new = json.loads(json.dumps(template))
+    new["providerId"] = provider_id
+    new["providerName"] = name
+    new["config"]["personalModelIds"] = []
+    new["config"]["modelOrder"] = []
+    rules.append(new)
+    order = cfg["config"].setdefault("providerOrder", [])
+    if provider_id in order:
+        order.remove(provider_id)
+    idx = order.index(template_id) + 1 if template_id in order else len(order)
+    order.insert(idx, provider_id)
+    return new
+
+
+def move_model(cfg, model, target_provider_id):
+    """Move a model out of every provider and into the target one."""
+    for r in provider_rules(cfg):
+        c = r.get("config", {})
+        for key in ("personalModelIds", "modelOrder"):
+            ids = c.get(key)
+            if isinstance(ids, list) and model in ids:
+                c[key] = [m for m in ids if m != model]
+    target = next((r for r in provider_rules(cfg) if r["providerId"] == target_provider_id), None)
+    if target is None:
+        raise RuntimeError("provider not found: " + target_provider_id)
+    for key in ("personalModelIds", "modelOrder"):
+        ids = target["config"].setdefault(key, [])
+        if model not in ids:
+            ids.append(model)
+    for m in model_rules(cfg):
+        if m.get("modelId") == model:
+            m["providerId"] = target_provider_id
+            break
+
+
+def reclassify_backup(cfg):
+    """Ensure the 备用 provider exists and holds BACKUP_MODEL_IDS.
+    Returns the list of models actually moved."""
+    present = {
+        m for m in BACKUP_MODEL_IDS
+        if any(m in (r.get("config", {}).get("personalModelIds") or [])
+               for r in provider_rules(cfg))
+    }
+    if not present:
+        return []
+    ensure_provider(cfg, BACKUP_PROVIDER, "备用", "opencode-go-chat-slow")
+    moved = []
+    for model in sorted(present):
+        before = next(
+            (r["providerId"] for r in provider_rules(cfg)
+             if model in (r.get("config", {}).get("personalModelIds") or [])),
+            None,
+        )
+        move_model(cfg, model, BACKUP_PROVIDER)
+        if before != BACKUP_PROVIDER:
+            moved.append(model)
+    order = cfg["config"].setdefault("providerOrder", [])
+    if BACKUP_PROVIDER in order:
+        order.remove(BACKUP_PROVIDER)
+    idx = (order.index("opencode-go-chat-slow") + 1
+           if "opencode-go-chat-slow" in order else len(order))
+    order.insert(idx, BACKUP_PROVIDER)
+    return moved
+
+
 def write_config(cfg, path):
     tmp = path + ".tmp"
     with open(tmp, "w", encoding="utf-8") as f:
@@ -430,12 +519,32 @@ def main():
     ap.add_argument("--config", default=DEFAULT_CONFIG)
     ap.add_argument("--probe-only", action="store_true", help="只探测，不做分组/写入")
     ap.add_argument("--no-existing", action="store_true", help="跳过对已配置模型的重测")
+    ap.add_argument("--reclassify-only", action="store_true",
+                    help="只按备用档重排，不联网探测")
     args = ap.parse_args()
 
     lines = []
     def log(s=""):
         print(s)
         lines.append(s)
+
+    if args.reclassify_only:
+        cfg = load_config(args.config)
+        moved = reclassify_backup(cfg)
+        log("# OpenCode Go 备用档重排 — %s" % now().strftime("%Y-%m-%d %H:%M:%S"))
+        log("模式: %s" % ("写入" if args.apply else "只读报告"))
+        if moved:
+            log("移动: " + ", ".join(moved))
+        else:
+            log("备用档无需移动")
+        if args.apply and moved:
+            backup = args.config + ".bak-reclassify-" + stamp()
+            shutil.copy2(args.config, backup)
+            write_config(cfg, args.config)
+            log("已写入 %s（备份 %s）" % (args.config, os.path.basename(backup)))
+        elif not args.apply:
+            log("[dry-run] 未写入；加 --apply 才写")
+        return
 
     log("# OpenCode Go 模型自动收录同步 — %s" % now().strftime("%Y-%m-%d %H:%M:%S"))
     log("模式: %s" % ("写入" if args.apply else "只读报告"))
@@ -504,7 +613,7 @@ def main():
         if price.get("free"):
             tier, durable = "免费", None
         else:
-            tier, durable = tier_for(price)
+            tier, durable = tier_for(price, m)
         if proto == "chat/completions":
             provider_id = CHAT_PROVIDER[tier]
         elif proto == "messages":
@@ -534,9 +643,7 @@ def main():
         log("  - %-28s %s" % (m, why))
 
     # ---- 写入
-    if args.apply and added and not args.probe_only:
-        backup = args.config + ".bak-gosync-" + stamp()
-        shutil.copy2(args.config, backup)
+    if args.apply and not args.probe_only:
         # 同一组内按版本号倒序追加，保持厂商块连续
         by_provider = {}
         for r in added:
@@ -551,10 +658,18 @@ def main():
                         pr["providerName"] = "响应"
             for r in rows:
                 add_model(cfg, r["model"], pid, r["needs_no_thinking"], r.get("durable"))
-        write_config(cfg, args.config)
-        log("\n已写入 %s（备份 %s）" % (args.config, os.path.basename(backup)))
+        moved = reclassify_backup(cfg)
+        if moved:
+            log("  · 备用档移动: " + ", ".join(moved))
+        if added or moved:
+            backup = args.config + ".bak-gosync-" + stamp()
+            shutil.copy2(args.config, backup)
+            write_config(cfg, args.config)
+            log("\n已写入 %s（备份 %s）" % (args.config, os.path.basename(backup)))
+        else:
+            log("\n没有需要写入的新模型，配置未改动")
     elif args.apply:
-        log("\n没有需要写入的新模型，配置未改动")
+        log("\n只探测，配置未改动")
 
     # ---- 报告落盘
     try:
