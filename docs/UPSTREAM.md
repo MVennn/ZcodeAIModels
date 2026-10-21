@@ -112,7 +112,7 @@ ZCode 的写入路径是 `~/.zcode/v2/config.json`（legacy）+ `~/.zcode/cli/co
    注释原文：*「map 由条目字段 reasoningLevelMap 提供：空 = 移除（回落 ZCode 内置 "{}"，即值透传）」*。
 
 **能借鉴什么**：①「按协议发最小思考字段」的映射表（**已落地**，见 §4.1）；
-②托管命名空间 + 只写自己管的字段（对应本仓 `workbuddy_zcode_sync.py` 目前的
+②托管命名空间 + 只写自己管的字段（对应本仓 `workbuddy_zcode_sync.py` 分离模式的
 「整条替换四个 provider」写法，是明确的改进方向，见 §6）。
 
 **为什么没有 vendor 它的代码**：仓库 11.4 MiB、Rust + Tauri + 内嵌 `cursor-core` 子项目
@@ -183,9 +183,9 @@ ZCode 的写入路径是 `~/.zcode/v2/config.json`（legacy）+ `~/.zcode/cli/co
 
 **解决什么**：Claude Code 想用便宜/免费模型，但各供应商协议不一、限流不一。
 
-**与本仓的关系**：**分档思路可直接对照**。本仓是把模型静态切成
-「免代 / 低代 / 高代 / 备用」四档；它是**动态**的：一个公共模型名（`provider/model`），
-路由到按档位配置的具体模型，失败再按顺序降级。
+**与本仓的关系**：**分档思路可直接对照**。本仓分离模式是把模型静态切成
+「免代 / 低代 / 高代 / 备用」四档；统一模式则把它们并入五个 chat 组。它是**动态**的：
+一个公共模型名（`provider/model`），路由到按档位配置的具体模型，失败再按顺序降级。
 
 **供应商接入方式**：**环境变量 + 静态供应商目录表**。
 `my_free_code/providers/catalog.py` 里是一张 50 行的表：
@@ -215,7 +215,7 @@ key 的**变量名**写在表里，值从环境变量读 —— 这跟本仓 AGE
 | 健康退避 | 某供应商一抛异常就 `unhealthy_until[provider] = now + 2s`，窗口内直接拒 |
 | 错误分级 | `RETRYABLE_STATUS = {408,409,425,429,500,502,503,504}` |
 
-**能借鉴什么**：本仓「四档」目前是**静态分组**，它给的是「**档位 → 候选序列 → 降级**」的
+**能借鉴什么**：本仓分离模式的「四档」目前是**静态分组**，它给的是「**档位 → 候选序列 → 降级**」的
 完整链条模型，能把本仓的静态分档变成「先降级、再换档」。
 
 **为什么没有 vendor 它的代码**：它是 Python，但**依赖 FastAPI + python-dotenv**，
@@ -405,7 +405,7 @@ node third-party/zcodium/reasoning-rules.js check /path/to/zcode-builtin.json
 |---|---|---|
 | Go 套餐是否也要求 `x-opencode-session-id` | **待验证** | zen-proxy 说免费档要**两个头一起发**且 id 前 12 位 hex 要像时间戳。本仓的 `opencode-header-proxy.js` 只发一个头、用固定字符串兜底。付费 Go 套餐是否同样要求**未实测** —— 需拿真实 key 打一次 `/zen/go/v1` 比对 |
 | WorkBuddy 网关是否吞掉多余的思考字段 | **待验证** | 本仓 PITFALLS §2 说网关只重写 `reasoning_effort`、其余原样透传。AnyBridge 的做法（只发该协议的字段）能绕开这个问题，但**网关侧的实际行为需再确认** |
-| `workbuddy_zcode_sync.py` 是否改成「托管命名空间 + 只写自己管的字段」 | **待落地** | 借鉴 AnyBridge §3.1：现在脚本是**整条替换**四个 provider，用户手加的模型会被冲掉。改成按 providerId 前缀 upsert + 只写 `contextWindow` / `inputFormat.supportsImage` 后可保留用户在 ZCode 界面里的其它勾选 |
+| `workbuddy_zcode_sync.py` 是否改成「托管命名空间 + 只写自己管的字段」 | **待落地** | 借鉴 AnyBridge §3.1：分离模式下脚本是**整条替换**四个 provider，用户手加的模型会被冲掉。改成按 providerId 前缀 upsert + 只写 `contextWindow` / `inputFormat.supportsImage` 后可保留用户在 ZCode 界面里的其它勾选 |
 | 静态分档是否要升级成「有序降级链」 | **待落地** | 借鉴 my-free-code §3.3 与 zen-proxy §3.2：档位 → 候选序列 → 逐个降级；并按错误分级决定「重试」还是「换模型」 |
 | 探测结果该不该再解读一次 | **待落地** | 借鉴 zen-proxy §3.2：合成探针与「模型已下线」在上游侧表现相同。本仓的探测用 ZCode 真实 body，**比裸 body 强**，但仍不等于真实业务流量 —— 结论应区分「目录里没有」与「探针没探通」 |
 | CCR / otari 的能力目录读法 | **待补** | 本仓的思考档位来自 WorkBuddy 面板；CCR 是从上游目录 metadata 读。本仓的网关没有目录接口，暂不可用 |

@@ -28,6 +28,7 @@
 |---|---|---|---|
 | **OpenCode-Go API key**（`oc_sk_…`） | ZCode 的 `provider_config.json` 里的 `apiKey` 字段；也可从 OpenCode 控制台重新签发 | 5 个探测脚本从环境变量 **`OPENCODE_GO_KEY`** 读；**未设置时明确报错退出**，不会带着空 key 去请求 | **不入库**。轮换后重新 `export` |
 | **WorkBuddy 网关 key** | 本机 `wb2api` 网关自己的 `api_key`（网关面板 / 配置里） | 2 个 WorkBuddy 脚本从环境变量 **`WB_GATEWAY_KEY`** 读 | **不入库**。网关换账号池时一并轮换 |
+| **统一路由的上游 key** | 不新增凭据文件：OpenCode key 从 `provider_config.json` / `OPENCODE_GO_KEY` 读，WorkBuddy key 从 `workbuddy/gateway/config.json` / `WB_GATEWAY_KEY` 读 | `tools/unified-router.js` 启动时读取；只监听 `127.0.0.1`；`/health` 只返回 key 是否存在，不返回值 | **不入库**。轮换上游 key 后重启路由 |
 | **网关账号池凭据**（`auths/`，4 个号） | 本机 `workbuddy/gateway/auths/`（上游 clone 的运行目录）；`config.json` 里还有网关自己的 `api_key` | 整个 `workbuddy/gateway/` 被 `.gitignore` 排除；仓库里只出现 `WB_GATEWAY_KEY` 这个变量名 | **不入库**。换账号池时整目录一起换 |
 | **其它供应商的凭据**（你自己接的） | 该服务商自己的控制台 / 账号设置 | **一律走环境变量**，不落进源码、文档、缓存、日志。命名建议 `<供应商>_KEY` / `<供应商>_BASE`，与 §3.5 的表同格式 | **不入库**。加变量时同步补 §3.5 的表 |
 | **ZCode provider 配置**（含各 provider 的 `apiKey`） | 本机 `~/.zcode/v2/provider_config.json` | 不在本仓；`--apply` 产生的 `provider_config.json.bak-*` 备份同样含 key，已被 `.gitignore` 排除 | **不入库**。回退步骤见 [MAINTENANCE.md](MAINTENANCE.md) §4 |
@@ -100,9 +101,10 @@ export WB_GATEWAY_KEY='<网关 api_key>'
 
 | 环境变量 | 谁在读 | 默认值 | 缺失时 |
 |---|---|---|---|
-| **`OPENCODE_GO_KEY`** | `opencode-go/probe/` 下 5 个脚本 | 无 | 明确报错退出（不静默） |
-| **`WB_GATEWAY_KEY`** | `workbuddy/` 下 2 个现役脚本 + 1 个归档脚本 | 无（空串） | 不本地报错，表现为网关 **401** |
-| **`WB_GATEWAY_BASE`** | 同上 | `http://127.0.0.1:7863` | 用默认值 |
+| **`OPENCODE_GO_KEY`** | `opencode-go/probe/` 下 5 个脚本 + `tools/unified-router.js`（缺省回退到 `provider_config.json`） | 无 | 明确报错退出（不静默）；路由对应上游 502 |
+| **`WB_GATEWAY_KEY`** | `workbuddy/` 下 2 个现役脚本 + 1 个归档脚本 + `tools/unified-router.js`（缺省回退到网关 `config.json`） | 无（空串） | 不本地报错，表现为网关 **401**；路由对应上游 502 |
+| **`WB_GATEWAY_BASE`** | 同上 + `tools/unified-router.js` | `http://127.0.0.1:7863` | 用默认值 |
+| **`UNIFIED_ROUTER_PORT`** | `tools/unified-router.js` | `7871` | 用默认值；改了要同步改五个 chat 组的 `baseUrl` |
 | **`ZCODE_PERSONAL_PROVIDER_CONFIG_FILE`** | `workbuddy/workbuddy_zcode_sync.py` | `~/.zcode/v2/provider_config.json` | 用默认值 |
 | `WB_PRICING_FILE` | `workbuddy/` 下 2 个脚本 | `workbuddy/cache/wb_pricing.json` | 用默认值 |
 | `WB_ZCODE_PROBE_FILE` | 同上 | `workbuddy/cache/wb_zcode_probe.json` | 用默认值 |

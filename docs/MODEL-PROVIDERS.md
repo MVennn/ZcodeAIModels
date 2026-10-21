@@ -78,13 +78,18 @@
 
 | providerId | 显示名 | 协议 `api.type` | 模型数 | 收录口径 |
 |---|---|---|---:|---|
-| `opencode-go-chat` | 主力 | `openai-chat-completions` | 4 | **人工精选**，自动收录脚本不往这里放 |
-| `opencode-go-chat-free` | 免费 | `openai-chat-completions` | 3 | 输出单价 = 0（含名字带 free 的） |
-| `opencode-go-chat-fast` | 低耗 | `openai-chat-completions` | 4 | 「额度可撑输出」≥ 80M token |
-| `opencode-go-chat-slow` | 高耗 | `openai-chat-completions` | 1 | 其余有价模型（输出单价 ≤ $1.60） |
-| `opencode-go-chat-backup` | 备用 | `openai-chat-completions` | 1 | 以 DeepSeek 为基准性价比 < 1，人工指定 |
+| `opencode-go-chat` | 主力 | `openai-chat-completions` | 6 | **人工精选**，自动收录脚本不往这里放 |
+| `opencode-go-chat-free` | 免费 | `openai-chat-completions` | 8 | 输出单价 = 0（含名字带 free 的） |
+| `opencode-go-chat-fast` | 低耗 | `openai-chat-completions` | 10 | 「额度可撑输出」≥ 80M token |
+| `opencode-go-chat-slow` | 高耗 | `openai-chat-completions` | 4 | 其余有价模型（输出单价 ≤ $1.60） |
+| `opencode-go-chat-backup` | 备用 | `openai-chat-completions` | 3 | 以 DeepSeek 为基准性价比 < 1，人工指定 |
 | `opencode-go-messages` | 对话 | `anthropic-messages` | 4 | 协议归属 = messages |
 | `opencode-go-responses` | 响应 | `openai-responses` | 4 | 协议归属 = responses |
+
+> **2026-10-21 起为统一模式**：五个 chat provider 的 `api.baseUrl` 指向
+> `tools/unified-router.js`（`http://127.0.0.1:7871/v1`），模型列表同时包含
+> OpenCode-Go 与 WorkBuddy；路由按 model 前缀分流。`对话` / `响应` 仍直连 OpenCode。
+> 分离模式（`workbuddy_zcode_sync.py --separate`）见 §4.2。
 
 > 「额度可撑输出」= **月额度 ÷ 输出单价**，是分档与排序的依据（每个模型额度独立，
 > 换模型 = 换一份独立额度）。
@@ -103,6 +108,8 @@
 | mimo-v2.5-pro | 仅 chat | ✅ 已实测 | 待补 | 0.435 / 0.87 | $15 | 17M | 额度小，别当主力 |
 | mimo-v2.6-pro | 仅 chat | ✅ 已实测 | 待补 | 0.435 / 0.87 | $15 | 17M | 输出速度波动大 |
 
+> 统一模式下本组还包含 WorkBuddy 的 `cn:deepseek-v4.1-flash`、`global:deepseek-v4.1-flash-sg`。
+
 ### 2.3 免费 `opencode-go-chat-free`
 
 | 模型 | 协议 | 工具调用 | 关思考 | 价格 | 实测首字 | 备注 |
@@ -110,6 +117,9 @@
 | **beam-free** | 仅 chat | ✅ 已实测 | 天生关不掉（配了空 map 覆盖） | 0 / 0 | 1.0–1.5s | 免费无限，质量一般 |
 | **minimax-m3.1-flash-free** | 仅 chat | 待补 | `enable_thinking:false`（配了空 map 覆盖） | 0 / 0 | ~1.1s | 免费里最快；参数最宽松 |
 | longcat-2.5-preview-free | 仅 chat | ✅ 已实测 | `thinking:{type:"disabled"}` | 0 / 0 | 5.9–24s | 慢，只适合夜里批量 |
+
+> 统一模式下本组还包含 WorkBuddy 的 `cn:hy3`、`cn:step-5-preview`、
+> `global:deepseek-v4.1-flash`、`global:hy3`、`global:step-5-preview`。
 
 ### 2.4 低耗 `opencode-go-chat-fast`
 
@@ -120,17 +130,24 @@
 | mimo-v2.5 | 仅 chat | ✅ 已实测 | 待补 | 0.14 / 0.28 | $60 | **214M** | 同上，稍快 |
 | hy3 | 仅 chat | ✅ 已实测 | 待补 | 0.14 / 0.58 | $60 | 103M | 慢，后台任务 |
 
+> 统一模式下本组还包含 WorkBuddy 的 `cn:glm-5.3-flash`、`global:glm-5.3-flash`、
+> `cn:hy3-x`、`cn:minimax-m3.1-flash`、`cn:space-bunny`、`global:minimax-m3.1-flash`。
+
 ### 2.5 高耗 `opencode-go-chat-slow`
 
 | 模型 | 协议 | 工具调用 | 关思考 | 输入/输出 $/M | 月额度 | 额度可撑输出 | 备注 |
 |---|---|---|---|---|---|---|---|
 | longcat-2.0 | 仅 chat | ✅ 已实测 | `thinking:{type:"disabled"}` | 0.30 / 1.20 | $60 | 50M | 慢且贵，只适合批处理 |
 
+> 统一模式下本组还包含 WorkBuddy 的 `cn:hy4-preview`、`global:hy4-preview`、`cn:mimo-v2.6-pro`。
+
 ### 2.5.1 备用 `opencode-go-chat-backup`
 
 | 模型 | 协议 | 工具调用 | 关思考 | 输入/输出 $/M | 月额度 | 额度可撑输出 | 备注 |
 |---|---|---|---|---|---|---|---|
 | minimax-m3 | 仅 chat | ✅ 已实测 | `thinking:{type:"disabled"}`（配了空 map 覆盖） | 0.30 / 1.20 | $60 | 50M | 1M 上下文；性价比 0.82（DeepSeek 基准），只按需用 |
+
+> 统一模式下本组还包含 WorkBuddy 的 `cn:deepseek-v4-flash`、`cn:minimax-m3`。
 
 ### 2.6 对话 `opencode-go-messages`（`anthropic-messages`）
 
@@ -200,6 +217,29 @@
 网关生命周期默认由 `workbuddy/zcode_gateway_watch.ps1` 跟随 ZCode（ZCode 起 → 网关起，
 全部退出 → 停），安装与副作用见 [MAINTENANCE.md](MAINTENANCE.md) §8。
 
+### 4.0 统一模式（默认，2026-10-21 起）
+
+默认**不再创建** `workbuddy-*` 四个 provider。18 个 WorkBuddy 模型并入 §2 的五个
+chat 组，五个 chat 组的 `api.baseUrl` 指向本地路由 `tools/unified-router.js`
+（`http://127.0.0.1:7871/v1`）。路由按 model 分流：
+
+- `cn:` / `global:` → 网关 `http://127.0.0.1:7863/v1`
+- 其余 → OpenCode-Go `https://opencode.ai/zen/go/v1`
+
+| WorkBuddy 档 | 并入的 provider | 模型 |
+|---|---|---|
+| 主力 | `opencode-go-chat` | `cn:deepseek-v4.1-flash`、`global:deepseek-v4.1-flash-sg` |
+| 低耗 | `opencode-go-chat-fast` | `cn:glm-5.3-flash`、`global:glm-5.3-flash`、`cn:hy3-x`、`cn:minimax-m3.1-flash`、`cn:space-bunny`、`global:minimax-m3.1-flash` |
+| 免费 | `opencode-go-chat-free` | `cn:hy3`、`cn:step-5-preview`、`global:deepseek-v4.1-flash`、`global:hy3`、`global:step-5-preview` |
+| 高耗 | `opencode-go-chat-slow` | `cn:hy4-preview`、`global:hy4-preview`、`cn:mimo-v2.6-pro` |
+| 备用 | `opencode-go-chat-backup` | `cn:deepseek-v4-flash`、`cn:minimax-m3` |
+
+- `对话` / `响应` 仍直连 OpenCode-Go，不经过路由。
+- 路由随 ZCode 起停（`zcode_gateway_watch.ps1`）；手动启动
+  `node tools/unified-router.js`，健康检查 `GET http://127.0.0.1:7871/health`。
+- **分离模式**：`workbuddy_zcode_sync.py --separate --apply` 会重建 §4.2 的四个
+  `workbuddy-*` provider；默认（不带 `--separate`）是统一模式。
+
 ### 4.1 目录与别名
 
 - `/panel/api/models` 与 `/v1/models` 同源。**注意**：网关未重启时 `/panel/api/models`
@@ -208,7 +248,10 @@
   `cn:auto`、`global:auto-chat`、`global:default-model`、`global:primary-model`、
   `global:deep-model`、`global:fast-model`、`global:balanced-model`、`global:enhance-1.0`。
 
-### 4.2 倍率与四档
+### 4.2 分离模式：倍率与四档（`--separate`）
+
+> 以下四档只在 `workbuddy_zcode_sync.py --separate --apply` 时出现；默认统一模式
+> 不创建 `workbuddy-*`，WorkBuddy 模型并入 §4.0 的五个 chat 组。
 
 `credits` = 牌价，`promo_credits` = 生效价（取 `promo_credits` 优先）。
 **倍率越小越便宜**。
@@ -220,9 +263,9 @@
 | `workbuddy-high` | 高代 | 0.16 < 倍率 ≤ 0.30 | 3 |
 | `workbuddy-backup` | 备用 | 以 DeepSeek 为基准性价比 < 1（不是倍率区间） | 2 |
 
-**界面顺序是 低代 → 免代 → 高代 → 备用**（`providerOrder`）。低代排第一，是因为
+**分离模式的界面顺序是 低代 → 免代 → 高代 → 备用**（`providerOrder`）。低代排第一，是因为
 日常主力 `cn:deepseek-v4.1-flash` 在这一档；免代虽然免费，但模型不是主力；
-备用是价值档，排最后。
+备用是价值档，排最后。统一模式下这四个 provider 不出现，顺序见 §4.0。
 
 **分价口径（2026-10-21 起）：只接受主力价位的模型。** 锚点是主力的
 `cn:deepseek-v4.1-flash` = **x0.11**——
@@ -250,9 +293,10 @@
 只搬备用档用 `--reclassify-only --apply`。
 
 > **2026-10-21 促销漂移已并入分档**：`cn:hy4-preview` 生效价回到 `x0.29` →
-> 从免代移到高代；`cn:glm-5.2` 促销 x0.50 在新上限之外 → 随原高代一起移出。
+> 从免代移到高代（统一模式下它在 `opencode-go-chat-slow`）；
+> `cn:glm-5.2` 促销 x0.50 在新上限之外 → 随原高代一起移出。
 
-### 4.3 免代 `workbuddy-free`（生效倍率 0.00）
+### 4.3 免代 `workbuddy-free`（分离模式，生效倍率 0.00）
 
 | 模型 | 上下文 | 输出上限 | 可关思考 | effort 档位 | 实测 |
 |---|---|---:|---|---|---|
@@ -262,7 +306,7 @@
 | global:hy3 | 192K | 64K | ❌ | low / high | 200 |
 | global:step-5-preview | 1M | 64K | ❌ | low / medium / high | 200 |
 
-### 4.4 低代 `workbuddy-low`（0 < 倍率 ≤ 0.16，主力价位）
+### 4.4 低代 `workbuddy-low`（分离模式，0 < 倍率 ≤ 0.16，主力价位）
 
 | 模型 | 倍率 | 上下文 | 输出上限 | 可关思考 | effort 档位 | 实测 |
 |---|---:|---:|---:|---|---|---|
@@ -275,7 +319,7 @@
 | global:glm-5.3-flash | 0.08 | 1M | 32K | ✅ | low / high / max | 200 |
 | global:minimax-m3.1-flash | 0.08 | 1M | 128K | ❌ | low / medium / high / xhigh / max | 200 |
 
-### 4.5 高代 `workbuddy-high`（0.16 < 倍率 ≤ 0.30，略高于主力）
+### 4.5 高代 `workbuddy-high`（分离模式，0.16 < 倍率 ≤ 0.30，略高于主力）
 
 | 模型 | 倍率 | 上下文 | 输出上限 | 可关思考 | effort 档位 | 实测 |
 |---|---:|---:|---:|---|---|---|
@@ -283,7 +327,7 @@
 | cn:mimo-v2.6-pro | 0.18 | 1M | 128K | ❌ | 未标 | 200 |
 | global:hy4-preview | 0.29 | 1M | 64K | ❌ | high | 200 |
 
-### 4.5.1 备用 `workbuddy-backup`（性价比 < 1，不受倍率区间约束）
+### 4.5.1 备用 `workbuddy-backup`（分离模式，性价比 < 1，不受倍率区间约束）
 
 | 模型 | 倍率 | 上下文 | 输出上限 | 可关思考 | effort 档位 | 实测 |
 |---|---:|---:|---:|---|---|---|
@@ -416,18 +460,17 @@ ZCode 的内置规则 `resources/config/provider/zcode-builtin.json` 里：
 以 `deepseek-v4.1-flash` = 智力 100 / 价格 100；规则与逐项指数见
 [BENCHMARKS.md](BENCHMARKS.md) §5.4。
 
-| 实际档位 | OpenCode-Go | WorkBuddy |
-|---|---|---|
-| 主力 | `deepseek-v4.1-flash`、`qwen3.8-flash`（messages，优先用） | `cn:deepseek-v4.1-flash`、`global:deepseek-v4.1-flash-sg`（global 受限） |
-| 低耗 | `glm-5.3-flash`、`muse-spark-1.3/1.2`（responses）、`hy3` | `cn:glm-5.3-flash`、`global:glm-5.3-flash`、`cn:hy3-x` |
-| 高耗 | — | `cn:hy4-preview`、`global:hy4-preview` |
-| 免费 | `beam-free` 等（未上榜，按原组） | `global:deepseek-v4.1-flash`、`cn/global:hy3`、`cn/global:step-5-preview` |
-| 备用 | `minimax-m3`（`opencode-go-chat-backup`） | `cn:deepseek-v4-flash`、`cn:minimax-m3`（`workbuddy-backup`） |
+| 档位 | 模型（统一模式下的实际归属） |
+|---|---|
+| 主力 | `deepseek-v4.1-flash`、`qwen3.8-flash`（messages，优先用）、`cn:deepseek-v4.1-flash`、`global:deepseek-v4.1-flash-sg`（global 受限） |
+| 低耗 | `glm-5.3-flash`、`muse-spark-1.3/1.2`（responses）、`hy3`、`cn:glm-5.3-flash`、`global:glm-5.3-flash`、`cn:hy3-x` |
+| 高耗 | `longcat-2.0`、`cn:hy4-preview`、`global:hy4-preview`、`cn:mimo-v2.6-pro` |
+| 免费 | `beam-free` 等（未上榜，按原组）、`global:deepseek-v4.1-flash`、`cn/global:hy3`、`cn/global:step-5-preview` |
+| 备用 | `minimax-m3`、`cn:deepseek-v4-flash`、`cn:minimax-m3`（`opencode-go-chat-backup`） |
 
-> 未上榜的模型不参与分档，保持当前组。**备用档已落成独立 provider**
-> （`opencode-go-chat-backup` / `workbuddy-backup`）；`cn:hy4-preview` 的实时价
-> 已回到 x0.29，2026-10-21 全量同步把它从免代移到高代。
-> 价格与分数的口径见 BENCHMARKS §5.4。
+> 统一模式下 WorkBuddy 模型已在同一 provider 内，不再是独立组；providerId 仍是
+> 五个 chat 组（见 §4.0）。`cn:hy4-preview` 的实时价已回到 x0.29，2026-10-21
+> 全量同步把它从免代移到高耗。价格与分数的口径见 BENCHMARKS §5.4。
 
 ---
 

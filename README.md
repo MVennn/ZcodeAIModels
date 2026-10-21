@@ -93,6 +93,11 @@ python workbuddy/workbuddy_zcode_sync.py --apply
 两个脚本都会**先备份再原子替换** `provider_config.json`；ZCode 约 1 秒轮询该文件，
 写完一般**不用重启客户端**。
 
+`workbuddy_zcode_sync.py` 默认是**统一模式**：WorkBuddy 模型并入 OpenCode 的五个
+chat 组，这五个组的 `baseUrl` 指向 `tools/unified-router.js`（`127.0.0.1:7871`）。
+统一路由由 `workbuddy/zcode_gateway_watch.ps1` 随 ZCode 起停；手动启动是
+`node tools/unified-router.js`。旧的四档独立 provider 用 `--separate` 保留。
+
 每个脚本的产物与保留标记见 [docs/TOOLS.md](https://github.com/MVennn/ZcodeAIModels/blob/main/docs/TOOLS.md)；
 模型为什么会 400 / 503、免费池 429 是不是故障，见
 [docs/PITFALLS.md](https://github.com/MVennn/ZcodeAIModels/blob/main/docs/PITFALLS.md)
@@ -124,7 +129,8 @@ python workbuddy/workbuddy_zcode_sync.py --apply
 
 写配置期间**不要**在 ZCode 的 provider 设置界面里同时改 —— 界面保存时会整份写回，
 把脚本刚写进去的东西覆盖掉。两个 `--apply` 脚本分别会「只追加新模型」（低风险）与
-「整条替换三个 workbuddy provider」（你手工加的模型会被冲掉），都会先做 `.bak-*` 备份；
+「默认把 WorkBuddy 模型合并进五个 chat 组；`--separate` 才整条替换四个 workbuddy
+provider」（分离模式会冲掉你手工加的模型），都会先做 `.bak-*` 备份；
 回退方式见 [docs/MAINTENANCE.md](https://github.com/MVennn/ZcodeAIModels/blob/main/docs/MAINTENANCE.md) §4。
 
 ## 反馈

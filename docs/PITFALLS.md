@@ -248,3 +248,20 @@ python workbuddy_fetch_pricing.py --dry-run  # 只看差异
 字段含义见 [MODEL-PROVIDERS.md](MODEL-PROVIDERS.md) §4；
 刷表频率与注意事项见 [MAINTENANCE.md](MAINTENANCE.md) §1.3；
 **通用做法**（换供应商照这个做）见 [MAINTENANCE.md](MAINTENANCE.md) §1.1。
+
+---
+
+## 12. 一个 provider 只能一个 `baseUrl` → 跨上游必须路由 【通用】
+
+**现象**：想把 WorkBuddy 模型和 OpenCode-Go 模型放进同一个 provider，结果要么 404 / 401，
+要么只有一边能用。
+
+**机制**：ZCode 的 `providerConfigRules[].config.api.baseUrl` 是 **provider 级**的；
+模型级 `modelConfigRules` 只有 `enabled` / `properties` / `optionSpecs`，**没有** `baseUrl`。
+一个 provider 下的所有模型共用同一个上游地址和 key，不能按模型换上游。
+
+**解法**：本仓用 `tools/unified-router.js` 做本地路由 —— 五个 chat provider 指向
+`http://127.0.0.1:7871/v1`，路由按 model 前缀把 `cn:` / `global:` 转到 WorkBuddy 网关，
+其余转到 OpenCode-Go。代价是多一个常驻进程；它随 ZCode 起停（见
+[MAINTENANCE.md](MAINTENANCE.md) §8）。**不要把路由端口暴露到公网**，也不要把两个
+上游的 key 混进同一个 provider。

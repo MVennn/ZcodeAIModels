@@ -178,7 +178,7 @@ curl -s http://127.0.0.1:7863/panel/api/models -H "Authorization: Bearer $WB_GAT
 | 原因 | 解法 |
 |---|---|
 | 价格表**忘了刷新** | 跑 `workbuddy/workbuddy_fetch_pricing.py`（`--dry-run` 先看差异）；别的供应商照 [MAINTENANCE.md](MAINTENANCE.md) §1.1 的通用做法用自己的取数脚本 |
-| 限时免费到期（网关日志：`free tier ended, now 0.227 credits/1k`） | 重新取倍率，重排四档 |
+| 限时免费到期（网关日志：`free tier ended, now 0.227 credits/1k`） | 统一模式重跑 `workbuddy_zcode_sync.py --apply`；分离模式重排四档 |
 | 网关未重启时 `/panel/api/models` 只返回 34 个 global 模型 | 重启网关再取 |
 
 ---
@@ -212,7 +212,7 @@ for f in [p]+b:
 | 原因 | 适用范围 | 解法 |
 |---|---|---|
 | **ZCode 界面保存时整份写回** | **【通用】** | 写配置期间不要在界面里改；重新跑脚本 |
-| `workbuddy_zcode_sync.py` **整条替换** `workbuddy-free/low/high/backup` 四个 provider | **【实例 B】** | 你在这四个 provider 上手工加的模型会被冲掉 —— 加完要重跑脚本，别手改配置 |
+| `workbuddy_zcode_sync.py` 默认**合并**到五个 OpenCode chat 组；`--separate` 才整条替换四个 `workbuddy-*` provider | **【实例 B】** | 统一模式只动 WorkBuddy 模型与五个 chat 组的 `baseUrl`；分离模式会冲掉 `workbuddy-*` 上手工加的模型 —— 加完要重跑脚本，别手改配置 |
 | `go_model_sync.py` 把新模型追加到**组尾**，打乱了手工排的顺序 | **【实例 A】** | 组内顺序由脚本按版本号倒序排；要固定顺序就改脚本后重跑 |
 | 别的脚本 / 别的会话也在写同一份配置 | **【通用】** | 同一时间只跑一个写入者 |
 
@@ -323,15 +323,15 @@ curl -si -X POST http://127.0.0.1:7863/v1/chat/completions \
 
 <a id="gateway-lifecycle"></a>
 
-## 11. 网关没跟着 ZCode 起停 【实例 B】
+## 11. 网关 / 统一路由没跟着 ZCode 起停 【实例 B】
 
-**现象**：打开 ZCode 后 WorkBuddy 模型连不上 `127.0.0.1:7863`；或者关了 ZCode
-网关进程还在；或者开机后守护器没生效。
+**现象**：打开 ZCode 后 WorkBuddy 模型连不上 `127.0.0.1:7863`，或五个 chat 组
+连不上 `127.0.0.1:7871`；或者关了 ZCode 网关/路由进程还在；或者开机后守护器没生效。
 
 **排查**
 
 ```bash
-# 1) 一次看全：ZCode / 网关 / 守护器
+# 1) 一次看全：ZCode / 网关 / 统一路由 / 守护器 / 五个 chat 组指向
 powershell -NoProfile -ExecutionPolicy Bypass -File workbuddy/zcode_gateway_watch.ps1 -Status
 
 # 2) 看守护器日志（每次状态迁移一行；文件是 UTF-8）
@@ -348,15 +348,50 @@ ls "$APPDATA/Microsoft/Windows/Start Menu/Programs/Startup/" | grep -i zcode
 | 守护器没在跑（没装自启 / 被结束） | `-Install`：注册自启并立即启动 |
 | `WB_GATEWAY_DIR` 指错，找不到 `wb2api.exe` | 改环境变量，或确认仓库内默认目录 `workbuddy/gateway/` 存在（它整目录被 `.gitignore` 排除，**克隆后不会自带**；重建方法见 [MAINTENANCE.md](MAINTENANCE.md) §8） |
 | 网关启动后立刻退出 | 看 `%LOCALAPPDATA%\ZCodeGateway\gateway.stderr.log` |
-| 关 ZCode 后网关还在 | 先等满 8 秒宽限 + 最多 30 秒在途连接排空（`-DrainTimeoutSeconds`）；仍不走在 `-Status` 里看守护器是否还活着，必要时 `stop-gateway.bat` |
-| `-Status` 的 Provider 行显示「不匹配」或「key 缺失」 | ZCode 的 provider 没指向本网关：重跑 `workbuddy_zcode_sync.py --apply`，或检查 `ZCODE_PERSONAL_PROVIDER_CONFIG_FILE` |
+| 统一路由启动后立刻退出 | 看 `%LOCALAPPDATA%\ZCodeGateway\router.stderr.log`；常见是 PATH 里没有 `node`，或 7871 被占用 |
+| 关 ZCode 后网关/路由还在 | 先等满 8 秒宽限 + 最多 30 秒在途连接排空（`-DrainTimeoutSeconds`）；仍不走在 `-Status` 里看守护器是否还活着，必要时 `stop-gateway.bat` 并手动结束 `unified-router.js` |
+| `-Status` 的 Provider 行显示「不匹配」或「key 缺失」 | 五个 chat 组没指向统一路由（或分离模式下 `workbuddy-*` 没指向网关）：重跑 `workbuddy_zcode_sync.py --apply`，或检查 `ZCODE_PERSONAL_PROVIDER_CONFIG_FILE` |
 | `-Status` 显示「有 N 个进程但未识别到主进程」 | ZCode 升级可能改了命令行判据。看 `watchdog.log`；确认新版主进程命令行后更新 `Get-ZCodeMainProcess` 的过滤条件 |
 | 自启快捷方式在，登录后却没起 | 目标应为 `wscript.exe "<仓库>\workbuddy\zcode_gateway_watch.vbs"`，用 `-Install` 重建 |
-| 想彻底回到手动 | `-Uninstall`，之后按网关目录的 `run.bat` / `stop-gateway.bat` 控制 |
+| 想彻底回到手动 | `-Uninstall`，之后按网关目录的 `run.bat` / `stop-gateway.bat` 控制；统一路由手动 `node tools/unified-router.js` |
 
-> 守护器只做两件事：**主进程**出现时拉起、主进程退出且连接排空后停止。
-> ZCode 只是最小化到托盘时主进程仍在，网关也会保持运行 —— 这是预期行为。
-> 生命周期设计的取舍见 [MAINTENANCE.md](MAINTENANCE.md) §8。
+> 守护器现在做三件事：**主进程**出现时拉起网关 + 统一路由、主进程退出且连接排空后停止、
+> 运行期间任一进程挂了自动重启。ZCode 只是最小化到托盘时主进程仍在，网关/路由也会保持运行
+> —— 这是预期行为。生命周期设计的取舍见 [MAINTENANCE.md](MAINTENANCE.md) §8。
+
+---
+
+## 12. 所有 chat 模型 502 / 连不上 127.0.0.1:7871 【实例 B】
+
+**现象**：ZCode 里主力 / 免费 / 低耗 / 高耗 / 备用的模型都报 502 或 connection refused；
+对话 / 响应正常（这两个组直连 OpenCode-Go，不经过统一路由）。
+
+**排查**
+
+```bash
+# 1) 路由健康检查（只返回 key 是否存在，不返回值）
+curl -sS http://127.0.0.1:7871/health
+
+# 2) 看守护器是否接管了路由
+powershell -NoProfile -ExecutionPolicy Bypass -File workbuddy/zcode_gateway_watch.ps1 -Status
+
+# 3) 看路由日志
+python -c "import os; p=os.path.join(os.environ['LOCALAPPDATA'],'ZCodeGateway','router.stderr.log'); print(open(p,encoding='utf-8',errors='replace').read()[-3000:])"
+```
+
+**原因 / 解法**（均为**【实例 B】**）
+
+| 原因 | 解法 |
+|---|---|
+| 路由没起 | `node tools/unified-router.js`，或重启守护器 `-Install` |
+| 7871 被别的进程占用 | `Get-NetTCPConnection -LocalPort 7871`；换 `-RouterPort` 后同步改五个 chat 组的 `baseUrl` |
+| 缺 OpenCode key | 设置 `OPENCODE_GO_KEY`，或检查 `provider_config.json` 里 OpenCode provider 的 `access.apiKey` |
+| 缺 WorkBuddy key | 设置 `WB_GATEWAY_KEY`，或检查 `workbuddy/gateway/config.json` 的 `api_key` |
+| 只有 WorkBuddy 模型 502 | 网关没起 / 没就绪；看 `gateway.stderr.log` |
+| 对话 / 响应正常，chat 全挂 | 就是路由问题；这两组不经过路由，所以能正常工作 |
+
+> `/health` 返回的 `key` 是布尔值（是否读到 key），**不会返回 key 本身**。
+> 路由只监听 `127.0.0.1`，不要改成 `0.0.0.0`。
 
 ---
 

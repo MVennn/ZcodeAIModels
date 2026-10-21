@@ -7,13 +7,14 @@
 
 | 脚本 | 作用 | 输出产物 | 长期 |
 |---|---|---|---|
-| `opencode-go/ops/go_model_sync.py` | 四源并集检测 Go 套餐新模型 → 三协议探测 → 按成本档 + 备用档分组 → 写 `provider_config.json`（`--reclassify-only` 只搬备用档） | 报告 `go-model-sync-<时间戳>.md`；备份 `provider_config.json.bak-gosync-<时间戳>` | ✅ 长期 |
+| `opencode-go/ops/go_model_sync.py` | 四源并集检测 Go 套餐新模型 → 三协议探测 → 按成本档 + 备用档分组 → 写 `provider_config.json`（`--reclassify-only` 只搬备用档；统一模式下五个 chat 组指向统一路由） | 报告 `go-model-sync-<时间戳>.md`；备份 `provider_config.json.bak-gosync-<时间戳>` | ✅ 长期 |
 | `opencode-go/ops/opencode-header-proxy.js` | 给不支持自定义头的客户端（ChatBox / Open WebUI 等）补 `x-opencode-session` | 常驻 HTTP 代理，默认 `127.0.0.1:8787` | ✅ 长期 |
+| `tools/unified-router.js` | **统一路由**：`cn:` / `global:` → WorkBuddy 网关，其余 → OpenCode-Go；让一个 ZCode provider 同时装两个上游的模型。`GET /health` 做健康检查 | 监听 `127.0.0.1:7871`；日志由守护器写 `router.stdout.log` / `router.stderr.log` | ✅ 长期（随 ZCode 起停） |
 | `workbuddy/workbuddy_fetch_pricing.py` | 拉网关目录接口 → 归一化 → 写价格表（打印倍率变化 / 新增 / 下架摘要） | `workbuddy/cache/wb_pricing.json`（写前自动备份） | ✅ 长期 |
 | `workbuddy/workbuddy_probe_zcode.py` | 用 **ZCode 真实 body** 探测网关模型可用性，可断点续跑 | `workbuddy/cache/wb_zcode_probe.json`；`workbuddy/logs/wb_zcode_probe.log` | ✅ 长期 |
-| `workbuddy/workbuddy_zcode_sync.py` | 按积分倍率分免代 / 低代 / 高代 + 备用四档写 provider（上限 0.30 = 主力价位，超过的"贵不加"；备用按 DeepSeek 基准性价比 < 1）；组内 CN 优先、按厂商分组、主力置顶（`--reorder-only` 只重排，`--reclassify-only` 只搬备用档） | 备份 `provider_config.json.bak-wbproxy-<时间戳>` | ✅ 长期 |
+| `workbuddy/workbuddy_zcode_sync.py` | **默认统一模式**：把 WorkBuddy 模型并入 OpenCode 的五个 chat 组（组内 CN 优先、按厂商分组、主力置顶）；`--separate` 才写免代 / 低代 / 高代 / 备用四个独立 provider。`--reclassify-only` 只搬备用档，`--reorder-only` 只重排（分离模式） | 备份 `provider_config.json.bak-wbproxy-<时间戳>` | ✅ 长期 |
 | `workbuddy/zcode_effective_body.js` | 复刻 ZCode 引擎的规则解析顺序，算某 modelId **真实会发的请求体** | stdout JSON | ✅ 长期（`probe_zcode.py` 依赖它，必须同目录） |
-| `workbuddy/zcode_gateway_watch.ps1` | 让网关寿命跟随 ZCode **主进程**：出现 → 静默拉起 `wb2api`（`/panel/` 200 才算就绪）；退出 → 宽限 8 秒 + 在途连接排空后停；运行期间网关挂了自动重启。`-Install` / `-Uninstall` 注册 / 移除开机自启，`-Status` 看状态并校验 `workbuddy-*` provider 指向，`-DryRun` 只记状态迁移 | `%LOCALAPPDATA%\ZCodeGateway\watchdog.log`；网关输出 `gateway.stdout.log` / `gateway.stderr.log`（启动前轮转 `.1`） | ✅ 长期 |
+| `workbuddy/zcode_gateway_watch.ps1` | 让网关 + 统一路由的寿命跟随 ZCode **主进程**：出现 → 静默拉起 `wb2api` 和 `node tools/unified-router.js`；退出 → 宽限 8 秒 + 在途连接排空后停；运行期间挂了自动重启。`-Install` / `-Uninstall` 注册 / 移除开机自启，`-Status` 看状态并校验五个 chat 组指向，`-DryRun` 只记状态迁移，`-NoRouter` 不启停路由 | `%LOCALAPPDATA%\ZCodeGateway\watchdog.log`；网关输出 `gateway.stdout.log` / `gateway.stderr.log`，路由输出 `router.stdout.log` / `router.stderr.log`（启动前轮转 `.1`） | ✅ 长期 |
 | `workbuddy/zcode_gateway_watch.vbs` | 无窗口启动上面的 `.ps1`（`-Install` 注册到启动文件夹的就是它） | — | ✅ 长期 |
 | `workbuddy/gateway/` | 上游 WorkBuddy2API Panel 的**独立 clone** + 运行时（`config.json` / `auths/` / `data/` / `wb2api.exe`）；整目录被 `.gitignore` 排除 | 网关自身的 `data/` 与日志 | ✅ 长期（更新：`git -C workbuddy/gateway pull --ff-only`） |
 | `opencode-go/probe/probe_models.py` | 34 个模型最小 token 连通性 + 首字节延迟 | `probe_results.json`（**写到当前工作目录**，需手动归档到 `results/<日期>/`） | ❌ 一次性 |

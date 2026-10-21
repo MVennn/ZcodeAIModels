@@ -208,28 +208,30 @@ WorkBuddy 倍率 **0.11**。
 
 | 分档 | 模型 | 侧 | 榜上总分 | 智力指数 | 价格 | 价格指数 | 性价比 | 当前组 |
 |---|---|---|---|---:|---:|---:|---:|---|
-| 主力 | `global:deepseek-v4.1-flash-sg` | WorkBuddy | 342.40 | 100.0 | x0.03 | 27.3 | 3.67 | 低代 |
+| 主力 | `global:deepseek-v4.1-flash-sg` | WorkBuddy | 342.40 | 100.0 | x0.03 | 27.3 | 3.67 | 主力 |
 | 主力 | `qwen3.8-flash` | OpenCode-Go | 372.95 | 108.9 | $0.47/M | 39.2 | 2.78 | 对话 |
 | 主力 | `deepseek-v4.1-flash` | OpenCode-Go | 342.40 | 100.0 | $1.20/M | 100.0 | 1.00 | 主力 |
-| 主力 | `cn:deepseek-v4.1-flash` | WorkBuddy | 342.40 | 100.0 | x0.11 | 100.0 | 1.00 | 低代 |
+| 主力 | `cn:deepseek-v4.1-flash` | WorkBuddy | 342.40 | 100.0 | x0.11 | 100.0 | 1.00 | 主力 |
 | 低耗 | `muse-spark-1.3-contributor` | OpenCode-Go | 326.27 | 95.3 | $0.20/M | 16.7 | 5.72 | 响应 |
 | 低耗 | `muse-spark-1.2-contributor` | OpenCode-Go | 313.30 | 91.5 | $0.20/M | 16.7 | 5.49 | 响应 |
 | 低耗 | `glm-5.3-flash` | OpenCode-Go | 334.15 | 97.6 | $0.50/M | 41.7 | 2.34 | 低耗 |
-| 低耗 | `cn:hy3-x` | WorkBuddy | 237.47 | 69.4 | x0.05 | 45.5 | 1.53 | 低代 |
+| 低耗 | `cn:hy3-x` | WorkBuddy | 237.47 | 69.4 | x0.05 | 45.5 | 1.53 | 低耗 |
 | 低耗 | `hy3` | OpenCode-Go | 237.47 | 69.4 | $0.58/M | 48.3 | 1.43 | 低耗 |
-| 低耗 | `cn:glm-5.3-flash` | WorkBuddy | 334.15 | 97.6 | x0.08 | 72.7 | 1.34 | 低代 |
-| 低耗 | `global:glm-5.3-flash` | WorkBuddy | 334.15 | 97.6 | x0.08 | 72.7 | 1.34 | 低代 |
-| 高耗 | `global:hy4-preview` | WorkBuddy | 350.71 | 102.4 | x0.29 | 263.6 | 0.39 | 高代 |
-| 高耗 | `cn:hy4-preview` | WorkBuddy | 350.71 | 102.4 | x0.29 | 263.6 | 0.39 | 高代 |
-| 免费 | `global:deepseek-v4.1-flash` | WorkBuddy | 342.40 | 100.0 | 0 | 0 | — | 免代 |
-| 免费 | `cn:hy3` | WorkBuddy | 237.47 | 69.4 | 0 | 0 | — | 免代 |
-| 免费 | `global:hy3` | WorkBuddy | 237.47 | 69.4 | 0 | 0 | — | 免代 |
+| 低耗 | `cn:glm-5.3-flash` | WorkBuddy | 334.15 | 97.6 | x0.08 | 72.7 | 1.34 | 低耗 |
+| 低耗 | `global:glm-5.3-flash` | WorkBuddy | 334.15 | 97.6 | x0.08 | 72.7 | 1.34 | 低耗 |
+| 高耗 | `global:hy4-preview` | WorkBuddy | 350.71 | 102.4 | x0.29 | 263.6 | 0.39 | 高耗 |
+| 高耗 | `cn:hy4-preview` | WorkBuddy | 350.71 | 102.4 | x0.29 | 263.6 | 0.39 | 高耗 |
+| 免费 | `global:deepseek-v4.1-flash` | WorkBuddy | 342.40 | 100.0 | 0 | 0 | — | 免费 |
+| 免费 | `cn:hy3` | WorkBuddy | 237.47 | 69.4 | 0 | 0 | — | 免费 |
+| 免费 | `global:hy3` | WorkBuddy | 237.47 | 69.4 | 0 | 0 | — | 免费 |
 | 备用 | `minimax-m3` | OpenCode-Go | 279.78 | 81.7 | $1.20/M | 100.0 | 0.82 | 备用 |
 | 备用 | `cn:deepseek-v4-flash` | WorkBuddy | 311.02 | 90.8 | x0.17 | 154.5 | 0.59 | 备用 |
 | 备用 | `cn:minimax-m3` | WorkBuddy | 279.78 | 81.7 | x0.25 | 227.3 | 0.36 | 备用 |
 
-> 价格列单位不同：OpenCode-Go 是输出单价 `$/M`，WorkBuddy 是倍率 `x`；
-> **不要直接比原始数字**，看已归一的「价格指数」（DeepSeek = 100）。
+> 「当前组」是**统一模式**下的 provider（WorkBuddy 模型已并入五个 chat 组，见
+> [MODEL-PROVIDERS.md](MODEL-PROVIDERS.md) §4.0）。价格列单位不同：OpenCode-Go 是
+> 输出单价 `$/M`，WorkBuddy 是倍率 `x`；**不要直接比原始数字**，看已归一的
+> 「价格指数」（DeepSeek = 100）。
 
 **推定与未上榜**：
 
@@ -256,17 +258,17 @@ WorkBuddy 倍率 **0.11**。
   不是「因为分数低就淘汰」。
 - **`minimax-m3` 已从「高耗」移入「备用」**：智力和 DeepSeek 同价（价格指数 100），
   但只有 81.7 的智力，性价比 0.82；保留它只因为 1M 上下文。
-- **WorkBuddy 低代里 `global:deepseek-v4.1-flash-sg` 性价比最高（3.67）**，
-  但 global 账号受限（MODEL-PROVIDERS §4.7），实际能不能调通另算。
+- **统一模式的 `opencode-go-chat`（主力）里 `global:deepseek-v4.1-flash-sg`
+  性价比最高（3.67）**，但 global 账号受限（MODEL-PROVIDERS §4.7），实际能不能调通另算。
 - **`global:hy4-preview` 与 `cn:hy4-preview` 都是「更强但更贵」**（智力 102.4、
   价格指数 263.6、性价比 0.39），归高耗；`cn:deepseek-v4-flash`（0.59）和
   `cn:minimax-m3`（0.36）性价比低于 1，已移入备用组。
-- **免代里 `global:deepseek-v4.1-flash` 最强**（智力 100，免费），但受 global 账号限制；
-  `cn:hy4-preview` 的实时价已回到 x0.29，2026-10-21 全量同步把它从免代移到高代。
-- **备用档已落成独立 provider**：`opencode-go-chat-backup`（`minimax-m3`）与
-  `workbuddy-backup`（`cn:deepseek-v4-flash`、`cn:minimax-m3`）。providerId 仍按
-  协议 / 成本语义命名（`chat` / `messages` / `responses`、`free` / `low` / `high`），
-  `backup` 是新增的价值档。
+- **`opencode-go-chat-free`（免费）里 `global:deepseek-v4.1-flash` 最强**
+  （智力 100，免费），但受 global 账号限制；`cn:hy4-preview` 的实时价已回到 x0.29，
+  2026-10-21 全量同步把它从免费组移到 `opencode-go-chat-slow`（高耗）。
+- **统一模式下备用档是 `opencode-go-chat-backup`**：同时装 OpenCode 的 `minimax-m3`
+  与 WorkBuddy 的 `cn:deepseek-v4-flash`、`cn:minimax-m3`。`workbuddy-backup` 只在
+  `--separate` 模式出现。
 
 ---
 

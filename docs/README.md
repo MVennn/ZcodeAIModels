@@ -11,7 +11,7 @@
 
 | 文档 | 一句话定位 |
 |---|---|
-| [MODEL-PROVIDERS.md](MODEL-PROVIDERS.md) | **provider 与模型参数矩阵正本**：§0 是「接一个新供应商」的通用方法（四步 + 通用概念对照表）；§2 / §4 是本仓已配置的两组 provider 数据（OpenCode-Go 七个分组 + WorkBuddy 四档按积分倍率 / 性价比分层）、协议类型、工具调用支持、关思考参数怎么写、global 号 `personal_free_user` 的 503 限制 |
+| [MODEL-PROVIDERS.md](MODEL-PROVIDERS.md) | **provider 与模型参数矩阵正本**：§0 是「接一个新供应商」的通用方法（四步 + 通用概念对照表）；§2 / §4 是本仓已配置的两组 provider 数据（OpenCode-Go 七个分组；五个 chat 组经统一路由同时装 WorkBuddy 模型）、协议类型、工具调用支持、关思考参数怎么写、global 号 `personal_free_user` 的 503 限制 |
 | [模型速查表.md](模型速查表.md) | 早期速查（2026-10-20）：价格、额度与实测首字。**结论已并入 MODEL-PROVIDERS.md**，本篇保留作历史快照 |
 | [archive/OPENCODE-GO-模型与订阅优化分析.md](archive/OPENCODE-GO-模型与订阅优化分析.md) | 2026-10-19 的阶段性分析：协议归属实测、价格带筛选、路由器侧出口方案。结论已被上两篇取代 |
 

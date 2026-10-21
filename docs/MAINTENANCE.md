@@ -188,7 +188,7 @@ python -c "import json,os; json.load(open(os.path.expanduser('~/.zcode/v2/provid
 | 脚本 | 行为 | 风险 |
 |---|---|---|
 | `go_model_sync.py --apply` | 只**追加**模型 + 备用档重排（`BACKUP_MODEL_IDS`）+ 改一个 provider 显示名（"备用"→"响应"） | 低。已有模型的**组内顺序**可能被打乱（新模型追加到组尾） |
-| `workbuddy_zcode_sync.py --apply` | **整条替换** `workbuddy-free/low/high/backup` 四个 provider 及其全部模型规则 | 中。这四个 provider 上你手工加的模型会被冲掉；其它 provider 不受影响 |
+| `workbuddy_zcode_sync.py --apply` | 默认**合并** WorkBuddy 模型到五个 OpenCode chat 组（不改 OpenCode 模型与顺序）；`--separate` 才整条替换四个 `workbuddy-*` provider | 低（统一）/ 中（分离）。统一模式只动 WorkBuddy 模型与五个 chat 组的 `baseUrl`；分离模式会冲掉 `workbuddy-*` 上手工加的模型 |
 
 **正确姿势**：先不带 `--apply` 跑一遍，看清它要写什么，再决定。
 
@@ -241,39 +241,50 @@ python workbuddy/workbuddy_zcode_sync.py           # 只打印计划
 
 ---
 
-## 8. 网关随 ZCode 自动起停
+## 8. 网关与统一路由随 ZCode 自动起停
 
 `workbuddy/zcode_gateway_watch.ps1` 是一个**无窗口守护器**：ZCode **主进程**从无到有 →
-静默拉起 `wb2api`；主进程退出 → 宽限 8 秒 + 在途连接排空后停网关。日常只开 ZCode 就行，
-不用再手动开 cmd。
+静默拉起 `wb2api` 和 `node tools/unified-router.js`；主进程退出 → 宽限 8 秒 +
+在途连接排空后停网关。日常只开 ZCode 就行，不用再手动开 cmd。
 
 主进程判据是「命令行既不含 `--type=`、也不含 `zcode.cjs` 的 `ZCode.exe`」——
 GPU / renderer / crashpad / CLI 宿主晚退几秒不会拖住网关。网关「就绪」以
-`/panel/` 返回 200 为准，不是只看端口打开。
+`/panel/` 返回 200 为准；统一路由「就绪」以 `/health` 返回 200 为准。
 
 | 动作 | 命令（在仓库根执行） |
 |---|---|
 | 注册开机自启并立即启动 | `powershell -NoProfile -ExecutionPolicy Bypass -File workbuddy/zcode_gateway_watch.ps1 -Install` |
-| 看当前状态（ZCode 主进程 / 网关就绪 / 守护器 / provider 指向） | 同上，`-Status` |
-| 移除自启并停守护器（网关保持运行） | 同上，`-Uninstall` |
+| 看当前状态（ZCode 主进程 / 网关 / 统一路由 / 五个 chat 组指向） | 同上，`-Status` |
+| 移除自启并停守护器（网关/路由保持运行） | 同上，`-Uninstall` |
 | 只验证状态机、不启停进程 | 同上，`-DryRun -ProcessName ping`（配一个假进程名） |
+| 不启停统一路由（只用 OpenCode 直连） | 同上，`-NoRouter` |
 
 | 变量 / 参数 | 默认 | 说明 |
 |---|---|---|
 | `WB_GATEWAY_DIR` | `<仓库>/workbuddy/gateway` | 网关目录（含 `wb2api.exe`、`config.json`） |
 | `WB_GATEWAY_BASE` | `http://127.0.0.1:7863` | 健康检查 + `/panel/` 就绪判定 + provider 指向校验 |
-| `ZCODE_WATCH_LOG` | `%LOCALAPPDATA%\ZCodeGateway` | 守护器与网关的日志目录 |
+| `ZCODE_WATCH_LOG` | `%LOCALAPPDATA%\ZCodeGateway` | 守护器、网关与路由的日志目录 |
 | `-PollMilliseconds` | `500` | 主进程轮询间隔；越小拉起越快 |
 | `-StopGraceSeconds` | `8` | 主进程退出后等多久再停（防止更新 / 重启误杀） |
 | `-DrainTimeoutSeconds` | `30` | 停网关前等在途连接排空的上限，超时才强制停止 |
 | `-ProcessName` | `ZCode` | 被跟随的进程名；换客户端时改这个 |
+| `-RouterPort` | `7871` | 统一路由监听端口（五个 chat 组按这个端口写 `baseUrl`） |
+| `-RouterScript` | `<仓库>/tools/unified-router.js` | 统一路由脚本路径 |
+| `-NoRouter` | 关 | 不启动 / 不停止统一路由 |
 
-`-Status` 会顺带读出 `provider_config.json` 里 `workbuddy-*` 四个 provider 的模型数、
-`baseUrl` 是否指向本网关、`apiKey` 是否存在（**只报状态，不打印值**）。
+`-Status` 会顺带读出 `provider_config.json` 里五个 chat provider 的模型数、
+`baseUrl` 是否指向统一路由、`apiKey` 是否存在（**只报状态，不打印值**）。
+分离模式（`--separate`）下则读 `workbuddy-*` 四个 provider 并校验指向网关。
 ZCode 每次启动时，守护器也会做同一项校验，发现不匹配就写一条「联动警告」到日志。
 
+**统一路由**：`tools/unified-router.js` 监听 `127.0.0.1:7871`，按 model 前缀分流
+（`cn:` / `global:` → 网关，其余 → OpenCode-Go）。手动启动：
+`node tools/unified-router.js`；健康检查 `GET http://127.0.0.1:7871/health`。
+它随守护器起停，正常情况下不需要单独开。
+
 日志（UTF-8）：`%LOCALAPPDATA%\ZCodeGateway\watchdog.log`（超过 1 MB 轮转为 `.1`）；
-网关自身输出在同目录 `gateway.stdout.log` / `gateway.stderr.log`（每次启动前轮转为 `.1`）。
+网关输出在同目录 `gateway.stdout.log` / `gateway.stderr.log`，路由输出
+`router.stdout.log` / `router.stderr.log`（每次启动前轮转为 `.1`）。
 手工兜底仍是网关目录下的 `stop-gateway.bat`（`taskkill /IM wb2api.exe /F`）。
 
 **网关目录是上游仓库的独立 clone**（`workbuddy/gateway/`，自带 `.git`），整目录被主仓

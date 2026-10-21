@@ -247,4 +247,23 @@ WorkBuddy2API 三个 provider 的模型顺序改为「主力置顶 → CN 优先
   合并为一张，按主力 → 低耗 → 高耗 → 免费 → 备用排序；价格列保留原单位，
   横比看已归一的「价格指数」
 
+### 统一路由：WorkBuddy 并入五个 chat 组（2026-10-21）
+
+- 新增 脚本 —— `tools/unified-router.js`：按 model 前缀分流 `cn:` / `global:` →
+  WorkBuddy 网关，其余 → OpenCode-Go；监听 `127.0.0.1:7871`，`GET /health` 做健康检查
+- 变更 配置 —— 删除 `workbuddy-low/free/high/backup` 四个 provider；18 个 WorkBuddy
+  模型并入 `opencode-go-chat/-free/-fast/-slow/-backup`；五个 chat 组 `baseUrl`
+  指向路由；`对话` / `响应` 仍直连 OpenCode。备份
+  `provider_config.json.bak-unified-*` / `.bak-wbproxy-*`
+- 变更 脚本 —— `workbuddy_zcode_sync.py` 默认 unified 模式（`--separate` 保留旧四档）；
+  `--reclassify-only` 适配统一模式；`apply_unified` 每次先清掉目标组里的 WorkBuddy
+  模型再重放，避免重复
+- 变更 守护器 —— `zcode_gateway_watch.ps1` 随 ZCode 启停统一路由；`-Status` 显示
+  路由与五个 chat 组；新增 `-RouterPort` / `-RouterScript` / `-NoRouter`；
+  日志 `router.stdout.log` / `router.stderr.log`
+- 调整 文档 —— MODEL-PROVIDERS §2 / §4 / §6.2、TOOLS、MAINTENANCE §4.4 / §8、
+  TROUBLESHOOTING §11 / §12、PITFALLS §12、SECRETS、docs/README
+- 说明 —— 统一路由是本地进程；ZCode 不开时由守护器停掉。回退：恢复
+  `.bak-unified-*`，或 `workbuddy_zcode_sync.py --separate --apply` 重建四档
+
 

@@ -91,7 +91,7 @@ BACKUP_MODEL_IDS = {"cn:deepseek-v4-flash", "cn:minimax-m3"}
 #   2. cn:* before global:*
 #   3. inside a region, group by vendor in VENDOR_ORDER
 #   4. inside a vendor, cheapest rate first, then id
-PINNED_MODEL_IDS = ("cn:deepseek-v4.1-flash",)
+PINNED_MODEL_IDS = ("deepseek-v4.1-flash", "cn:deepseek-v4.1-flash")
 VENDOR_ORDER = (
     "deepseek",   # 深度求索
     "zhipu",      # 智谱 GLM
@@ -105,6 +105,29 @@ VENDOR_ORDER = (
 # Reverse-proxy providers: 低代 first (it holds the pinned daily driver), then
 # 免代, 高代, and 备用 last.  ZCode renders personal providers in providerOrder.
 TIER_DISPLAY_ORDER = ("low", "free", "high", "backup")
+
+# Unified mode (default): merge WorkBuddy models into the OpenCode chat tier
+# providers instead of creating separate workbuddy-* providers. The merged
+# providers point at tools/unified-router.js, which routes cn:/global: models
+# to the gateway and everything else to OpenCode-Go.
+MAIN_MODEL_IDS = {"cn:deepseek-v4.1-flash", "global:deepseek-v4.1-flash-sg"}
+UNIFIED_TARGETS = {
+    "main": "opencode-go-chat",
+    "free": "opencode-go-chat-free",
+    "low": "opencode-go-chat-fast",
+    "high": "opencode-go-chat-slow",
+    "backup": "opencode-go-chat-backup",
+}
+ROUTER_BASE = os.environ.get("UNIFIED_ROUTER_BASE", "http://127.0.0.1:7871/v1")
+UNIFIED_ORDER = (
+    "opencode-go-chat",
+    "opencode-go-chat-free",
+    "opencode-go-chat-fast",
+    "opencode-go-chat-slow",
+    "opencode-go-chat-backup",
+    "opencode-go-messages",
+    "opencode-go-responses",
+)
 
 GROUP = "standard-personal"
 GATEWAY_BASE = os.environ.get("WB_GATEWAY_BASE", "http://127.0.0.1:7863")
@@ -377,6 +400,100 @@ def reclassify_backup(config: dict) -> list[str]:
     return moved
 
 
+def apply_unified(config: dict, tiers: dict[str, list[dict]], probe: dict[str, dict]) -> int:
+    """Merge WorkBuddy tiers into the OpenCode chat providers.
+
+    The merged providers point at tools/unified-router.js, which routes
+    cn:/global: models back to the WorkBuddy gateway and everything else to
+    OpenCode-Go. Returns the number of WorkBuddy model entries merged.
+    """
+    root = config.setdefault("config", {})
+    provider_rules = provider_rules_of(config)
+    by_id = {r.get("providerId"): r for r in provider_rules}
+    model_rules = model_rules_of(config)
+    existing = {(r.get("providerId"), r.get("modelId")): r for r in model_rules}
+    rates = {
+        str(rec["id"]): rec.get("_rate")
+        for recs in tiers.values()
+        for rec in recs
+    }
+
+    # Remove every WorkBuddy model from every target provider first, so a
+    # re-run can move a model between tiers without leaving a duplicate.
+    all_wb = {str(rec["id"]) for recs in tiers.values() for rec in recs}
+    for target_pid in UNIFIED_TARGETS.values():
+        target = by_id.get(target_pid)
+        if target is None:
+            continue
+        ids = [mid for mid in (target["config"].get("personalModelIds") or []) if mid not in all_wb]
+        target["config"]["personalModelIds"] = ids
+        target["config"]["modelOrder"] = ids
+
+    added = 0
+    for tier, target_pid in UNIFIED_TARGETS.items():
+        target = by_id.get(target_pid)
+        if target is None:
+            raise RuntimeError("target provider not found: " + target_pid)
+        ids = list(target["config"].get("personalModelIds") or [])
+        for rec in tiers[tier]:
+            mid = str(rec["id"])
+            if mid not in ids:
+                ids.append(mid)
+            rule = build_model_rule(target_pid, rec, probe.get(mid))
+            old = existing.get((target_pid, mid))
+            if old and isinstance(old.get("config"), dict):
+                rule["config"] = deep_merge(old["config"], rule["config"])
+                rule["config"]["enabled"] = True
+            model_rules[:] = [r for r in model_rules if r.get("modelId") != mid]
+            model_rules.append(rule)
+            existing[(target_pid, mid)] = rule
+            added += 1
+        ids.sort(key=lambda mid: model_sort_key({"id": mid, "_rate": rates.get(mid)}))
+        target["config"]["personalModelIds"] = ids
+        target["config"]["modelOrder"] = ids
+        target["config"].setdefault("api", {})["baseUrl"] = ROUTER_BASE
+
+    provider_rules[:] = [
+        r for r in provider_rules
+        if not str(r.get("providerId", "")).startswith("workbuddy-")
+    ]
+    model_rules[:] = [
+        r for r in model_rules
+        if not str(r.get("providerId", "")).startswith("workbuddy-")
+    ]
+    order = root.setdefault("providerOrder", [])
+    order[:] = [pid for pid in order if not str(pid).startswith("workbuddy-")]
+    for pid in UNIFIED_ORDER:
+        if pid not in order:
+            order.append(pid)
+    return added
+
+
+def reclassify_unified_backup(config: dict) -> list[str]:
+    """Move BACKUP_MODEL_IDS into the merged OpenCode backup provider."""
+    target_pid = UNIFIED_TARGETS["backup"]
+    target = next(
+        (r for r in provider_rules_of(config) if r.get("providerId") == target_pid),
+        None,
+    )
+    if target is None:
+        raise RuntimeError("target provider not found: " + target_pid)
+    moved: list[str] = []
+    for mid in sorted(BACKUP_MODEL_IDS):
+        before = next(
+            (r["providerId"] for r in provider_rules_of(config)
+             if mid in (r.get("config", {}).get("personalModelIds") or [])),
+            None,
+        )
+        if before is None:
+            continue
+        move_model(config, mid, target_pid)
+        if before != target_pid:
+            moved.append(mid)
+    target["config"].setdefault("api", {})["baseUrl"] = ROUTER_BASE
+    return moved
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--apply", action="store_true", help="write config (default dry run)")
@@ -384,8 +501,11 @@ def main() -> int:
                     help="reorder existing workbuddy providers/models only; "
                          "do not change membership or tiers")
     ap.add_argument("--reclassify-only", action="store_true",
-                    help="only move BACKUP_MODEL_IDS into workbuddy-backup; "
+                    help="only move BACKUP_MODEL_IDS into the backup target; "
                          "no gateway fetch")
+    ap.add_argument("--separate", action="store_true",
+                    help="keep the old four workbuddy-* providers instead of "
+                         "merging into the OpenCode chat tiers")
     ap.add_argument("--api-key", default=GATEWAY_KEY, help="gateway api_key")
     ap.add_argument("--max-rate", type=float, default=DEFAULT_MAX_RATE,
                     help="highest credit multiplier to include, anything above "
@@ -400,9 +520,9 @@ def main() -> int:
 
     if args.reclassify_only:
         config = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
-        moved = reclassify_backup(config)
+        moved = reclassify_backup(config) if args.separate else reclassify_unified_backup(config)
         print(f"config      : {CONFIG_FILE}")
-        print("mode        : reclassify only (no gateway fetch)")
+        print("mode        : reclassify only (%s)" % ("separate" if args.separate else "unified"))
         print("moved       : " + (", ".join(moved) if moved else "(none)"))
         if not args.apply:
             print("[dry-run] no changes written; pass --apply to write")
@@ -434,6 +554,12 @@ def main() -> int:
     # ---- reorder-only mode ------------------------------------------------
     if args.reorder_only:
         config = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+        if not args.separate:
+            print(f"config      : {CONFIG_FILE}")
+            print("mode        : reorder only (unified)")
+            print("unified mode: merged lists are rebuilt by --apply; "
+                  "no workbuddy-* providers to reorder")
+            return 0
         root = config.setdefault("config", {})
         provider_rules = root.setdefault("providerConfigRules", {}).setdefault("providerRules", [])
         rates = {str(r["id"]): r.get("_rate") for r in merged}
@@ -503,6 +629,33 @@ def main() -> int:
     if total == 0:
         print("no models selected", file=sys.stderr)
         return 1
+
+    # ---- unified mode (default) -------------------------------------------
+    if not args.separate:
+        config = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+        unified_tiers: dict[str, list[dict]] = {
+            "main": [], "low": [], "free": [], "high": [], "backup": []
+        }
+        for tier in ("low", "free", "high", "backup"):
+            for rec in tiers[tier]:
+                target = "main" if str(rec["id"]) in MAIN_MODEL_IDS else tier
+                unified_tiers[target].append(rec)
+        added = apply_unified(config, unified_tiers, probe)
+        print(f"config      : {CONFIG_FILE}")
+        print("mode        : unified (WorkBuddy -> OpenCode chat tiers)")
+        print(f"router base : {ROUTER_BASE}")
+        print(f"selected    : {total} models")
+        print(f"merged      : {added} model entries")
+        for tier in ("main", "low", "free", "high", "backup"):
+            print(f"  {tier:6} -> {UNIFIED_TARGETS[tier]}: {len(unified_tiers[tier])}")
+        print(f"excluded    : {len(excluded)}")
+        if not args.apply:
+            print("[dry-run] no changes written; pass --apply to write")
+            return 0
+        backup = write_config(config)
+        print(f"backup      : {backup.name}")
+        print(f"written     : {CONFIG_FILE}")
+        return 0
 
     # ---- build config -----------------------------------------------------
     config = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
