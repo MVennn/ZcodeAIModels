@@ -14,7 +14,7 @@
 
 ---
 
-## [未发布] — 2026-10-20
+## [0.1.0] — 2026-10-21
 
 本仓**首次建仓**：从同级的「OpenWrt 工作目录」里把
 **AI 模型接入**这一条线整体拆出来，成为独立仓库 `ZcodeAIModels`。
@@ -50,6 +50,8 @@
 - 调整 数据 —— `wb_zcode_probe.log`：从 `scripts/` 迁入 `workbuddy/logs/`。
 - 调整 数据 —— `wb_model_status.json`：从 `scripts/` 迁入 `workbuddy/archive/`（已被取代）。
 - 调整 数据 —— `wb_probe_rerun.log`：从 `scripts/` 迁入 `workbuddy/archive/`（一次性日志）。
+- 清理 数据 —— `wb_probe_rerun.log`：一次性探测日志，结果已由 `wb_model_status.json`
+  与 `workbuddy/cache/wb_zcode_probe.json` 覆盖，2026-10-21 删除。
 - 调整 数据 —— `probe_results.json` / `bench_results.json` / `bench_clean.json`：从 `scripts/` 迁入 `opencode-go/probe/results/20261019/`。
 - 调整 数据 —— `wb_panel_models.json`：从原 `audit/` 迁入 `evidence/`。
 - 调整 数据 —— `go-model-sync-*.md`（5 份）：从原 `audit/` 迁入 `evidence/go-model-sync/`。

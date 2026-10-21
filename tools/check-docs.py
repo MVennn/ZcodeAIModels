@@ -18,6 +18,8 @@ import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SKIP_DIRS = {".git", "node_modules", "dist", "__pycache__", "third-party", "memories", "evidence",
+            # .work/ 是本地工作区（.gitignore 排除），里面的草稿不参与版本库文档检查
+            ".work", ".codegraph",
             # vault/ 被 .gitignore 排除，不属于版本库里的文档
             "vault"}
 # 整目录被 .gitignore 排除的上游 clone（运行时含凭据与二进制，不套活文档规则）
