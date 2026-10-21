@@ -312,7 +312,8 @@ Android 模拟器插件、几十个 package）。本仓只需要那份 2.5 KB �
 
 ## 4. 借鉴落地：进本仓的两件东西
 
-两件都在 [../upstream/](../third-party/zcodium/)，都是**自己写的实现**，只借鉴思路与必要的表达式。
+两件都在 [../third-party/zcodium/](../third-party/zcodium/)，都是**自写的落地件**
+（一件逐字切片 + 一件自写实现），只借鉴思路与必要的表达式。
 
 ### 4.1 按协议发「最小且正确」的思考字段
 
@@ -391,11 +392,17 @@ node third-party/zcodium/reasoning-rules.js check /path/to/zcode-builtin.json
 | **zcode-api** | **仓库里没有 LICENSE 文件** —— 默认「保留所有权利」，**不可复制、不可 vendor** |
 | **zcode2api（两家）** | **AGPL-3.0** —— 强 copyleft。抄进 MIT 仓库会传染，**只读不抄** |
 
-> **只有两处复制了代码**，都在 [../upstream/](../third-party/zcodium/)，文件头都注明了
-> 来源 URL + SHA + license：
+> **随仓分发的上游文件共三处**，都在 [../third-party/](../third-party/README.md)，
+> 每个子目录一份 `UPSTREAM.md` 写清来源 URL、钉住的 SHA 与 license：
 > 1. `third-party/zcodium/zcode-builtin-reasoning-rules.json` —— ZCodium 的规则切片（MIT），**逐字**；
 > 2. `third-party/zcodium/reasoning-rules.js` —— **本仓自己写的实现**，只借鉴 AnyBridge 的
->    「协议 → 字段」映射思路与 ZCodium 的表达式写法，代码是新的。
+>    「协议 → 字段」映射思路与 ZCodium 的表达式写法，代码是新的；
+> 3. `third-party/zcode/` 下的 4 个原样文件（`zcode-builtin.json`、`model-config.ts`、
+>    `schema.ts`、`rule-data-schema.ts`，**一个字节未改**，Apache-2.0）——
+>    让探测复刻 ZCode 的请求体语义时不依赖本机是否装了 ZCode。
+>
+> 许可兼容性与逐项声明见 [../NOTICE](../NOTICE) 与
+> [../third-party/README.md](../third-party/README.md)。
 
 ---
 
@@ -409,7 +416,7 @@ node third-party/zcodium/reasoning-rules.js check /path/to/zcode-builtin.json
 | 静态分档是否要升级成「有序降级链」 | **待落地** | 借鉴 my-free-code §3.3 与 zen-proxy §3.2：档位 → 候选序列 → 逐个降级；并按错误分级决定「重试」还是「换模型」 |
 | 探测结果该不该再解读一次 | **待落地** | 借鉴 zen-proxy §3.2：合成探针与「模型已下线」在上游侧表现相同。本仓的探测用 ZCode 真实 body，**比裸 body 强**，但仍不等于真实业务流量 —— 结论应区分「目录里没有」与「探针没探通」 |
 | CCR / otari 的能力目录读法 | **待补** | 本仓的思考档位来自 WorkBuddy 面板；CCR 是从上游目录 metadata 读。本仓的网关没有目录接口，暂不可用 |
-| `docs/README.md` 索引未收录本篇 | **待补** | 本次调研的硬约束要求**不改既有 docs/**，所以索引里没加本篇。补一行即可（分类：参考资料） |
+| `docs/README.md` 索引未收录本篇 | **已补** | 索引已收录（分类：参考资料），见 [README.md](README.md) |
 
 ---
 
@@ -418,5 +425,5 @@ node third-party/zcodium/reasoning-rules.js check /path/to/zcode-builtin.json
 - [MODEL-PROVIDERS.md](MODEL-PROVIDERS.md) —— provider 分组 / 协议 / 关思考参数矩阵正本
 - [PITFALLS.md](PITFALLS.md) —— 「ZCode 内置通用规则无条件发思考字段」的机制解释（§2）与规则叠加语义（§4）
 - [TROUBLESHOOTING.md](TROUBLESHOOTING.md) —— 现象 → 排查步骤
-- [../README.md](../README.md) —— 门面与文件清单
+- [../README.md](../README.md) —— 门面（这是什么 / 环境要求 / 使用 / 反馈 / 免责声明 / 开源鸣谢 / 许可证）
 - [../NOTICE](../NOTICE) —— 第三方声明与借鉴来源

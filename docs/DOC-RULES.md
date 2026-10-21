@@ -12,9 +12,9 @@ docs/ 分四类（索引见 [README.md](README.md)）：
 | 类别 | 收什么 | 现有成员 |
 |---|---|---|
 | 模型与 Provider | 有哪些 provider、模型归哪组、走什么协议、参数怎么写 | MODEL-PROVIDERS、模型速查表、archive/OPENCODE-GO-模型与订阅优化分析 |
-| 流程与规范 | 怎么写文档、怎么维护、版本怎么晋升、凭据放在哪、发版说明 | DOC-RULES、MAINTENANCE、VERSIONING、SECRETS、release-notes/README |
+| 流程与规范 | 怎么写文档、怎么维护、版本怎么晋升、凭据放在哪、工具清单怎么记、发版说明 | DOC-RULES、MAINTENANCE、TOOLS、VERSIONING、SECRETS、release-notes/README |
 | 排错与踩坑 | 出问题了怎么查、为什么会这样 | PITFALLS、TROUBLESHOOTING |
-| 参考资料 | 面向使用者的 Release 说明、证据快照、许可证、外部榜单 | release-notes/、根 README / AGENTS / CHANGELOG / NOTICE / PROGRESS / LICENSE、evidence/、BENCHMARKS |
+| 参考资料 | 面向使用者的 Release 说明、证据快照、许可证、外部榜单、上游调研 | release-notes/、根 README / AGENTS / CHANGELOG / NOTICE / PROGRESS / LICENSE、evidence/、BENCHMARKS、UPSTREAM、third-party/ |
 
 每篇文档开头必须有一个 **「一句话」引言块**（`> **一句话**：…` 或一行定位语），
 让读者不用往下翻就知道这篇管什么。新文档没有它不算写完。
@@ -33,6 +33,10 @@ docs/ 分四类（索引见 [README.md](README.md)）：
 | 规则 | 正本 |
 |---|---|
 | provider 分组 / 协议类型 / 工具调用 / 关思考参数矩阵 | [MODEL-PROVIDERS.md](MODEL-PROVIDERS.md) |
+| 接一个新供应商的四步方法 | [MODEL-PROVIDERS.md](MODEL-PROVIDERS.md) §0 |
+| 脚本改 ZCode 配置的哪几处、两个 `--apply` 脚本的行为差异 | [MODEL-PROVIDERS.md](MODEL-PROVIDERS.md) §1、§1.1 |
+| `--apply` 的备份文件名与回退步骤 | [MAINTENANCE.md](MAINTENANCE.md) §4 |
+| 写配置期间与 ZCode 界面的互斥、热重载注意事项 | [MAINTENANCE.md](MAINTENANCE.md) §5（机制解释见 [PITFALLS.md](PITFALLS.md) §8） |
 | 文档怎么写、怎么分类、怎么互链 | [DOC-RULES.md](DOC-RULES.md)（本篇） |
 | 维护流程（价格表刷新 / 探测限速 / 快照保留 / 备份回退 / 热重载） | [MAINTENANCE.md](MAINTENANCE.md) |
 | 排错步骤（现象 → 排查 → 原因 / 解法） | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) |
@@ -40,10 +44,12 @@ docs/ 分四类（索引见 [README.md](README.md)）：
 | Release 说明格式（含动词四选一、覆盖率红线） | [release-notes/README.md](release-notes/README.md) |
 | **版本晋升规则**（有功能更新 +0.1.0，没有 +0.0.1） | [VERSIONING.md](VERSIONING.md) §1–§2 |
 | **交付 / 发版规则**（版本号在哪维护 / 什么时候不动版本号 / 打 tag） | [VERSIONING.md](VERSIONING.md) §3、§5 + [release-notes/README.md](release-notes/README.md) |
+| 脚本清单、产物与去留标记、运行环境 | [TOOLS.md](TOOLS.md) |
 | 凭据存放位置与取值方法 | [SECRETS.md](SECRETS.md) |
 | 许可证 | 仓库根 [LICENSE](../LICENSE)（MIT 全文） |
 | PROGRESS 的路径规则、凭据规则 | 仓库根 [AGENTS.md](../AGENTS.md) |
 | 第三方组件与服务的声明 | 仓库根 [NOTICE](../NOTICE) |
+| 同类项目调研与随仓分发的上游文件来源 | [UPSTREAM.md](UPSTREAM.md) + [../third-party/README.md](../third-party/README.md) |
 | 外部榜单的入口、口径与分数快照 | [BENCHMARKS.md](BENCHMARKS.md) |
 
 ### 禁止重复清单（本次建仓发现的反例，勿重蹈）

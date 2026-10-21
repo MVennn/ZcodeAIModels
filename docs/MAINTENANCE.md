@@ -185,17 +185,8 @@ python -c "import json,os; json.load(open(os.path.expanduser('~/.zcode/v2/provid
 
 ### 4.4 `--apply` 的两种风险
 
-| 脚本 | 行为 | 风险 |
-|---|---|---|
-| `go_model_sync.py --apply` | 只**追加**模型 + 备用档重排（`BACKUP_MODEL_IDS`）+ 改一个 provider 显示名（"备用"→"响应"） | 低。已有模型的**组内顺序**可能被打乱（新模型追加到组尾） |
-| `workbuddy_zcode_sync.py --apply` | 默认**合并** WorkBuddy 模型到五个 OpenCode chat 组（不改 OpenCode 模型与顺序）；`--separate` 才整条替换四个 `workbuddy-*` provider | 低（统一）/ 中（分离）。统一模式只动 WorkBuddy 模型与五个 chat 组的 `baseUrl`；分离模式会冲掉 `workbuddy-*` 上手工加的模型 |
-
-**正确姿势**：先不带 `--apply` 跑一遍，看清它要写什么，再决定。
-
-```bash
-python opencode-go/ops/go_model_sync.py            # 只出报告
-python workbuddy/workbuddy_zcode_sync.py           # 只打印计划
-```
+两个同步脚本各自的写入行为（默认合并 / 只追加、`--separate` 的风险、正确姿势）以
+[MODEL-PROVIDERS.md](MODEL-PROVIDERS.md) §1.1 为**正本**；本节只管备份与回退。
 
 ---
 
@@ -315,4 +306,5 @@ clone 一起删掉**，别在不确认的情况下跑。
 | Release 说明怎么写 | [release-notes/README.md](release-notes/README.md) |
 | 凭据（OpenCode-Go key / 网关 key / ZCode 配置路径）在哪 | [SECRETS.md](SECRETS.md) |
 | provider 分组、协议类型、参数矩阵 | [MODEL-PROVIDERS.md](MODEL-PROVIDERS.md) |
+| 脚本改 ZCode 配置的哪几处、两个 `--apply` 脚本的行为差异 | [MODEL-PROVIDERS.md](MODEL-PROVIDERS.md) §1、§1.1 |
 | 排障步骤 | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) |

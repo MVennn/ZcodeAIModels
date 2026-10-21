@@ -51,7 +51,9 @@
 
 ---
 
-## 1. ZCode 侧的配置落点
+## 1. ZCode 侧的关系：配置落点与写入行为
+
+> **一句话**：脚本改 ZCode 的哪几处、两个同步脚本各自怎么写、写了怎么回退 —— 本节是这些口径的**正本**。
 
 脚本只碰 `provider_config.json` 的三个位置（完整路径 `~/.zcode/v2/provider_config.json`）：
 
@@ -65,7 +67,26 @@
 改显示名不影响引用，改 `providerId` 会让旧会话找不到模型。
 
 **ZCode 约 1 秒轮询该配置**，写完一般不用重启客户端；但**不要在 ZCode 的 provider
-设置界面里同时改** —— 界面保存时会整份写回，把脚本写的覆盖掉。
+设置界面里同时改** —— 界面保存时会整份写回，把脚本写的覆盖掉
+（机制见 [PITFALLS.md](PITFALLS.md) §8，热重载的其余注意事项见 [MAINTENANCE.md](MAINTENANCE.md) §5）。
+
+### 1.1 两个同步脚本的写入行为
+
+| 脚本 | 默认行为 | 风险 |
+|---|---|---|
+| `opencode-go/ops/go_model_sync.py --apply` | 只**追加**模型 + 备用档重排（`BACKUP_MODEL_IDS`）+ 改一个 provider 显示名（"备用"→"响应"） | 低。已有模型的**组内顺序**可能被打乱（新模型追加到组尾） |
+| `workbuddy/workbuddy_zcode_sync.py --apply` | 默认**合并** WorkBuddy 模型到五个 OpenCode chat 组（不改 OpenCode 模型与顺序）；`--separate` 才整条替换四个 `workbuddy-*` provider | 低（统一）/ 中（分离）。统一模式只动 WorkBuddy 模型与五个 chat 组的 `baseUrl`；分离模式会冲掉 `workbuddy-*` 上手工加的模型 |
+
+**正确姿势**：先不带 `--apply` 跑一遍，看清它要写什么，再决定。
+
+```bash
+python opencode-go/ops/go_model_sync.py            # 只出报告
+python workbuddy/workbuddy_zcode_sync.py           # 只打印计划
+```
+
+两个脚本都**先备份再原子替换** `provider_config.json`（备份文件名与回退步骤见
+[MAINTENANCE.md](MAINTENANCE.md) §4）。写配置期间**同一个时间只有一个写入者** ——
+脚本与 ZCode 界面不能同时改。
 
 ---
 

@@ -1,9 +1,20 @@
 # 工具清单
 
-> **一句话**：本仓全部脚本的产物与去留标记 —— 哪些是长期工具、哪些是一次性探测、哪些是活数据；根 README 只留「快速开始」速览。
+> **一句话**：本仓全部脚本的产物与去留标记 —— 哪些是长期工具、哪些是一次性探测、哪些是活数据；根 README 只留「使用」速览。
 
 下表列的是**两个示例接入器**的脚本。换供应商时照同样的结构加一份
 （通用方法见 [MODEL-PROVIDERS.md](MODEL-PROVIDERS.md) §0）。
+
+## 0. 运行环境
+
+| 项 | 要求 | 说明 |
+|---|---|---|
+| Python | 3.x，**只用标准库**（无第三方依赖） | 所有 `.py` 脚本 |
+| Node.js | 18+ | 跑 `.js` 脚本（探测、统一路由、思考字段映射） |
+| 凭据 | **只走环境变量** | 变量名与取值见 [SECRETS.md](SECRETS.md) §3.5 |
+| 客户端 | ZCode 桌面端（Windows） | 脚本读它的 `provider_config.json`，路径见 [SECRETS.md](SECRETS.md) §3.4 |
+
+## 1. 工具清单
 
 | 脚本 | 作用 | 输出产物 | 长期 |
 |---|---|---|---|
@@ -30,6 +41,27 @@
 | `third-party/zcodium/reasoning-rules.js` | 按协议算「最小且正确」的思考字段；并比对本机 ZCode 内置规则与上游切片，报漂移 | stdout | ✅ 长期 |
 | `third-party/zcodium/zcode-builtin-reasoning-rules.json` | ZCodium 内置思考规则的最小切片（4 条，逐字抄录，带来源 URL + SHA + license） | 只读参考 | ✅ 长期 |
 
+---
+
+## 2. 统一模式与分离模式
+
+`workbuddy/workbuddy_zcode_sync.py` 有两种写法，**默认是统一模式**：
+
+| 模式 | 怎么触发 | 结果 |
+|---|---|---|
+| 统一模式（默认） | 不带 `--separate` | WorkBuddy 模型并进 OpenCode 的五个 chat 组，五个组的 `baseUrl` 指向统一路由 `tools/unified-router.js`（`127.0.0.1:7871`） |
+| 分离模式 | `--separate` | 重建四个独立的 `workbuddy-*` provider（免代 / 低代 / 高代 / 备用），`baseUrl` 直指网关 |
+
+统一路由按 model 前缀分流：`cn:` / `global:` → WorkBuddy 网关（`127.0.0.1:7863`），
+其余 → OpenCode-Go。它随 ZCode 起停（`workbuddy/zcode_gateway_watch.ps1`），
+手动启动是 `node tools/unified-router.js`，健康检查 `GET /health`。
+
+模型怎么分档、哪些模型进哪一组，见 [MODEL-PROVIDERS.md](MODEL-PROVIDERS.md) §4.0、§4.2；
+守护器与开机自启，见 [MAINTENANCE.md](MAINTENANCE.md) §8。
+
+---
+
 一次性脚本的结论已固化进 [MODEL-PROVIDERS.md](MODEL-PROVIDERS.md)，**不用重跑**；
 要重跑先改源码里的模型清单。凭据与环境变量口径见 [SECRETS.md](SECRETS.md)；
+两个同步脚本各自的写入行为见 [MODEL-PROVIDERS.md](MODEL-PROVIDERS.md) §1.1，
 `--apply` 的备份与回退见 [MAINTENANCE.md](MAINTENANCE.md) §4。
