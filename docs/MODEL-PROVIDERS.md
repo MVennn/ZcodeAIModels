@@ -7,8 +7,8 @@
 > OpenCode-Go 六个（§2）与 WorkBuddy2API 三个（§4）。
 > **接别的供应商**：方法见 §0；本篇的表是**快照**，不是通用规则。
 
-数据快照：**2026-10-20**。价格 / 额度 / 倍率随服务商变动，改之前先看
-[MAINTENANCE.md](MAINTENANCE.md) §1。
+数据快照：**2026-10-20**（§4 WorkBuddy 的倍率与分档于 **2026-10-21** 刷新）。
+价格 / 额度 / 倍率随服务商变动，改之前先看 [MAINTENANCE.md](MAINTENANCE.md) §1。
 
 ---
 
@@ -188,6 +188,9 @@
 网关：`wb2api` 面板版（MIT），默认 `http://127.0.0.1:7863`，OpenAI 兼容。
 把腾讯 CodeBuddy 账号池变成 OpenAI 兼容 API。模型 id 形如 `cn:xxx` / `global:xxx`。
 
+网关生命周期默认由 `workbuddy/zcode_gateway_watch.ps1` 跟随 ZCode（ZCode 起 → 网关起，
+全部退出 → 停），安装与副作用见 [MAINTENANCE.md](MAINTENANCE.md) §8。
+
 ### 4.1 目录与别名
 
 - `/panel/api/models` 与 `/v1/models` 同源。**注意**：网关未重启时 `/panel/api/models`
@@ -201,74 +204,81 @@
 `credits` = 牌价，`promo_credits` = 生效价（取 `promo_credits` 优先）。
 **倍率越小越便宜**。
 
-| providerId | 显示名 | 倍率区间 | 模型数 |
+| providerId | 显示名 | 倍率区间（按牌价分档） | 模型数 |
 |---|---|---|---:|
-| `workbuddy-free` | 免代 | = 0.00 | 5 |
-| `workbuddy-low` | 低代 | 0 < 倍率 ≤ 0.30 | 13 |
-| `workbuddy-high` | 高代 | 0.30 < 倍率 ≤ 0.80 | 12 |
+| `workbuddy-low` | 低代 | 0 < 倍率 ≤ 0.16（主力价位） | 8 |
+| `workbuddy-free` | 免代 | 生效价 = 0.00 | 6 |
+| `workbuddy-high` | 高代 | 0.16 < 倍率 ≤ 0.30 | 4 |
 
-上限 0.80 是为了**让清单里的模型都和 `deepseek-v4.1-flash`（牌价 x0.11 /
-global 促销 x0.00）一个量级**，不引入 x1.3–x6.7 的高端档。
+**界面顺序是 低代 → 免代 → 高代**（`providerOrder`）。低代排第一，是因为
+日常主力 `cn:deepseek-v4.1-flash` 在这一档；免代虽然免费，但模型不是主力。
 
-组内按倍率升序（同倍率按 id 字典序）。
+**分价口径（2026-10-21 起）：只接受主力价位的模型。** 锚点是主力的
+`cn:deepseek-v4.1-flash` = **x0.11**——
 
-### 4.3 免代 `workbuddy-free`（倍率 0.00）
+- ≤ x0.16（主力及更便宜的）→ 低代；
+- x0.17 – x0.30（约 1.5–2.7 倍）→ 高代；
+- **x0.30 以上"贵不加"**：同步脚本一律排除，自动收录也不会再引进
+  （原高代 x0.50–0.79 = 主力的 **4.5–7.2 倍**，整组移出）。
+
+**组内顺序**（`personalModelIds` 与 `modelOrder` 写同一份列表）：
+
+1. `cn:deepseek-v4.1-flash` 钉在最前；
+2. 其余 **CN 在前、全球在后**；
+3. 每个区域内部**按模型公司分组**：深度求索 → 智谱 → MiniMax → 月之暗面 →
+   小米 MiMo → 腾讯混元 → 阶跃星辰 → 匿名/其他；
+4. 同公司内按倍率升序，同倍率按 id 字典序。
+
+排序与分价规则的正本是 `workbuddy/workbuddy_zcode_sync.py` 的 `PINNED_MODEL_IDS`
+/ `VENDOR_ORDER` / `LOW_MAX` / `DEFAULT_MAX_RATE`；改完用 `--reorder-only --apply`
+只重排、不动成员与档位，改分价阈值则重新 `--apply`。
+
+> **2026-10-21 促销漂移已并入分档**：`cn:hy4-preview` 生效价 `0x` → 进免代；
+> `cn:glm-5.2` 促销 x0.50 在新上限之外 → 随原高代一起移出。
+
+### 4.3 免代 `workbuddy-free`（生效倍率 0.00）
 
 | 模型 | 上下文 | 输出上限 | 可关思考 | effort 档位 | 实测 |
 |---|---|---:|---|---|---|
 | cn:hy3 | 192K | 64K | ❌ | low / high | 200 |
+| cn:hy4-preview | 1M | 64K | ❌ | high | 200 |
 | cn:step-5-preview | 1M | 64K | ❌ | low / medium / high | 200 |
 | global:deepseek-v4.1-flash | 1M | 128K | ❌ | high | 200 |
 | global:hy3 | 192K | 64K | ❌ | low / high | 200 |
 | global:step-5-preview | 1M | 64K | ❌ | low / medium / high | 200 |
 
-### 4.4 低代 `workbuddy-low`（0.03 – 0.29）
+### 4.4 低代 `workbuddy-low`（0 < 倍率 ≤ 0.16，主力价位）
 
 | 模型 | 倍率 | 上下文 | 输出上限 | 可关思考 | effort 档位 | 实测 |
 |---|---:|---:|---:|---|---|---|
-| global:deepseek-v4.1-flash-sg | 0.03 | 1M | 128K | ❌ | 未标 | 200 |
-| cn:hy3-x | 0.05 | 192K | 64K | ❌ | low / high | 200 |
+| **cn:deepseek-v4.1-flash** | 0.11 | 1M | 393K | ✅ | low / high / max | 200 |
 | cn:glm-5.3-flash | 0.08 | 1M | 131K | ✅ | low / high / max | 200 |
 | cn:minimax-m3.1-flash | 0.08 | 1M | 128K | ❌ | low / medium / high / xhigh / max | 200 |
+| cn:hy3-x | 0.05 | 192K | 64K | ❌ | low / high | 200 |
 | cn:space-bunny | 0.08 | 1M | 128K | ❌ | low / medium / high / xhigh / max | 200 |
+| global:deepseek-v4.1-flash-sg | 0.03 | 1M | 128K | ❌ | 未标 | 200 |
 | global:glm-5.3-flash | 0.08 | 1M | 32K | ✅ | low / high / max | 200 |
 | global:minimax-m3.1-flash | 0.08 | 1M | 128K | ❌ | low / medium / high / xhigh / max | 200 |
-| cn:deepseek-v4.1-flash | 0.11 | 1M | 393K | ✅ | low / high / max | 200 |
-| cn:deepseek-v4-flash | 0.17 | 1M | 50K | ✅ | low / high / xhigh | 200 |
-| cn:mimo-v2.6-pro | 0.18 | 1M | 128K | ❌ | 未标 | 200 |
-| cn:minimax-m3 | 0.25 | 512K | 524K | ❌ | medium | 200 |
-| cn:hy4-preview | 0.29 | 1M | 64K | ❌ | high | 200 |
-| global:hy4-preview | 0.29 | 1M | 64K | ❌ | high | 200 |
 
-### 4.5 高代 `workbuddy-high`（0.51 – 0.79）
+### 4.5 高代 `workbuddy-high`（0.16 < 倍率 ≤ 0.30，略高于主力）
 
 | 模型 | 倍率 | 上下文 | 输出上限 | 可关思考 | effort 档位 | 实测 |
 |---|---:|---:|---:|---|---|---|
-| cn:deepseek-v4-pro | 0.51 | 1M | 393K | ✅ | low / high / xhigh | 200 |
-| cn:kimi-k2.6 | 0.52 | 256K | 32K | ❌ | medium | 200 |
-| global:kimi-k2.6 | 0.52 | 256K | 32K | ❌ | medium | 200 |
-| cn:kimi-k2.7 | 0.57 | 256K | 32K | ❌ | medium | 200 |
-| cn:glm-5.3 | 0.69 | 1M | 131K | ✅ | low / high / max | 200 |
-| global:glm-5.3 | 0.69 | 1M | 48K | ✅ | low / high / max | 200 |
-| cn:glm-5v-turbo | 0.71 | 200K | 64K | ❌ | medium | 200 |
-| cn:kimi-k2.8-preview | 0.77 | 1M | 131K | ✅ | low / medium / high | 200 |
-| global:kimi-k2.8-preview | 0.77 | 1M | 32K | ✅ | low / high / max | 200 |
-| cn:glm-5.1 | 0.79 | 200K | 48K | ❌ | medium | 200 |
-| cn:glm-5.2 | 0.79 | 1M | 131K | ✅ | high / xhigh | 200 |
-| global:glm-5.2 | 0.79 | 1M | 48K | ✅ | high / xhigh | 200 |
+| cn:deepseek-v4-flash | 0.17 | 1M | 50K | ✅ | low / high / xhigh | 200 |
+| cn:minimax-m3 | 0.25 | 512K | 524K | ❌ | medium | 200 |
+| cn:mimo-v2.6-pro | 0.18 | 1M | 128K | ❌ | 未标 | 200 |
+| global:hy4-preview | 0.29 | 1M | 64K | ❌ | high | 200 |
 
-**全部 30 个模型都支持工具调用**（网关 `supports_tool_call` 全为真）。
+**全部 18 个模型都支持工具调用**（网关 `supports_tool_call` 全为真）。
 
-### 4.6 被排除的 26 个
+### 4.6 被排除的 38 个
 
 | 类别 | 数量 | 例子 |
 |---|---:|---|
+| 倍率 > 0.30（贵不加） | 25 | 原高代 12 个（cn:glm-5.1/5.2/5.3/5v-turbo、cn:kimi-k2.6/2.7/2.8-preview、cn:deepseek-v4-pro、global 同款）+ gpt / gemini / grok / kimi-k3 系列 13 个 |
+| 无挂牌价 | 3 | `cn:hy4-preview-f`、`global:hy4-preview-f`、`global:o4-mini` |
+| 路由别名 | 8 | 见 §4.1（`global:enhance-1.0` 兼限流） |
 | 账号类型不允许（blocked） | 2 | `global:gpt-6-luna`、`global:gpt-5.6-luna` |
-| 上游不可用（unavailable） | 2 | `global:auto-chat`、`global:o4-mini`（上游 `11102 model not available`，且被 model_lock 锁到 2026-10-21） |
-| 路由别名 | 8 | 见 §4.1 |
-| 倍率 > 0.80 | 10 | gemini-3.8/3.5-flash、gpt-5.3-codex、gpt-6-sol、gpt-6.1-sol、gpt-5.6-terra、kimi-k3、kimi-k3-1、gpt-5.4、grok-4.7、gpt-5.5、gpt-5.6-sol、gpt-6-astra |
-| 无挂牌价 | 2 | `cn:hy4-preview-f`、`global:hy4-preview-f` |
-| 限流（rate_limited） | 1 | `global:enhance-1.0`（同时是别名） |
 
 ### 4.7 账号池限制：`personal_free_user` 导致 global 高端模型 503
 

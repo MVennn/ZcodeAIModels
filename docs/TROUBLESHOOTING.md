@@ -321,6 +321,45 @@ curl -si -X POST http://127.0.0.1:7863/v1/chat/completions \
 
 ---
 
+<a id="gateway-lifecycle"></a>
+
+## 11. 网关没跟着 ZCode 起停 【实例 B】
+
+**现象**：打开 ZCode 后 WorkBuddy 模型连不上 `127.0.0.1:7863`；或者关了 ZCode
+网关进程还在；或者开机后守护器没生效。
+
+**排查**
+
+```bash
+# 1) 一次看全：ZCode / 网关 / 守护器
+powershell -NoProfile -ExecutionPolicy Bypass -File workbuddy/zcode_gateway_watch.ps1 -Status
+
+# 2) 看守护器日志（每次状态迁移一行；文件是 UTF-8）
+python -c "import os; p=os.path.join(os.environ['LOCALAPPDATA'],'ZCodeGateway','watchdog.log'); print(open(p,encoding='utf-8').read()[-3000:])"
+
+# 3) 看开机自启在不在
+ls "$APPDATA/Microsoft/Windows/Start Menu/Programs/Startup/" | grep -i zcode
+```
+
+**原因 / 解法**（均为**【实例 B】**）
+
+| 原因 | 解法 |
+|---|---|
+| 守护器没在跑（没装自启 / 被结束） | `-Install`：注册自启并立即启动 |
+| `WB_GATEWAY_DIR` 指错，找不到 `wb2api.exe` | 改环境变量，或确认仓库内默认目录 `workbuddy/gateway/` 存在（它整目录被 `.gitignore` 排除，**克隆后不会自带**；重建方法见 [MAINTENANCE.md](MAINTENANCE.md) §8） |
+| 网关启动后立刻退出 | 看 `%LOCALAPPDATA%\ZCodeGateway\gateway.stderr.log` |
+| 关 ZCode 后网关还在 | 先等满 8 秒宽限 + 最多 30 秒在途连接排空（`-DrainTimeoutSeconds`）；仍不走在 `-Status` 里看守护器是否还活着，必要时 `stop-gateway.bat` |
+| `-Status` 的 Provider 行显示「不匹配」或「key 缺失」 | ZCode 的 provider 没指向本网关：重跑 `workbuddy_zcode_sync.py --apply`，或检查 `ZCODE_PERSONAL_PROVIDER_CONFIG_FILE` |
+| `-Status` 显示「有 N 个进程但未识别到主进程」 | ZCode 升级可能改了命令行判据。看 `watchdog.log`；确认新版主进程命令行后更新 `Get-ZCodeMainProcess` 的过滤条件 |
+| 自启快捷方式在，登录后却没起 | 目标应为 `wscript.exe "<仓库>\workbuddy\zcode_gateway_watch.vbs"`，用 `-Install` 重建 |
+| 想彻底回到手动 | `-Uninstall`，之后按网关目录的 `run.bat` / `stop-gateway.bat` 控制 |
+
+> 守护器只做两件事：**主进程**出现时拉起、主进程退出且连接排空后停止。
+> ZCode 只是最小化到托盘时主进程仍在，网关也会保持运行 —— 这是预期行为。
+> 生命周期设计的取舍见 [MAINTENANCE.md](MAINTENANCE.md) §8。
+
+---
+
 ## 附：通用排查顺序
 
 **换任何供应商都按这个顺序**（括号里是本仓两个实例的具体命令）：

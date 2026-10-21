@@ -28,6 +28,7 @@
 |---|---|---|---|
 | **OpenCode-Go API key**（`oc_sk_…`） | ZCode 的 `provider_config.json` 里的 `apiKey` 字段；也可从 OpenCode 控制台重新签发 | 5 个探测脚本从环境变量 **`OPENCODE_GO_KEY`** 读；**未设置时明确报错退出**，不会带着空 key 去请求 | **不入库**。轮换后重新 `export` |
 | **WorkBuddy 网关 key** | 本机 `wb2api` 网关自己的 `api_key`（网关面板 / 配置里） | 2 个 WorkBuddy 脚本从环境变量 **`WB_GATEWAY_KEY`** 读 | **不入库**。网关换账号池时一并轮换 |
+| **网关账号池凭据**（`auths/`，4 个号） | 本机 `workbuddy/gateway/auths/`（上游 clone 的运行目录）；`config.json` 里还有网关自己的 `api_key` | 整个 `workbuddy/gateway/` 被 `.gitignore` 排除；仓库里只出现 `WB_GATEWAY_KEY` 这个变量名 | **不入库**。换账号池时整目录一起换 |
 | **其它供应商的凭据**（你自己接的） | 该服务商自己的控制台 / 账号设置 | **一律走环境变量**，不落进源码、文档、缓存、日志。命名建议 `<供应商>_KEY` / `<供应商>_BASE`，与 §3.5 的表同格式 | **不入库**。加变量时同步补 §3.5 的表 |
 | **ZCode provider 配置**（含各 provider 的 `apiKey`） | 本机 `~/.zcode/v2/provider_config.json` | 不在本仓；`--apply` 产生的 `provider_config.json.bak-*` 备份同样含 key，已被 `.gitignore` 排除 | **不入库**。回退步骤见 [MAINTENANCE.md](MAINTENANCE.md) §4 |
 | **网关模型目录快照** | 网关 `/panel/api/models` | `evidence/wb_panel_models.json` —— 目录结构证据，**不含凭据**，随仓库分发 | 可入库 |

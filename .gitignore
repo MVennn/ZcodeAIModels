@@ -37,6 +37,12 @@ credentials.json
 /workbuddy/logs/
 /workbuddy/cache/*.log
 
+# ---- WorkBuddy2API 网关（上游独立 clone）----
+# 整目录不随仓库分发：含 auths/ 账号凭据、config.json（api_key）、
+# data/ 运行时状态与 wb2api.exe 二进制。更新用
+#   git -C workbuddy/gateway pull --ff-only
+/workbuddy/gateway/
+
 # ---- OpenCode-Go 探测原始结果（体积大、可重跑再生，本地留存）----
 /opencode-go/probe/results/
 

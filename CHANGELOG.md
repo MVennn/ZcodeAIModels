@@ -138,3 +138,80 @@
   「文件清单 / 已知坑」的引用，同步改指新位置
 - 修复 CI —— `.gitlab-ci.yml` 原先只定义了隐藏模板 `.python`、没有任何可见作业，
   流水线一创建就失败（零作业）；改为 `syntax` 与 `docs` 两个真实作业
+
+### 反代排序批次（2026-10-21）
+
+WorkBuddy2API 三个 provider 的模型顺序改为「主力置顶 → CN 优先 → 按厂商分组」：
+
+- 变更 脚本 —— `workbuddy_zcode_sync.py`：新增 `PINNED_MODEL_IDS` / `VENDOR_ORDER` /
+  `model_sort_key()`，`personalModelIds` 与 `modelOrder` 按新规则排序；
+  新增 `--reorder-only`（只重排，不改成员与档位）
+- 变更 配置 —— 界面顺序改为 低代 → 免代 → 高代；低代首位固定 `cn:deepseek-v4.1-flash`
+- 修复 排序 —— 原「全表按倍率升序 + id」把 CN/全球与不同厂商打散，
+  主力 `cn:deepseek-v4.1-flash` 落到低代第 8 位
+- 调整 文档 —— MODEL-PROVIDERS §4.2–§4.5、TOOLS 同步；记录促销漂移
+  （`cn:hy4-preview` 已 `0x`、`cn:glm-5.2` 促销 x0.50，下次完整同步再改档）
+
+### 自动收录扩展批次（2026-10-21）
+
+- 变更 自动化 —— 每天 10:00 的收录任务从「只跑 Go」扩展为「Go + WorkBuddy」：
+  执行 `go_model_sync.py --apply`、`workbuddy_fetch_pricing.py`、
+  `workbuddy_probe_zcode.py --max-rate 0.3 --sleep 20`、
+  `workbuddy_zcode_sync.py --max-rate 0.3 --apply`
+- 变更 分档 —— WorkBuddy 收价上限从 0.80 收到 **0.30**（以主力 x0.11 锚定）：
+  低代只留 ≤0.16 的主力价位；0.17–0.30 归高代；原高代 x0.50–0.79（4.5–7.2 倍）
+  整组移出，自动收录也不再引进
+- 修复 自动化 —— 旧任务 `automation-5ad749e3…` 指向已删除的 `F:\Project\Openwrt`，
+  已停用；新任务 `automation-cfcb5c6d…` 绑定当前仓库
+- 调整 文档 —— MAINTENANCE §6 定期动作同步为双线
+
+### 网关随 ZCode 起停批次（2026-10-21）
+
+反代（`wb2api`）不再需要手动开 cmd 拉起，网关寿命跟随 ZCode：
+
+- 新增 脚本 —— `workbuddy/zcode_gateway_watch.ps1`：无窗口守护器。ZCode 启动 →
+  静默拉起 `wb2api`（清空 HTTP(S)_PROXY，与 `run.bat` 一致）；ZCode 全部退出 →
+  宽限 8 秒后停网关；运行期间每 15 秒探活，网关挂了自动重启（失败退避 60 秒）
+- 新增 脚本 —— `workbuddy/zcode_gateway_watch.vbs`：wscript 无窗口启动上述 ps1，
+  不出现控制台窗口
+- 新增 开关 —— `-Install` 在启动文件夹注册快捷方式（登录自启）并立即启动守护器；
+  `-Uninstall` 移除自启并停守护器；`-Status` 一次看 ZCode / 网关 / 守护器；
+  `-DryRun` 只记状态迁移，用于验证状态机
+- 调整 文档 —— TOOLS、MAINTENANCE §8、TROUBLESHOOTING §11、docs/README、
+  README 适用环境、MODEL-PROVIDERS §4
+- 注意 —— 网关的定时任务（签到 / 保活 / 夜猫子）只在网关进程活着时执行；
+  绑到 ZCode 生命周期后，ZCode 不在的时段不会跑（详见 MAINTENANCE §8）
+
+### 网关目录并入本仓批次（2026-10-21）
+
+反代网关的整个 clone 搬进仓库，不再维护两个目录：
+
+- 变更 目录 —— `E:\Tool\AITool\workbuddy2api-panel` → `workbuddy/gateway/`
+  （含上游 `.git`、`config.json`、`auths/`、`data/`、`wb2api.exe`）；旧目录已删除
+- 变更 忽略 —— 主仓 `.gitignore` 整目录排除 `workbuddy/gateway/`（账号凭据、密钥、
+  运行时状态、二进制都不进公开仓库）；网关仍可用
+  `git -C workbuddy/gateway pull --ff-only` 更新
+- 变更 脚本 —— `zcode_gateway_watch.ps1` 的默认网关目录改为按脚本位置推导
+  `<仓库>/workbuddy/gateway`（`WB_GATEWAY_DIR` 仍可覆盖）
+- 变更 工具 —— `tools/check-docs.py` 跳过 `workbuddy/gateway/`（不入库的上游 clone）
+- 调整 文档 —— MAINTENANCE §8（更新 / 重建网关目录的步骤）、TOOLS、SECRETS、
+  TROUBLESHOOTING §11、NOTICE
+- 说明 —— 上游检查：`origin/main` = 本地 `6b31db6`，无新提交，未产生 pull 变更
+
+### 网关 ↔ ZCode 联动优化批次（2026-10-21）
+
+守护器从「按进程名数数」升级为「盯主进程 + 就绪判定 + 排空」：
+
+- 变更 判据 —— 只跟随 ZCode **主进程**（命令行既不含 `--type=` 也不含 `zcode.cjs`）；
+  GPU / renderer / crashpad / CLI 宿主晚退不再拖住网关
+- 变更 启动 —— 轮询 1000 → 500 ms；就绪判定从「TCP 端口打开」改为 `/panel/` 返回 200；
+  网关 stdout / stderr 每次启动前轮转为 `.1`
+- 新增 停网关前排空 —— 最多等 `-DrainTimeoutSeconds`（默认 30 秒）让在途连接结束；
+  宽限期内 ZCode 重新打开则取消停止
+- 新增 联动检查 —— `-Status` 增加 ZCode 主进程 PID、网关就绪状态，并校验
+  `workbuddy-*` 三个 provider 的 `baseUrl` / `apiKey`（只报状态，不打印值）；
+  ZCode 每次启动时也做同一校验，不匹配写「联动警告」到日志
+- 修复 `-Uninstall` —— 排除当前进程，避免把自己的 PowerShell 一起结束
+- 调整 文档 —— MAINTENANCE §8、TOOLS、TROUBLESHOOTING §11
+
+

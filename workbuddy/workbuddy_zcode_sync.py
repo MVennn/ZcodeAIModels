@@ -11,11 +11,15 @@ write the same three places of `provider_config.json` (see docs/MODEL-PROVIDERS.
 §1).  The ZCode-side write path itself is provider-neutral.
 
 The gateway bills by a credit multiplier ("倍率"): smaller = cheaper. Models are
-split into three providers by that multiplier, each ordered cheapest-first:
+split into three providers by that multiplier. The anchor price is the daily
+driver `cn:deepseek-v4.1-flash` at x0.11; anything above x0.30 (~2.7x) is
+treated as too expensive and excluded ("贵不加"). Inside every provider the
+list is ordered CN-first, then grouped by vendor (company), cheapest-first
+within each vendor; the pinned model goes first:
 
     workbuddy-free   "免代"   rate == 0        (限时免费 / Free now / 独家限免)
-    workbuddy-low    "低代"   0 < rate <= 0.30
-    workbuddy-high   "高代"   rate > 0.30 and <= --max-rate (default 0.80)
+    workbuddy-low    "低代"   0 < rate <= 0.16 (主力价位，只收这一档)
+    workbuddy-high   "高代"   0.16 < rate <= --max-rate (default 0.30)
 
 The ceiling keeps every listed model priced in the same ballpark as
 deepseek-v4.1-flash (x0.11 list / x0.00 global promo) instead of the x1.3-x6.7
@@ -29,6 +33,8 @@ Usage
     python workbuddy_zcode_sync.py                 # dry run (default)
     python workbuddy_zcode_sync.py --apply         # backup + write config
     python workbuddy_zcode_sync.py --max-rate 1.2  # widen the ceiling
+    python workbuddy_zcode_sync.py --reorder-only --apply
+                                                   # only fix model/provider order
 
 Notes
     * ZCode hot-reloads provider_config.json (~1s polling), so no restart is
@@ -63,10 +69,33 @@ PROVIDER_NAMES = {
     "low": "低代",
     "high": "高代",
 }
-# Tier boundaries on the effective credit multiplier.
+# Tier boundaries on the effective credit multiplier. Anchor = the pin
+# cn:deepseek-v4.1-flash at x0.11; users only accept that price band, so
+# 低代 caps at ~1.5x the anchor, 高代 absorbs the 1.5x-2.7x leftovers, and
+# anything beyond the ceiling is excluded instead of collected.
 FREE_MAX = 0.0
-LOW_MAX = 0.30
-DEFAULT_MAX_RATE = 0.80
+LOW_MAX = 0.16
+DEFAULT_MAX_RATE = 0.30
+
+# User-facing order inside each tier provider:
+#   1. pinned models first (the daily driver)
+#   2. cn:* before global:*
+#   3. inside a region, group by vendor in VENDOR_ORDER
+#   4. inside a vendor, cheapest rate first, then id
+PINNED_MODEL_IDS = ("cn:deepseek-v4.1-flash",)
+VENDOR_ORDER = (
+    "deepseek",   # 深度求索
+    "zhipu",      # 智谱 GLM
+    "minimax",    # MiniMax
+    "kimi",       # 月之暗面
+    "mimo",       # 小米 MiMo
+    "hunyuan",    # 腾讯混元
+    "stepfun",    # 阶跃星辰
+    "other",      # 匿名 / 未标注厂商
+)
+# Reverse-proxy providers: 低代 first (it holds the pinned daily driver), then
+# 免代, then 高代.  ZCode renders personal providers in providerOrder sequence.
+TIER_DISPLAY_ORDER = ("low", "free", "high")
 
 GROUP = "standard-personal"
 GATEWAY_BASE = os.environ.get("WB_GATEWAY_BASE", "http://127.0.0.1:7863")
@@ -105,6 +134,42 @@ def rate_of(model: dict) -> float | None:
         if m:
             return float(m.group())
     return None
+
+
+def vendor_of(model_id: str) -> str:
+    """Group id by model company. The gateway's own `vendor` field is a
+    one-letter pool code (e/f/i/j) that does not match the model brand
+    (e.g. cn:glm-5.3-flash is vendor "f", cn:glm-5.3 is "e"), so classify by
+    the model name instead."""
+    name = model_id.split(":", 1)[-1].lower()
+    if name.startswith("deepseek"):
+        return "deepseek"
+    if name.startswith("glm"):
+        return "zhipu"
+    if name.startswith("minimax"):
+        return "minimax"
+    if name.startswith("kimi"):
+        return "kimi"
+    if name.startswith("mimo"):
+        return "mimo"
+    if name.startswith("hy"):
+        return "hunyuan"
+    if name.startswith("step"):
+        return "stepfun"
+    return "other"
+
+
+def model_sort_key(rec: dict) -> tuple:
+    """Order used for both personalModelIds and modelOrder."""
+    mid = str(rec["id"])
+    rate = rec.get("_rate")
+    return (
+        0 if mid in PINNED_MODEL_IDS else 1,
+        0 if mid.startswith("cn:") else 1,
+        VENDOR_ORDER.index(vendor_of(mid)),
+        rate if isinstance(rate, (int, float)) else 999.0,
+        mid,
+    )
 
 
 def fetch_models(base: str, key: str) -> list[dict]:
@@ -195,12 +260,42 @@ def build_model_rule(provider_id: str, model: dict, probe_rec: dict | None) -> d
     return {"providerId": provider_id, "modelId": str(model["id"]), "config": cfg}
 
 
+def reorder_provider_order(root: dict, active_ids: set[str]) -> None:
+    """Keep the three reverse-proxy providers contiguous, in display order.
+
+    ZCode renders personal providers in `providerOrder` sequence, so this is
+    what decides whether 低代 (holding the pinned daily driver) shows up first.
+    """
+    order = root.setdefault("providerOrder", [])
+    wb_ids = [PROVIDER_IDS[t] for t in TIER_DISPLAY_ORDER]
+    present = [pid for pid in wb_ids if pid in active_ids]
+    insert_at = min((order.index(pid) for pid in wb_ids if pid in order),
+                    default=len(order))
+    order[:] = [pid for pid in order if pid not in PROVIDER_IDS.values()]
+    order[insert_at:insert_at] = present
+
+
+def write_config(config: dict) -> Path:
+    backup = CONFIG_FILE.with_name(
+        CONFIG_FILE.name + ".bak-wbproxy-" + time.strftime("%Y%m%d-%H%M%S")
+    )
+    shutil.copy2(CONFIG_FILE, backup)
+    tmp = CONFIG_FILE.with_name(CONFIG_FILE.name + ".tmp-wbproxy")
+    tmp.write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8")
+    os.replace(tmp, CONFIG_FILE)
+    return backup
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--apply", action="store_true", help="write config (default dry run)")
+    ap.add_argument("--reorder-only", action="store_true",
+                    help="reorder existing workbuddy providers/models only; "
+                         "do not change membership or tiers")
     ap.add_argument("--api-key", default=GATEWAY_KEY, help="gateway api_key")
     ap.add_argument("--max-rate", type=float, default=DEFAULT_MAX_RATE,
-                    help="highest credit multiplier to include (default 0.80)")
+                    help="highest credit multiplier to include, anything above "
+                         "is dropped (default 0.30)")
     ap.add_argument("--include-aliases", action="store_true",
                     help="also include routing aliases (auto/primary/deep/fast/balanced/enhance)")
     ap.add_argument("--include-blocked", action="store_true",
@@ -225,10 +320,49 @@ def main() -> int:
         rec["_rate"] = rate_of(rec)
         merged.append(rec)
 
+    # ---- reorder-only mode ------------------------------------------------
+    if args.reorder_only:
+        config = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+        root = config.setdefault("config", {})
+        provider_rules = root.setdefault("providerConfigRules", {}).setdefault("providerRules", [])
+        rates = {str(r["id"]): r.get("_rate") for r in merged}
+        active: set[str] = set()
+        print(f"config      : {CONFIG_FILE}")
+        print("mode        : reorder only (membership unchanged)")
+        print()
+        for provider in provider_rules:
+            pid = provider.get("providerId")
+            if pid not in PROVIDER_IDS.values():
+                continue
+            cfg = provider.setdefault("config", {})
+            ids = list(cfg.get("personalModelIds") or [])
+            ordered = sorted(ids, key=lambda mid: model_sort_key(
+                {"id": mid, "_rate": rates.get(mid)}))
+            cfg["personalModelIds"] = ordered
+            cfg["modelOrder"] = ordered
+            active.add(pid)
+            name = provider.get("providerName") or pid
+            print(f"== {name} ({pid}) - {len(ordered)} models ==")
+            for mid in ordered:
+                rate = rates.get(mid)
+                shown = f"x{rate:<5.2f}" if isinstance(rate, (int, float)) else "  -   "
+                print(f"  {shown} {mid}")
+            print()
+        reorder_provider_order(root, active)
+        print("providerOrder:", ", ".join(
+            pid for pid in root.get("providerOrder", []) if pid in PROVIDER_IDS.values()))
+        if not args.apply:
+            print("[dry-run] no changes written; pass --apply to write")
+            return 0
+        backup = write_config(config)
+        print(f"backup      : {backup.name}")
+        print(f"written     : {CONFIG_FILE}")
+        return 0
+
     excluded: list[tuple[str, str]] = []
     tiers: dict[str, list[dict]] = {"free": [], "low": [], "high": []}
 
-    for rec in sorted(merged, key=lambda r: (r["_rate"] if r["_rate"] is not None else 999, r["id"])):
+    for rec in sorted(merged, key=model_sort_key):
         mid = str(rec["id"])
         rate = rec["_rate"]
         if mid in ALIAS_IDS and not args.include_aliases:
@@ -275,7 +409,7 @@ def main() -> int:
 
     new_provider_rules = []
     new_model_rules = []
-    for tier in ("free", "low", "high"):
+    for tier in TIER_DISPLAY_ORDER:
         entries = tiers[tier]
         if not entries:
             continue
@@ -311,11 +445,7 @@ def main() -> int:
         r for r in model_rules if r.get("providerId") not in PROVIDER_IDS.values()
     ] + new_model_rules
 
-    order = root.setdefault("providerOrder", [])
-    for tier in ("free", "low", "high"):
-        pid = PROVIDER_IDS[tier]
-        if pid not in order:
-            order.append(pid)
+    reorder_provider_order(root, {r.get("providerId") for r in new_provider_rules})
 
     # ---- report -----------------------------------------------------------
     print(f"config      : {CONFIG_FILE}")
@@ -326,7 +456,7 @@ def main() -> int:
     for mid, why in excluded:
         print(f"  - {mid:38s} {why}")
     print()
-    for tier in ("free", "low", "high"):
+    for tier in TIER_DISPLAY_ORDER:
         entries = tiers[tier]
         if not entries:
             continue
@@ -343,13 +473,7 @@ def main() -> int:
         print("[dry-run] no changes written; pass --apply to write")
         return 0
 
-    backup = CONFIG_FILE.with_name(
-        CONFIG_FILE.name + ".bak-wbproxy-" + time.strftime("%Y%m%d-%H%M%S")
-    )
-    shutil.copy2(CONFIG_FILE, backup)
-    tmp = CONFIG_FILE.with_name(CONFIG_FILE.name + ".tmp-wbproxy")
-    tmp.write_text(json.dumps(config, ensure_ascii=False, indent=2), encoding="utf-8")
-    os.replace(tmp, CONFIG_FILE)
+    backup = write_config(config)
     print(f"backup      : {backup.name}")
     print(f"written     : {CONFIG_FILE}")
     return 0

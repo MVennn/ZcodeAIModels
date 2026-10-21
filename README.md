@@ -37,7 +37,7 @@
 | 客户端 | ZCode（Windows 桌面端） |
 | 配置文件 | `~/.zcode/v2/provider_config.json`（Windows：`C:\Users\<你的用户名>\.zcode\v2\provider_config.json`）；可用环境变量 `ZCODE_PERSONAL_PROVIDER_CONFIG_FILE` 覆盖 |
 | 运行时 | Python 3（**只用标准库**，无第三方依赖）+ Node.js（跑 `.js` 脚本） |
-| 网络 | 能直连你的供应商。示例：直连 `opencode.ai`；WorkBuddy 侧需要本地网关 `wb2api` 在 `127.0.0.1:7863` 在跑（`WB_GATEWAY_BASE` 可覆盖） |
+| 网络 | 能直连你的供应商。示例：直连 `opencode.ai`；WorkBuddy 侧需要本地网关 `wb2api` 在 `127.0.0.1:7863` 在跑（`WB_GATEWAY_BASE` 可覆盖）。装了 `workbuddy/zcode_gateway_watch.ps1` 后网关随 ZCode 自动起停，见 [docs/MAINTENANCE.md](https://gitlab.com/M.Venn/ZcodeAIModels/-/blob/main/docs/MAINTENANCE.md) §8 |
 | 凭据 | **一律走环境变量**：`OPENCODE_GO_KEY`（OpenCode-Go）、`WB_GATEWAY_KEY`（网关）。位置口径见 [docs/SECRETS.md](https://gitlab.com/M.Venn/ZcodeAIModels/-/blob/main/docs/SECRETS.md) |
 
 ## 快速开始

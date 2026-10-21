@@ -3,7 +3,7 @@
 """文档自检：相对链接、锚点、孤文档、一句话引言块。
 
 用法：
-    python tools/check-docs.py            # 检查全仓（跳过 third-party/ 等 vendored 目录）
+    python tools/check-docs.py            # 检查全仓（跳过 third-party/、workbuddy/gateway/ 等不入库目录）
     python tools/check-docs.py docs/      # 只检查指定子目录
 
 退出码：0 全部通过 / 1 有问题。
@@ -20,6 +20,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SKIP_DIRS = {".git", "node_modules", "dist", "__pycache__", "third-party", "memories", "evidence",
             # vault/ 被 .gitignore 排除，不属于版本库里的文档
             "vault"}
+# 整目录被 .gitignore 排除的上游 clone（运行时含凭据与二进制，不套活文档规则）
+SKIP_REL_PREFIXES = ("workbuddy/gateway/",)
 # 冻结目录：归档 / 拆分记录是**历史**，不套用活文档的规则（引言块、孤儿判定）
 FROZEN_DIRS = ("docs/archive/", "docs/split/", "archive/")
 SKIP_EXT = {".png", ".jpg", ".jpeg", ".gif", ".ico", ".pdf", ".mrs", ".gz", ".pyc", ".woff", ".woff2"}
@@ -48,6 +50,8 @@ def collect(dirs):
                     continue
                 norm = os.path.normpath(os.path.join(dp, f))
                 rel = os.path.relpath(norm, ROOT).replace(os.sep, "/")
+                if rel.startswith(SKIP_REL_PREFIXES):
+                    continue
                 if any(rel.startswith(fd) or fd in rel for fd in FROZEN_DIRS):
                     continue
                 mds.append(norm)

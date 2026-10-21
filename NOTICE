@@ -29,8 +29,10 @@ repository.
   OpenAI-compatible HTTP endpoint on 127.0.0.1:7863, which lets the
   WorkBuddy models be used from the ZCode client. This repository only
   sends HTTP requests to it; the gateway binary and its source are NOT
-  part of this repository. The MIT license text of the upstream project is
-  reproduced below for reference.
+  distributed with this repository. A local working clone may live at
+  workbuddy/gateway/ (with its own .git), but that directory is git-ignored
+  and is not part of the published tree. The MIT license text of the
+  upstream project is reproduced below for reference.
 
 - OpenCode Zen / Go (opencode.ai)
   https://opencode.ai/

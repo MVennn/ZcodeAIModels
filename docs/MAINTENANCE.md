@@ -218,8 +218,8 @@ python workbuddy/workbuddy_zcode_sync.py           # 只打印计划
 
 | 周期 | 动作 |
 |---|---|
-| **每天** | `python opencode-go/ops/go_model_sync.py --apply`（新模型自动收录） |
-| **每月** | 手工刷新 `workbuddy/cache/wb_pricing.json`；复核 [MODEL-PROVIDERS.md](MODEL-PROVIDERS.md) 里的价格 / 额度 |
+| **每天** | `python opencode-go/ops/go_model_sync.py --apply`（Go 新模型自动收录）；`python workbuddy/workbuddy_fetch_pricing.py` → `probe_zcode.py --max-rate 0.3 --sleep 20` → `workbuddy_zcode_sync.py --max-rate 0.3 --apply`（WorkBuddy 新模型自动收录，ZCode 每天 10:00 任务；上限 0.30 = 主力价位，超过的"贵不加"） |
+| **每月** | 复核 [MODEL-PROVIDERS.md](MODEL-PROVIDERS.md) 里的价格 / 额度（`wb_pricing.json` 已由每日任务自动刷新） |
 | **换套餐 / 换账号池后** | 全量重探 WorkBuddy（`--sleep 20`）+ 重跑同步 |
 | **每次接入新供应商** | 照 §1.1 的通用做法写一份取数脚本 + 在 [MODEL-PROVIDERS.md](MODEL-PROVIDERS.md) §0 的表里补一行；凭据按 [SECRETS.md](SECRETS.md) §2、§3.5 加环境变量 |
 | **每次改动脚本** | 同步 [TOOLS.md](TOOLS.md) 的工具表 |
@@ -241,7 +241,62 @@ python workbuddy/workbuddy_zcode_sync.py           # 只打印计划
 
 ---
 
-## 8. 相关文档
+## 8. 网关随 ZCode 自动起停
+
+`workbuddy/zcode_gateway_watch.ps1` 是一个**无窗口守护器**：ZCode **主进程**从无到有 →
+静默拉起 `wb2api`；主进程退出 → 宽限 8 秒 + 在途连接排空后停网关。日常只开 ZCode 就行，
+不用再手动开 cmd。
+
+主进程判据是「命令行既不含 `--type=`、也不含 `zcode.cjs` 的 `ZCode.exe`」——
+GPU / renderer / crashpad / CLI 宿主晚退几秒不会拖住网关。网关「就绪」以
+`/panel/` 返回 200 为准，不是只看端口打开。
+
+| 动作 | 命令（在仓库根执行） |
+|---|---|
+| 注册开机自启并立即启动 | `powershell -NoProfile -ExecutionPolicy Bypass -File workbuddy/zcode_gateway_watch.ps1 -Install` |
+| 看当前状态（ZCode 主进程 / 网关就绪 / 守护器 / provider 指向） | 同上，`-Status` |
+| 移除自启并停守护器（网关保持运行） | 同上，`-Uninstall` |
+| 只验证状态机、不启停进程 | 同上，`-DryRun -ProcessName ping`（配一个假进程名） |
+
+| 变量 / 参数 | 默认 | 说明 |
+|---|---|---|
+| `WB_GATEWAY_DIR` | `<仓库>/workbuddy/gateway` | 网关目录（含 `wb2api.exe`、`config.json`） |
+| `WB_GATEWAY_BASE` | `http://127.0.0.1:7863` | 健康检查 + `/panel/` 就绪判定 + provider 指向校验 |
+| `ZCODE_WATCH_LOG` | `%LOCALAPPDATA%\ZCodeGateway` | 守护器与网关的日志目录 |
+| `-PollMilliseconds` | `500` | 主进程轮询间隔；越小拉起越快 |
+| `-StopGraceSeconds` | `8` | 主进程退出后等多久再停（防止更新 / 重启误杀） |
+| `-DrainTimeoutSeconds` | `30` | 停网关前等在途连接排空的上限，超时才强制停止 |
+| `-ProcessName` | `ZCode` | 被跟随的进程名；换客户端时改这个 |
+
+`-Status` 会顺带读出 `provider_config.json` 里 `workbuddy-*` 三个 provider 的模型数、
+`baseUrl` 是否指向本网关、`apiKey` 是否存在（**只报状态，不打印值**）。
+ZCode 每次启动时，守护器也会做同一项校验，发现不匹配就写一条「联动警告」到日志。
+
+日志（UTF-8）：`%LOCALAPPDATA%\ZCodeGateway\watchdog.log`（超过 1 MB 轮转为 `.1`）；
+网关自身输出在同目录 `gateway.stdout.log` / `gateway.stderr.log`（每次启动前轮转为 `.1`）。
+手工兜底仍是网关目录下的 `stop-gateway.bat`（`taskkill /IM wb2api.exe /F`）。
+
+**网关目录是上游仓库的独立 clone**（`workbuddy/gateway/`，自带 `.git`），整目录被主仓
+`.gitignore` 排除 —— 里面有 `auths/` 账号凭据、`config.json`（网关自己的 `api_key`）、
+`data/` 运行时状态与 `wb2api.exe`，都不进公开仓库。**注意：`git clean -fdx` 会把整个
+clone 一起删掉**，别在不确认的情况下跑。
+
+| 场景 | 命令 |
+|---|---|
+| 检查 / 拉取上游更新 | `git -C workbuddy/gateway fetch && git -C workbuddy/gateway pull --ff-only` |
+| 新机器重建网关目录 | `git clone https://github.com/linguo2625469/workbuddy2api-panel.git workbuddy/gateway`，再按 `config.example.json` 建 `config.json`、放 `auths/`，并 `go build -o wb2api.exe ./cmd/server` |
+| 本机对 clone 的本地改动 | `.gitignore` 补了 `.api_key_secret` / `server.log`；`go.mod` 把 `redis/go-redis` 从 indirect 提为直接依赖（构建需要） |
+
+> ⚠️ **副作用（实例 B）**：网关的定时任务（签到 9 / 21 点、活跃 10 点、token 保活 22 点、
+> 夜猫子 23:00–08:00、余额刷新每 5 分钟）**只在网关进程活着时才跑**。
+> 把网关绑到 ZCode 生命周期后，ZCode 不在的时段这些任务不会执行 ——
+> 要它们照常跑，就别装自启，改成手动常驻网关。
+>
+> 排查见 [TROUBLESHOOTING.md](TROUBLESHOOTING.md) §11。
+
+---
+
+## 9. 相关文档
 
 | 要查什么 | 去哪 |
 |---|---|
