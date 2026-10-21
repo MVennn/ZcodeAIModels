@@ -17,7 +17,7 @@ metadata:
 - 与请求参数无关：裸请求、带 ZCode 四件套（thinking/enable_thinking/reasoning_effort/reasoning）、只带 `reasoning_effort:high` —— 三种全是 429。
 - 不是账号额度问题：`GET /zen/go/v1/usage` → rolling 7% / weekly 28% / monthly 19%，三项 status 全 ok。
 - 不是弃用：`/zen/go/v1/models` 里 beam-free 仍在；官方 `/v2/docs/console/go/` 仍列 "Beam Free (limited time, limited regions)"；官方弃用表里没有它。
-- 不是地区限制：出口 IP 66.90.99.58（loc=JP，日本），不在 beam-free 的排除名单（中国含港澳等 17 国）里；真被地区拦会是 403 `unsupported_country_region_territory`。
+- 不是地区限制：出口 IP `<REDACTED-EXIT-IP>`（loc=JP，日本），不在 beam-free 的排除名单（中国含港澳等 17 国）里；真被地区拦会是 403 `unsupported_country_region_territory`。
 - 不是本地配置回归：`provider_config.json` 里 beam-free 的 `optionSpecs.reasoningLevel.map="{}"` 完好，也仍在"免费"组。
 - 每日同步脚本 `scripts/go_model_sync.py` 不会误删：已配置模型体检只 log（429 落进"探测异常"分支），只有 410 弃用才提示移除。
 
