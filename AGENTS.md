@@ -52,7 +52,7 @@
 
 > ⚠️ **现存违规**：`opencode-go/probe/` 下的 `probe_models.py`、`probe_protocols.py`、
 > `bench_models.py`、`bench_clean.py`、`thinking-off-probe.js` 已改为读 `OPENCODE_GO_KEY` 环境变量。
-> 本轮只做文档拆分、未动脚本。**在把这些仓库推到公开 GitLab 之前，必须先改成
+> 本轮只做文档拆分、未动脚本。**在把这些仓库推到公开 GitHub 之前，必须先改成
 > 环境变量读取**（改法见上面的表）。
 
 同理，`provider_config.json` 的备份文件（`*.bak-*`）里也有 key ——

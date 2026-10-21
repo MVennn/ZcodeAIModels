@@ -189,7 +189,7 @@ WorkBuddy 网关更糟一层：它的出站逻辑**只**重写 `reasoning_effort
 
 ## 9. 明文凭据会随仓库一起走 【通用】
 
-**现象（未来）**：仓库上传到公开 GitLab，**API key 一起公开了**。
+**现象（未来）**：仓库上传到公开 GitHub，**API key 一起公开了**。
 
 **现状**：`opencode-go/probe/` 下的 `probe_models.py`、`probe_protocols.py`、
 `bench_models.py`、`bench_clean.py`、`thinking-off-probe.js` **已改为从 `OPENCODE_GO_KEY` 环境变量读取**；

@@ -25,7 +25,7 @@
 
 ### 调整
 
-- 调整 仓库 —— 从 OpenWrt 工作目录拆出独立仓库 `ZcodeAIModels`，可独立上传 GitLab。
+- 调整 仓库 —— 从 OpenWrt 工作目录拆出独立仓库 `ZcodeAIModels`，可独立上传 GitHub。
 - 调整 目录 —— `opencode-go/ops/`：长期运维脚本（模型自动收录 + 请求头注入代理）。
 - 调整 目录 —— `opencode-go/probe/`：一次性探测脚本（连通性 / 协议 / 基准 / 关思考）。
 - 调整 目录 —— `opencode-go/probe/archive/`：已被取代的 `validate_zcode_models.py`。
@@ -136,8 +136,8 @@
   取代原根 README 的「文件清单」；「已知坑」统一看 [docs/PITFALLS.md](docs/PITFALLS.md)
 - 调整 文档 —— DOC-RULES / MAINTENANCE / MODEL-PROVIDERS / docs/README 里指向根 README
   「文件清单 / 已知坑」的引用，同步改指新位置
-- 修复 CI —— `.gitlab-ci.yml` 原先只定义了隐藏模板 `.python`、没有任何可见作业，
-  流水线一创建就失败（零作业）；改为 `syntax` 与 `docs` 两个真实作业
+- 修复 CI —— 当时的流水线配置只定义了隐藏模板 `.python`、没有任何可见作业，
+  流水线一创建就失败（零作业）；改为语法与文档两组真实作业
 
 ### 反代排序批次（2026-10-21）
 
