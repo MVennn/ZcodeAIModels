@@ -214,4 +214,13 @@ WorkBuddy2API 三个 provider 的模型顺序改为「主力置顶 → CN 优先
 - 修复 `-Uninstall` —— 排除当前进程，避免把自己的 PowerShell 一起结束
 - 调整 文档 —— MAINTENANCE §8、TOOLS、TROUBLESHOOTING §11
 
+### 外部跑分参考收录（2026-10-21）
+
+- 新增 文档 —— `docs/BENCHMARKS.md`：收录第三方公开榜「AI 能力专项测试」
+  （7 题 · 4 方向 · 总分 400）的四个榜单入口、评测口径、2026-09-11 总分榜快照、
+  四方向 / 逐题前三，以及本仓在配模型在榜上的位置与读法
+- 调整 文档 —— `docs/README.md` 参考资料索引、`docs/DOC-RULES.md` §1 / §2、
+  `docs/MODEL-PROVIDERS.md` §6 补交叉链接
+- 说明 —— 榜单数据非本仓实测，分数会随站点更新变化；本篇只做快照，不替代 `evidence/` 下的本仓探测结果
+
 

@@ -43,6 +43,7 @@
 | 仓库根 [PROGRESS.md](../PROGRESS.md) | 本仓唯一进度台账（追加式批次日志） |
 | 仓库根 [NOTICE](../NOTICE) | 第三方声明：WorkBuddy2API Panel（MIT）、OpenCode Go（商业）、**ZCode（Apache-2.0，已开源）**、ZCodium（MIT）等 |
 | [UPSTREAM.md](UPSTREAM.md) | **上游调研正本**：同类型项目清单（14 个，含 URL/SHA/license/本仓关系）、深读结论、借鉴落地、没 vendor 的理由 |
+| [BENCHMARKS.md](BENCHMARKS.md) | **外部跑分参考**：第三方榜「AI 能力专项测试」（7 题 · 4 方向 · 总分 400）的入口、口径与 2026-09-11 总分榜快照；数据非本仓实测，引用须带日期 |
 | 仓库根 [third-party/](../third-party/README.md) | **随仓分发的上游文件**：zai-org/ZCode 的规则数据与引擎源码（Apache-2.0）、ZCodium 的规则切片（MIT）；每个子目录一份来源凭证 |
 | 仓库根 [LICENSE](../LICENSE) | 许可证全文（**MIT**）—— 与 [NOTICE](../NOTICE) 的第三方声明配套 |
 | [release-notes/](release-notes/README.md) | 面向使用者的 Release 说明，文件名 = 版本号；格式规范在它的 README。已发布：[v0.1.0.md](release-notes/v0.1.0.md) |

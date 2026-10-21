@@ -375,6 +375,9 @@ ZCode 的内置规则 `resources/config/provider/zcode-builtin.json` 里：
 | 后台批量 | `hy3`、`longcat-2.0`，夜里用 `longcat-2.5-preview-free` |
 | 别用于交互 | `longcat-2.0`、`longcat-2.5-preview-free`、`qwen3.7-plus` |
 
+> 本表只按**成本 / 额度 / 延迟**取舍，不按跑分排序。质量侧参考见
+> [BENCHMARKS.md](BENCHMARKS.md)（外部榜「AI 能力专项测试」，2026-09-11 快照）。
+
 ---
 
 ## 7. 维护本文档的规则

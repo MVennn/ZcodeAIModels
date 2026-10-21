@@ -14,7 +14,7 @@ docs/ 分四类（索引见 [README.md](README.md)）：
 | 模型与 Provider | 有哪些 provider、模型归哪组、走什么协议、参数怎么写 | MODEL-PROVIDERS、模型速查表、archive/OPENCODE-GO-模型与订阅优化分析 |
 | 流程与规范 | 怎么写文档、怎么维护、版本怎么晋升、凭据放在哪、发版说明 | DOC-RULES、MAINTENANCE、VERSIONING、SECRETS、release-notes/README |
 | 排错与踩坑 | 出问题了怎么查、为什么会这样 | PITFALLS、TROUBLESHOOTING |
-| 参考资料 | 面向使用者的 Release 说明、证据快照、许可证 | release-notes/、根 README / AGENTS / CHANGELOG / NOTICE / PROGRESS / LICENSE、evidence/ |
+| 参考资料 | 面向使用者的 Release 说明、证据快照、许可证、外部榜单 | release-notes/、根 README / AGENTS / CHANGELOG / NOTICE / PROGRESS / LICENSE、evidence/、BENCHMARKS |
 
 每篇文档开头必须有一个 **「一句话」引言块**（`> **一句话**：…` 或一行定位语），
 让读者不用往下翻就知道这篇管什么。新文档没有它不算写完。
@@ -44,6 +44,7 @@ docs/ 分四类（索引见 [README.md](README.md)）：
 | 许可证 | 仓库根 [LICENSE](../LICENSE)（MIT 全文） |
 | PROGRESS 的路径规则、凭据规则 | 仓库根 [AGENTS.md](../AGENTS.md) |
 | 第三方组件与服务的声明 | 仓库根 [NOTICE](../NOTICE) |
+| 外部榜单的入口、口径与分数快照 | [BENCHMARKS.md](BENCHMARKS.md) |
 
 ### 禁止重复清单（本次建仓发现的反例，勿重蹈）
 
