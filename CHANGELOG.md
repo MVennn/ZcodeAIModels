@@ -243,5 +243,8 @@ WorkBuddy2API 三个 provider 的模型顺序改为「主力置顶 → CN 优先
   `.bak-wbproxy-20261021-174649`
 - 调整 文档 —— MODEL-PROVIDERS §2.1 / §2.5.1 / §4.2 / §4.3 / §4.5.1 / §6.2、
   TOOLS、MAINTENANCE、TROUBLESHOOTING、BENCHMARKS §5.4
+- 调整 文档 —— `BENCHMARKS.md` §5.4 把 OpenCode-Go / WorkBuddy 两张分档表
+  合并为一张，按主力 → 低耗 → 高耗 → 免费 → 备用排序；价格列保留原单位，
+  横比看已归一的「价格指数」
 
 
