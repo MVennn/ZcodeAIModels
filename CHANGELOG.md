@@ -14,6 +14,26 @@
 
 ---
 
+## [未发布] — 2026-10-21
+
+### 门面统一批次（2026-10-21）
+
+在「README 收敛批次」之后再收一轮：门面压到与 GSAuxiliary 同款的七节，
+开发者内容继续下沉 `docs/`，门面资源（logo / 社交预览）统一由 `assets/icon.svg` 渲染。
+
+- 调整 文档 —— 根 README 收敛为七节（这是什么 / 环境要求 / 使用 / 反馈 / 免责声明 / 开源鸣谢 / 许可证）；
+  顶部不写「一句话」引言块，定位由副标题承担（对齐 GSAuxiliary）
+- 调整 文档 —— 「接一个新的模型供应商」四步下沉 [docs/MODEL-PROVIDERS.md](docs/MODEL-PROVIDERS.md) §0；
+  `provider_config.json` 的三个落点与两个 `--apply` 脚本的写入差异下沉同篇 §1 / §1.1；统一路由下沉 [docs/TOOLS.md](docs/TOOLS.md) §2
+- 新增 工具 —— `tools/make_social_preview.py`：自带 SVG 渲染器，从 `assets/icon.svg` 生成
+  `assets/logo.png`（512×512）与 `assets/social-preview.png`（1280×640），不依赖 cairosvg 等外部程序
+- 调整 资源 —— `assets/logo.png` 改为由 `assets/icon.svg` 渲染，图形不再有两份正本
+- 调整 文档 —— `docs/DOC-RULES.md` 正本映射表与 `docs/README.md` 索引同步；
+  各仓 docs 里指向根 README 章节的文字引用改指新正本
+- 调整 仓库 —— GitHub 仓库描述与话题改成面向使用者的口径（与 README 副标题同调）
+
+---
+
 ## [0.1.0] — 2026-10-21
 
 本仓**首次建仓**：从同级的「OpenWrt 工作目录」里把

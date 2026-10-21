@@ -351,3 +351,28 @@ CN/全球交织、不同厂商混排，主力 `cn:deepseek-v4.1-flash` 落到低
 ## 状态: 已完成
 
 ---
+
+# 2026-10-21 README 门面统一（对齐 GSAuxiliary 七节）
+
+## 背景
+- 在「README 收敛批次」之后再收一轮：门面向读者是使用者，开发者内容下沉 `docs/`；
+  门面资源统一由 `assets/icon.svg` 渲染。
+
+## 已完成变更
+- [x] 根 `README.md` 收敛为七节门面（107 行）：这是什么 / 环境要求 / 使用 / 反馈 / 免责声明 / 开源鸣谢 / 许可证
+- [x] 「接一个新的模型供应商」四步下沉 `docs/MODEL-PROVIDERS.md` §0；
+      `provider_config.json` 的三个落点与 `--apply` 写入差异下沉同篇 §1 / §1.1
+- [x] 统一路由与各脚本产物下沉 `docs/TOOLS.md` §2；上游调研与分发文件来源下沉 `docs/UPSTREAM.md` §5
+- [x] 新增 `tools/make_social_preview.py`（自带 SVG 渲染器，无第三方依赖），生成
+      `assets/logo.png` 与 `assets/social-preview.png`
+- [x] `docs/DOC-RULES.md` 正本映射表、`docs/README.md` 索引同步
+- [x] CHANGELOG 增补「门面统一批次」
+
+## 自检
+- `python tools/check-docs.py` ✓（20 篇）
+- GitHub 侧：仓库描述与话题已更新；社交预览图已上传并与仓内资产逐字节一致
+
+## 状态: 已完成
+
+---
+
