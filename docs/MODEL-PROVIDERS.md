@@ -375,8 +375,20 @@ ZCode 的内置规则 `resources/config/provider/zcode-builtin.json` 里：
 | 后台批量 | `hy3`、`longcat-2.0`，夜里用 `longcat-2.5-preview-free` |
 | 别用于交互 | `longcat-2.0`、`longcat-2.5-preview-free`、`qwen3.7-plus` |
 
-> 本表只按**成本 / 额度 / 延迟**取舍，不按跑分排序。质量侧参考见
-> [BENCHMARKS.md](BENCHMARKS.md)（外部榜「AI 能力专项测试」，2026-09-11 快照）。
+> 本表只按**成本 / 额度 / 延迟**取舍，不按跑分排序。
+
+### 6.1 按能力方向选（外部榜交叉，2026-09-11）
+
+| 方向 | 首选 | 备选 | 约束 |
+|---|---|---|---|
+| 文字（写作 / 翻译 / 总结） | `qwen3.8-flash`（messages） | `deepseek-v4.1-flash` | qwen 不是主力 chat |
+| 前端（页面 / 3D） | `hy4-preview`（WorkBuddy） | `qwen3.8-flash` | hy4 受账号池 / 倍率影响 |
+| 后端（修复 / 长任务） | `qwen3.8-flash`（messages） | `glm-5.3-flash` | 扩 `glm-5.3` 可到榜上后端最高 |
+| 知识（论文 / 问答） | `hy4-preview`（WorkBuddy） | `qwen3.8-flash` | 同上 |
+| 综合 / 日常写代码 | `deepseek-v4.1-flash` | `qwen3.8-flash` | 四项均前三，额度最大 |
+
+> 方向首选只回答「这个用途先试谁」，**不改 provider 分档**；
+> 分数、口径与平台差异见 [BENCHMARKS.md](BENCHMARKS.md) §5.1–§5.3。
 
 ---
 

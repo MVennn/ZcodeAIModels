@@ -222,5 +222,8 @@ WorkBuddy2API 三个 provider 的模型顺序改为「主力置顶 → CN 优先
 - 调整 文档 —— `docs/README.md` 参考资料索引、`docs/DOC-RULES.md` §1 / §2、
   `docs/MODEL-PROVIDERS.md` §6 补交叉链接
 - 说明 —— 榜单数据非本仓实测，分数会随站点更新变化；本篇只做快照，不替代 `evidence/` 下的本仓探测结果
+- 调整 文档 —— 按榜单四方向重排本仓在配模型：`BENCHMARKS.md` §5.1 / §5.2 增方向榜与
+  每模型最强方向；`MODEL-PROVIDERS.md` §6.1 增方向首选表；**provider 分档未改**，
+  方向只作第二轴（理由见 BENCHMARKS §5.3）
 
 
