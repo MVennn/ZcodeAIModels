@@ -68,7 +68,7 @@ ZCode 的 chat 模型原按用途分组（速度/经济），组名与价格脱�
 
 **同一个出口 IP，各家服务方的判定完全不同**——第三方 GeoIP 一律不可信：
 
-| 服务 | 判定口径 | 实测结果（出口 66.90.99.58） |
+| 服务 | 判定口径 | 实测结果（出口 <REDACTED-EXIT-IP>） |
 |---|---|---|
 | Google | `support.google.com` 页里 `var cc='XX'` + `www.google.com` 跳 `google.com.hk?hl=zh-CN&pref=hkredirect` | **CN**（被判中国大陆） |
 | HBO Max | `set-cookie: countryCode=` | JP |
@@ -81,14 +81,14 @@ ZCode 的 chat 模型原按用途分组（速度/经济），组名与价格脱�
 **逐服务实测清单**（8 份报告在 `audit/agent-*.md`）：
 - Google 判 CN 的节点 12 个；OpenAI 只封 3 个（香港WAP×3）；**交集 = 香港WAP**。
 - 官方清单：OpenAI `supported-countries`（208 条）不含港澳；Gemini 三份清单不含中国大陆。
-- 节点名与真实地理**完全不可信**：🇯🇵 日本-优化 的出口被 Google 判成 CN；🇺🇲 美国LA-优化 实为墨西哥 IP（140.84.191.235, Oracle Querétaro）。
+- 节点名与真实地理**完全不可信**：🇯🇵 日本-优化 的出口被 Google 判成 CN；🇺🇲 美国LA-优化 实为墨西哥 IP（<REDACTED-EXIT-IP>, Oracle Querétaro）。
 - Play 商店币种（USD）是**账号侧**属性，与出口 IP 无关——任何换 IP 都修不了。
 - `accounts.google.com` → `hl=en-US` 也是非 IP 派生。
 - 浏览器/客户端层**无残留阻断项**（8 个扩展全查 manifest：AdGuard 的 77019 条 DNR 对 Google 域命中 0、无 UA 改写、无代理扩展）；仅需用户自行清 Chrome 的 `variations_country="cn"` 种子与磁盘里的旧 `google.com.hk` 缓存页。
 
 ## 二、干净出口体系（本次落地）
 
-- 新建 **`🤖 干净出口`**（select，**只含 🇮🇳 印度-优化 = 157.245.110.32**）→ 挂在 `🤖 人工智能` 下。
+- 新建 **`🤖 干净出口`**（select，**只含 🇮🇳 印度-优化 = <REDACTED-EXIT-IP>**）→ 挂在 `🤖 人工智能` 下。
   选 select 不用 url-test：实测 28 节点里印度延迟排第 17，url-test 永远选不到它。
 - `🤖 AI网页` 的 filter 收窄到 `(印度|India|IN)`，同样变成单成员 → **出口确定、不会漂**。
 - **所有 Google 家族域名规则一律指向 `🤖 干净出口`**（gstatic/googleusercontent/googleapis/google.com/
