@@ -16,6 +16,22 @@
 
 ## [未发布] — 2026-10-21
 
+### 收尾大扫除（2026-10-22）
+
+- 清理 磁盘 —— 删 `workbuddy/__pycache__/`（40K，`.gitignore` 已排除、可再生成）与
+  `workbuddy/cache/wb_pricing.json.bak-20261022-125554`（20K，价格表自动备份，
+  保留最新 `wb_pricing.json`）；仓库 53109K → 53053K
+- 调整 文档 —— `docs/MODEL-PROVIDERS.md` 对齐实际配置：范围行改为 OpenCode-Go 七个 /
+  WorkBuddy2API 四个；WorkBuddy 快照日期改 2026-10-22（复核无倍率 / 分档变化）；
+  补 `global:deepseek-v4.1-flash`、`global:deepseek-v4.1-flash-sg` 的 effort 档位；
+  `cn:minimax-m3` 输出上限 524K → 512K；§5.2 的 WorkBuddy 模型数 30 → 18
+- 调整 文档 —— `docs/release-notes/README.md` 补「反馈入口」规则：加粗总结后单独一行
+  绝对地址 `https://github.com/MVennn/ZcodeAIModels/issues/new/choose`，然后才是 `## 本版内容`
+- 调整 文档 —— `AGENTS.md` §3 改为「有 `.codegraph/` 就优先用」，与当前工作副本一致
+- 清理 文档 —— PROGRESS 与 memories 里的机场出口 IP 脱敏（补记 2026-10-22 的两笔提交）
+- 验证 —— `python tools/check-docs.py` 通过（20 篇）；全部 `.py` `py_compile`、
+  全部 `.js` `node --check` 通过
+
 ### Issue 表单（2026-10-22）
 
 - 新增 `.github/ISSUE_TEMPLATE/` —— 问题反馈（Bug）与功能建议两套表单，外加 `config.yml`：

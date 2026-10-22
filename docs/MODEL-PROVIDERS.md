@@ -4,10 +4,10 @@
 > 工具调用能不能用、思考参数怎么关 —— 这篇是正本，其它文档只引用不重述。
 >
 > **范围**：本篇列的是**本仓已配置的两组 provider** ——
-> OpenCode-Go 六个（§2）与 WorkBuddy2API 三个（§4）。
+> OpenCode-Go 七个（§2）与 WorkBuddy2API 四个（§4.2，分离模式）。
 > **接别的供应商**：方法见 §0；本篇的表是**快照**，不是通用规则。
 
-数据快照：**2026-10-20**（§4 WorkBuddy 的倍率与分档于 **2026-10-21** 刷新）。
+数据快照：**2026-10-20**（§4 WorkBuddy 的倍率与分档于 **2026-10-22** 复核，倍率 / 分档无变化）。
 价格 / 额度 / 倍率随服务商变动，改之前先看 [MAINTENANCE.md](MAINTENANCE.md) §1。
 
 ---
@@ -323,7 +323,7 @@ chat 组，五个 chat 组的 `api.baseUrl` 指向本地路由 `tools/unified-ro
 |---|---|---:|---|---|---|
 | cn:hy3 | 192K | 64K | ❌ | low / high | 200 |
 | cn:step-5-preview | 1M | 64K | ❌ | low / medium / high | 200 |
-| global:deepseek-v4.1-flash | 1M | 128K | ❌ | high | 200 |
+| global:deepseek-v4.1-flash | 1M | 128K | ❌ | low / high / max | 200 |
 | global:hy3 | 192K | 64K | ❌ | low / high | 200 |
 | global:step-5-preview | 1M | 64K | ❌ | low / medium / high | 200 |
 
@@ -336,7 +336,7 @@ chat 组，五个 chat 组的 `api.baseUrl` 指向本地路由 `tools/unified-ro
 | cn:minimax-m3.1-flash | 0.08 | 1M | 128K | ❌ | low / medium / high / xhigh / max | 200 |
 | cn:hy3-x | 0.05 | 192K | 64K | ❌ | low / high | 200 |
 | cn:space-bunny | 0.08 | 1M | 128K | ❌ | low / medium / high / xhigh / max | 200 |
-| global:deepseek-v4.1-flash-sg | 0.03 | 1M | 128K | ❌ | 未标 | 200 |
+| global:deepseek-v4.1-flash-sg | 0.03 | 1M | 128K | ❌ | low / high / max | 200 |
 | global:glm-5.3-flash | 0.08 | 1M | 32K | ✅ | low / high / max | 200 |
 | global:minimax-m3.1-flash | 0.08 | 1M | 128K | ❌ | low / medium / high / xhigh / max | 200 |
 
@@ -353,7 +353,7 @@ chat 组，五个 chat 组的 `api.baseUrl` 指向本地路由 `tools/unified-ro
 | 模型 | 倍率 | 上下文 | 输出上限 | 可关思考 | effort 档位 | 实测 |
 |---|---:|---:|---:|---|---|---|
 | cn:deepseek-v4-flash | 0.17 | 1M | 50K | ✅ | low / high / xhigh | 200 |
-| cn:minimax-m3 | 0.25 | 512K | 524K | ❌ | medium | 200 |
+| cn:minimax-m3 | 0.25 | 512K | 512K | ❌ | medium | 200 |
 
 **全部 18 个模型都支持工具调用**（网关 `supports_tool_call` 全为真）。
 
@@ -427,7 +427,7 @@ map 是**一段 JS 表达式**，引擎求值成 JSON 对象后再发出去。
 `beam-free`、`minimax-m3.1-flash-free`、`minimax-m3`、
 `muse-spark-1.3-contributor`、`muse-spark-1.2-contributor`。
 
-**WorkBuddy 侧 30 个模型一个都没配覆盖** —— 探测确认它们**全部接受 ZCode 原生 body**。
+**WorkBuddy 侧 18 个模型一个都没配覆盖** —— 探测确认它们**全部接受 ZCode 原生 body**。
 （与 OpenCode-Go 侧不同：那边 minimax-m3 会拒 `thinking:{type:"enabled"}`，这边 CodeBuddy 上游接受。）
 
 ### 5.3 ZCode 内置规则的形状（为什么要复刻）

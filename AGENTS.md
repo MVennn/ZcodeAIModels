@@ -62,12 +62,12 @@
 
 ## 3. CodeGraph
 
-**本仓库目前没有 `.codegraph/` 索引目录 → 跳过 CodeGraph，直接用普通检索（Grep / Read / glob）。**
+**仓库根有 `.codegraph/` 就优先用它查符号与调用路径；没有就退回普通检索（Grep / Read / glob）。**
 
-- 判断依据：仓库根存在 `.codegraph/` 目录才算已索引。
-- 如果之后在本仓初始化了 CodeGraph（`codegraph init -y`），本节要改成
-  「有 `.codegraph/` → 优先用 `codegraph_explore` 查符号与调用路径」，
-  并且**同步改 `docs/DOC-RULES.md` 的索引**。
+- 判断依据：仓库根存在 `.codegraph/` 目录才算已索引。当前工作副本已索引
+  （`.codegraph/` 被 `.gitignore` 排除，不随仓库分发）。
+- 有索引时优先 `codegraph_explore` / `codegraph explore "<问题>"`；
+  新克隆或索引失效时直接普通检索，需要再 `codegraph init -y`。
 - 无论有没有索引，**改动前后都要把 `docs/README.md` 的索引对齐**（孤儿文档零容忍）。
 
 ---

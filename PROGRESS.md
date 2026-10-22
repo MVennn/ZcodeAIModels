@@ -484,3 +484,37 @@ CN/全球交织、不同厂商混排，主力 `cn:deepseek-v4.1-flash` 落到低
 
 ## 状态: 已完成
 
+---
+
+# 2026-10-22 收尾大扫除（L1-L4）
+
+## 任务目标
+按《系列仓大扫除共用作业书》（2026-10-22）做 L1-L4：清可再生产物、对齐文档漂移、
+记账、验证并本地提交；只做减法，不改功能与用户可见行为。
+
+## 已完成变更
+- [x] L1 清 `workbuddy/__pycache__/`（40K，可再生成）
+- [x] L1 清 `workbuddy/cache/wb_pricing.json.bak-20261022-125554`（20K，
+      价格表自动备份，保留最新 `wb_pricing.json`）
+- [x] L3 `docs/MODEL-PROVIDERS.md`：范围行 6/3 → 7/4；WorkBuddy 快照改 2026-10-22；
+      补两个模型的 effort 档位、`cn:minimax-m3` 输出上限 524K → 512K；§5.2 模型数 30 → 18
+- [x] L3 `docs/release-notes/README.md` 补「反馈入口」规则（绝对地址 `issues/new/choose`）
+- [x] L3 `AGENTS.md` §3 改为「有 `.codegraph/` 就优先用」
+- [x] 记账：CHANGELOG「收尾大扫除」段（含两笔脱敏提交）、本批次、MAINTENANCE §10 维护记录
+- [x] 保留：`workbuddy/gateway/`（含凭据与二进制）、`.codegraph/`、`evidence/`、
+      `opencode-go/probe/results/`、`workbuddy/cache/` 活数据、`workbuddy/logs/wb_zcode_probe.log`
+
+## 验收
+- `python tools/check-docs.py` → 退出码 0（20 篇）
+- 12 个 `.py` `python -m py_compile` → 全部退出码 0
+- 6 个 `.js` `node --check` → 全部退出码 0
+- 仓库 `du -sk` 53109 → 53053（净 -56K）
+- `git status --porcelain` 仅含本轮改动，无在途文件
+
+## 待解决 / 注意事项
+- `wb_pricing.json` 2026-10-22 快照把全部模型的 `can_disable` 改为 false（10-21 备份里部分为 true），
+  与 MODEL-PROVIDERS §5.1 的实测结论不一致；表内「可关思考」列未改，待用探测复核后再定。
+- `mimo-v2.5-pro` 上游已下架但仍挂在主力组（既有待办，上一批已登记）。
+
+## 状态: 已完成
+

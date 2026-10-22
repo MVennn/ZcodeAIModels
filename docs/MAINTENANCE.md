@@ -323,3 +323,11 @@ clone 一起删掉**，别在不确认的情况下跑。
 | provider 分组、协议类型、参数矩阵 | [MODEL-PROVIDERS.md](MODEL-PROVIDERS.md) |
 | 脚本改 ZCode 配置的哪几处、两个 `--apply` 脚本的行为差异 | [MODEL-PROVIDERS.md](MODEL-PROVIDERS.md) §1、§1.1 |
 | 排障步骤 | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) |
+
+---
+
+## 10. 维护记录
+
+| 日期 | 做了什么 | 结果 |
+|---|---|---|
+| 2026-10-22 | 收尾大扫除：清 `__pycache__` 与过期定价备份；对齐模型计数 / 快照日期、Release 说明反馈入口、AGENTS 的 CodeGraph 状态 | 仓库 53109K → 53053K；`python tools/check-docs.py` 通过 |
