@@ -64,6 +64,11 @@ TRUNCATED_PATH = re.compile(
     r"[A-Za-z]:[\\/]Users[\\/](?:\.\.\.|<[^>]+>|[A-Za-z0-9._-]+\\\.\.\.)")
 
 
+# 占位用户名：示例文件里的 C:/Users/You/... 是给用户照着改的模板，不是本机路径。
+PLACEHOLDER_USER = re.compile(
+    r"[A-Za-z]:[\/]Users[\/](?:You|User|Your|<[^>]+>|[^\/\s<>]*[一-鿿])", re.I)
+
+
 def is_doc_file(rel: str) -> bool:
     base = rel.replace("\\", "/")
     if base in DOC_FILES or base.startswith(DOC_PREFIXES):
@@ -109,9 +114,12 @@ def main() -> int:
                         m = pat.search(line)
                         if not m:
                             continue
-                        if (allow_truncated and name == "本机用户目录"
-                                and TRUNCATED_PATH.search(line)):
-                            continue
+                        if name == "本机用户目录":
+                            # 截断形式的描述性引用，或占位用户名（C:/Users/You/）
+                            if TRUNCATED_PATH.search(line):
+                                continue
+                            if PLACEHOLDER_USER.search(line):
+                                continue
                         bad.append((rel, lineno, name, line.strip()[:120]))
         except OSError:
             continue
