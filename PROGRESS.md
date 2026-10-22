@@ -550,3 +550,39 @@ CN/全球交织、不同厂商混排，主力 `cn:deepseek-v4.1-flash` 落到低
 - `mimo-v2.5-pro` 若上游恢复支持需人工加回主力组（脚本只删不加）
 
 ## 状态: 已完成
+
+---
+
+# 2026-10-23 脱敏审查：修泄漏源 + 补敏感信息守卫
+
+## 任务目标
+8 仓公开化后的脱敏复审发现本仓提交 `92baac2`（已推送）在两个 evidence 报告里
+写入本机用户目录下的 `provider_config.json`。目标：找到
+持续产生这个泄漏的机制并修掉，补上本仓缺失的守卫，脱敏已泄漏的文件。
+
+## 已完成变更
+- [x] 修根因：`opencode-go/ops/go_model_sync.py` 两处 `log("已写入 %s" % args.config)`
+      改为 `os.path.basename(args.config)` —— 报告只写文件名，不再回显绝对路径。
+      第 617 行（备用档重排）与第 757 行（主同步）都改了
+- [x] 新增 `tools/check-secrets.py`：凭据规则 + 「本机用户目录」+ 「真实邮箱域名」，
+      扫 `git ls-files`，占位符行跳过；`--all` 扫工作树
+- [x] 接入 CI：`.github/workflows/ci.yml` 加「敏感信息扫描」步骤
+- [x] 脱敏两个 evidence 文件：`evidence/go-model-sync-20261022-234800.md`、
+      `evidence/go-model-sync-20261023-000011.md`，路径改为 `provider_config.json`
+
+## 验收
+- 守卫有效性正反验证：注入测试行（本机路径 + 真实邮箱）→ 退出码 1 且两条都报出；
+      当前工作树 → 退出码 0（270 个文件）
+- `python tools/check-secrets.py` 与 `python tools/check-docs.py` 均通过
+- `git grep 本机用户目录 HEAD` 为空（工作树与 HEAD 树都已清）
+
+## 待解决 / 注意事项
+- 历史提交 `92baac2` 的旧 blob 仍在 GitHub 上（force-push 不会立刻删服务端旧对象），
+  旧 SHA 仍能读到泄漏内容。要彻底清需 `git filter-repo --replace-text` 重写并强推，
+  本仓 28 个提交、0 star / 0 fork，重建成本低但属破坏性操作，未擅自执行
+- 同类残留（仅历史可见）：`PROGRESS.md` / `docs/SECRETS.md` / `memories/*` /
+  `go_model_sync.py` 的旧 blob 仍含本机用户目录路径，HEAD 已清
+- 8 仓里只有 AX3000TOpenwrt 与 ShellcrashRules 原有守卫，且规则不含用户路径；
+  建议按本仓这份给其余仓补齐
+
+## 状态: 已完成

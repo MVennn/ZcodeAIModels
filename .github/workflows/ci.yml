@@ -37,3 +37,6 @@ jobs:
 
       - name: 文档自检
         run: python3 tools/check-docs.py
+
+      - name: 敏感信息扫描
+        run: python3 tools/check-secrets.py

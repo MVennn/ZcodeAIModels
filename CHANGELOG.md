@@ -17,6 +17,22 @@
 
 ## [未发布] — 2026-10-21
 
+### 脱敏：修掉报告回显本机路径的泄漏源，补敏感信息守卫（2026-10-23）
+
+只修脱敏与守卫，不动版本号（规则见 [docs/VERSIONING.md](docs/VERSIONING.md) §5）。
+
+- 修复 `opencode-go/ops/go_model_sync.py` —— 两处「已写入 %s」把 `--config` 的
+  绝对路径原样回显到报告里，而报告会作为 evidence 提交，于是本机用户目录
+  （`C:\Users\...\provider_config.json`）进了版本库：提交 `92baac2` 的两个 evidence
+  文件就是这么漏的。改为只输出 `os.path.basename(args.config)`，报告里从此只有文件名。
+  报告落盘路径那行（`log("报告: %s"`）在文件写完之后才执行，不进正文，无需处理
+- 新增 `tools/check-secrets.py` —— 本仓原来没有守卫，凭据规则之外多两条：
+  「本机用户目录」（`C:\Users\<名字>`，正反斜杠都拦）与「真实邮箱域名」，
+  都是上面这个坑的直接产物。已接入 CI 的「敏感信息扫描」步骤
+- 脱敏 `evidence/go-model-sync-20261022-234800.md` 与 `evidence/go-model-sync-20261023-000011.md`
+  —— 两处 `已写入 <USER>\...\provider_config.json` 改为 `已写入 provider_config.json`。
+  历史提交里的旧内容不会因此消失（旧 SHA 仍可访问），要彻底清需重写历史，见 PROGRESS 待解决段
+
 ### 同步脚本自动清理失效模型（2026-10-23）
 
 脚本行为变了，按本文件第 10 行的口径「现有脚本的行为变了 = 功能更新」；未发版，

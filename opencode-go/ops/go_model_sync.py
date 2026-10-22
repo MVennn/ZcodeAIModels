@@ -614,7 +614,7 @@ def main():
             backup = args.config + ".bak-reclassify-" + stamp()
             shutil.copy2(args.config, backup)
             write_config(cfg, args.config)
-            log("已写入 %s（备份 %s）" % (args.config, os.path.basename(backup)))
+            log("已写入 %s（备份 %s）" % (os.path.basename(args.config), os.path.basename(backup)))
         elif not args.apply:
             log("[dry-run] 未写入；加 --apply 才写")
         return
@@ -754,7 +754,7 @@ def main():
             backup = args.config + ".bak-gosync-" + stamp()
             shutil.copy2(args.config, backup)
             write_config(cfg, args.config)
-            log("\n已写入 %s（备份 %s）" % (args.config, os.path.basename(backup)))
+            log("\n已写入 %s（备份 %s）" % (os.path.basename(args.config), os.path.basename(backup)))
         else:
             log("\n没有需要写入的新模型或失效模型，配置未改动")
     elif args.apply:
