@@ -17,6 +17,14 @@
 
 ## [未发布] — 2026-10-21 ~ 2026-10-23
 
+### 凭据守卫（2026-10-23）
+
+- 修复 `tools/check-secrets.py` —— `PLACEHOLDER` 命中后整行 `continue`：行内只要
+  出现 `example.com` / `<...>` / `YOUR-` 就把同一行的真值一起放过。改为只豁免
+  匹配片段本身（示例 URL 仍按预期放行，真 token 不再逃检）
+- 验证 —— `check-secrets.py` ✓（86 个文件）、`check-docs.py` ✓（20 篇）、
+  全部 `.py` `ast.parse` ✓、全部 `.js` `node --check` ✓
+
 ### 脱敏：修掉报告回显本机路径的泄漏源，补敏感信息守卫（2026-10-23）
 
 只修脱敏与守卫，不动版本号（规则见 [docs/VERSIONING.md](docs/VERSIONING.md) §5）。
