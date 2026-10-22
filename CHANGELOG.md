@@ -16,6 +16,24 @@
 
 ## [未发布] — 2026-10-21
 
+### 自动收录定时任务修复（2026-10-22）
+
+ZCode 的每日自动收录任务报「触发运行失败」。根因是自动化的目标会话被删了
+（`target_task_id` 指向 `deleted=1` 的会话 → 派发报 `Session not found`）；
+另外 10:00 的两班定时窗口因机器睡眠被跳过，ZCode 不补跑。
+
+- 修复 自动化 —— 重建每日自动收录任务为每天 **12:00**；取网关 key 的来源从
+  `provider_config.json` 的 `workbuddy-low` 改成 `workbuddy/gateway/config.json`
+  的 `api_key`（统一路由并组后 `workbuddy-*` provider 已不存在，原写法抛
+  `StopIteration`）
+- 调整 自动化 —— 目标会话置空：ZCode 派发走 `createTask` 分支，**每次运行新建
+  独立会话**，上下文不再累积（该字段只读不写回，解绑永久）
+- 验证 —— 12:00 那班 `dispatched → succeeded`；Go 建议收录 0 个、配置未改动；
+  WorkBuddy 18 个模型并入五个 chat 组，与同步前逐个对账一致
+- 调整 文档 —— MAINTENANCE §6 每日任务改 12:00 并补 key 来源、§7 登记两条脚本
+  待办；TROUBLESHOOTING 补 §13「每日自动收录的体检刷出一片 400 / 403」
+- 新增 数据 —— 两份 Go 同步报告（`evidence/go-model-sync/go-model-sync-20261022-*.md`）
+
 ### 守护器生命周期加固（2026-10-21 深夜）
 
 排查「关掉 ZCode 后 wb2api 还在」：停止分支本来就有（当天 23:51 实测停过一次），

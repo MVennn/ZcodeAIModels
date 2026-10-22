@@ -398,6 +398,45 @@ python -c "import os; p=os.path.join(os.environ['LOCALAPPDATA'],'ZCodeGateway','
 
 ---
 
+## 13. 每日自动收录的体检刷出一片 400 / 403 【通用机制 + 实例 B 的误报】
+
+**现象**：跑完 `go_model_sync.py` 或每日自动收录任务，输出里「已配置模型体检」
+一片异常，例如 `cn:hy3 探测异常: error (HTTP 400)`、`gpt-6-luna 探测异常:
+error (HTTP 403)`，但同步本身「建议收录 0 个、配置未改动」，模型在 ZCode 里
+也用得好好的。
+
+**排查**
+
+```bash
+# 1) 分清「真坏」和「探错上游」：WorkBuddy 模型（cn:* / global:*）走本机统一路由，
+#    不该拿 OpenCode-Go 的公共 API 去探
+curl -sS -X POST http://127.0.0.1:7871/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $(python -c "import json,pathlib;print(next(r['config']['access']['apiKey'] for r in json.loads((pathlib.Path.home()/'.zcode/v2/provider_config.json').read_text(encoding='utf-8'))['config']['providerConfigRules']['providerRules'] if r['providerId']=='opencode-go-chat-free'))")" \
+  -d '{"model":"cn:hy3","messages":[{"role":"user","content":"hi"}],"max_tokens":16}'
+
+# 2) 403 地区限制类：先查代理侧（本仓的代理在 OpenWrt 上，见下方「原因」）
+# 3) 402 / 400 Unsupported model：直接复现，看上游原话
+python -c "import json,pathlib,urllib.request,urllib.error; ..."   # 复刻探针请求
+```
+
+**原因 / 解法**
+
+| 现象 | 原因 | 解法 |
+|---|---|---|
+| 18 个 `cn:*` / `global:*` 全部 400 `Model is unavailable` | **误报**：`go_model_sync.py` 的体检固定探 OpenCode-Go 的公共 API（`https://opencode.ai/zen/go/v1`），而这些模型在统一路由并组后由本机网关供给，OpenCode-Go 那边本来就没有 | 体检要按模型 id 前缀分流上游；在脚本改好前，**这 18 条不用管**，WorkBuddy 侧的真实状态看 `workbuddy_probe_zcode.py` 的结果 |
+| `beam-free` / `gpt-6-luna` / `gpt-5.6-luna` / `muse-spark-*` 403 `RegionError` | 出口 IP 落在不支持的地区。**本仓的代理在 OpenWrt 上（ShellCrash 透明代理），本机没有代理客户端** | 查 OpenWrt 侧 ShellCrash 规则 / 节点；修好后重跑即可。**不要**在任务里加「先开梯子」这类前置条件 |
+| `mimo-v2.5-pro` 400 `Unsupported model` | 上游已下架该模型，与网络无关 | 从主力组移除（它是本仓在配模型，见 [MODEL-PROVIDERS.md](MODEL-PROVIDERS.md)） |
+| `longcat-2.0` / `longcat-2.5-preview-free` 402 `Endpoint is unavailable` | 上游端点不可用，与网络无关 | 等上游恢复；或从在配清单里去掉 |
+| `cn:hy4-preview-f` / `global:hy4-preview-f` 没被收录 | **漏收**：探测 ok、实际免费，但价格表 `credits` 字段为空 → `rate_of` 判成 `None` → 按「无公布倍率」排除 | 修 `workbuddy_zcode_sync.py` 的 `rate_of`（见 [MAINTENANCE.md](MAINTENANCE.md) §7 待办 7） |
+| `cn:deepseek-v4.1-flash` 503 `no_healthy_account` | 账号池里唯一那个 CN 账号上，该模型被 **6004 模型频率限制**锁住 | 查 `curl -sS http://127.0.0.1:7863/status` 的 `model_locks`（含 `unlock_at`），到点自愈；`global:` 同款通常正常 |
+
+> 代理位置：本仓的出网代理在 **OpenWrt 路由器上**（ShellCrash 透明代理），
+> 本机系统代理是关的、也没有代理客户端。所以「地区限制」类报错一律先查路由器侧，
+> 详见 [SECRETS.md](SECRETS.md) 与 [PITFALLS.md](PITFALLS.md)。
+
+---
+
 ## 附：通用排查顺序
 
 **换任何供应商都按这个顺序**（括号里是本仓两个实例的具体命令）：

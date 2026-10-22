@@ -209,7 +209,7 @@ python -c "import json,os; json.load(open(os.path.expanduser('~/.zcode/v2/provid
 
 | 周期 | 动作 |
 |---|---|
-| **每天** | `python opencode-go/ops/go_model_sync.py --apply`（Go 新模型自动收录）；`python workbuddy/workbuddy_fetch_pricing.py` → `probe_zcode.py --max-rate 0.3 --sleep 20` → `workbuddy_zcode_sync.py --max-rate 0.3 --apply`（WorkBuddy 新模型自动收录，ZCode 每天 10:00 任务；上限 0.30 = 主力价位，超过的"贵不加"） |
+| **每天** | `python opencode-go/ops/go_model_sync.py --apply`（Go 新模型自动收录）；`python workbuddy/workbuddy_fetch_pricing.py` → `probe_zcode.py --max-rate 0.3 --sleep 20` → `workbuddy_zcode_sync.py --max-rate 0.3 --apply`（WorkBuddy 新模型自动收录，ZCode 每天 **12:00** 任务；上限 0.30 = 主力价位，超过的"贵不加"）。网关 key 按 [SECRETS.md](SECRETS.md) §2 取（`workbuddy/gateway/config.json` 的 `api_key`）—— 统一路由把 WorkBuddy 并进五个 chat 组后，`provider_config.json` 里已没有 `workbuddy-*` provider，别再从那里取 |
 | **每月** | 复核 [MODEL-PROVIDERS.md](MODEL-PROVIDERS.md) 里的价格 / 额度（`wb_pricing.json` 已由每日任务自动刷新） |
 | **换套餐 / 换账号池后** | 全量重探 WorkBuddy（`--sleep 20`）+ 重跑同步 |
 | **每次接入新供应商** | 照 §1.1 的通用做法写一份取数脚本 + 在 [MODEL-PROVIDERS.md](MODEL-PROVIDERS.md) §0 的表里补一行；凭据按 [SECRETS.md](SECRETS.md) §2、§3.5 加环境变量 |
@@ -229,6 +229,8 @@ python -c "import json,os; json.load(open(os.path.expanduser('~/.zcode/v2/provid
 | 3 | ~~`go_model_sync.py` 的 `REPORT_DIR` 仍硬编码旧仓库路径~~ **已修** | 拆仓时改为本仓内 `evidence/`，可用 `GO_SYNC_REPORT_DIR` 覆盖 | [PITFALLS.md](PITFALLS.md) §10 |
 | 4 | ~~根 `LICENSE` 文件未创建~~ **已修** | 仓库根已有 MIT 全文（见 [LICENSE](../LICENSE)），不再只有 `README.md` 里的一句话 | [CHANGELOG.md](../CHANGELOG.md) 「待补」 |
 | 5 | ~~`docs/VERSIONING.md` 未创建~~ **已修** | 版本晋升规则有独立正本 [VERSIONING.md](VERSIONING.md)，不再暂以 `CHANGELOG.md` 头部为正本 | [VERSIONING.md](VERSIONING.md) §1–§2 |
+| 6 | `go_model_sync.py` 的**体检**把全部已配置模型都探向 OpenCode-Go（**待修**） | 统一路由并组后，18 个 WorkBuddy 模型（`cn:*` / `global:*`）由本机网关供给，OpenCode-Go 那边一律回 400 `Model is unavailable` → 每天刷 18 条假异常 | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) §13 |
+| 7 | `workbuddy_zcode_sync.py` 的 `rate_of` 认不出 `credits` 为空的免费条目（**待修**） | `cn:hy4-preview-f` / `global:hy4-preview-f` 探测 ok、实际免费，却因倍率判成 `None` 被「无公布倍率」排除 → 漏收 | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) §13 |
 
 ---
 

@@ -419,3 +419,51 @@ CN/全球交织、不同厂商混排，主力 `cn:deepseek-v4.1-flash` 落到低
 
 ---
 
+# 2026-10-22 自动收录定时任务修复 + 首次真跑通
+
+## 任务目标
+「触发收录的运行失败了」：查清 ZCode 定时任务触发失败的根因并修好；
+修好后按该任务的指令完整跑一轮 Go 套餐 + WorkBuddy 同步。
+
+## 已完成变更
+- [x] 定位触发失败：自动化的 `target_task_id` 指向的会话已 `deleted=1`
+      → 派发报 `Session not found`（5 次手动触发全失败，`run_count` 一直是 0）；
+      另有两班 10:00 定时窗口因机器睡眠被跳过（`computer_asleep_or_app_not_running`，
+      ZCode 不补跑）。
+- [x] 重建自动化 `automation-3e2f8a53`：每天 **12:00**，模型
+      `免费/minimax-m3.1-flash-free`；prompt 取网关 key 改读
+      `workbuddy/gateway/config.json` 的 `api_key`（原 `workbuddy-low` 在统一路由
+      并组后已不存在，会抛 `StopIteration`）。
+- [x] 解绑目标会话：`target_task_id` 置空 → ZCode 派发走 `createTask` 分支，
+      **每次运行新建独立会话**，上下文不累积；该字段全流程只读不写回，解绑永久。
+- [x] 12:00 真跑验证：`dispatched` → `succeeded`，`run_count=1`，下次 10-23 12:00。
+- [x] 同步本身：Go **建议收录 0 个**、配置未改动；WorkBuddy 18 个模型并入五个 chat 组
+      （主力 2 / 低代 6 / 免代 5 / 高代 3 / 备用 2），与同步前逐个对账一致，
+      无新增 / 下架 / 换档；备份 `provider_config.json.bak-wbproxy-20261022-125559`。
+
+## 验收
+- `automation_runs`：今天那班 `dispatched / succeeded`，error 为空。
+- Go：报告 `evidence/go-model-sync/go-model-sync-20261022-125539.md`
+  （「建议收录 0 个」「配置未改动」）。
+- WorkBuddy：同步前后逐 provider 对账模型集合，18 个模型全部在位、档位未变。
+- 凭据复核：全仓无明文 key（`oc_sk_` 全文检索只命中文档里的前缀说明），
+  `workbuddy/cache/` 与 `workbuddy/gateway/` 仍被 `.gitignore` 排除。
+
+## 待解决 / 注意事项
+- **Go 体检 18 条误报**：体检固定探 OpenCode-Go 的公共 API，WorkBuddy 模型一律 400
+  `Model is unavailable`。解法与另外两条脚本待办见
+  [docs/MAINTENANCE.md](docs/MAINTENANCE.md) §7 待办 6 / 7 与
+  [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) §13。
+- **mimo-v2.5-pro 上游已下架**（400 `Unsupported model`），还挂在主力组，待确认移除。
+- **longcat-2.0 / longcat-2.5-preview-free** 402 `Endpoint is unavailable`，等上游恢复。
+- **漏收**：`cn:hy4-preview-f` / `global:hy4-preview-f` 探测 ok、实际免费，
+  但价格表 `credits` 为空 → 判成「无公布倍率」排除。
+- **cn:deepseek-v4.1-flash 曾在 503**：唯一 CN 账号上该模型被 6004 模型频率限制锁住
+  （网关 `/status` 的 `model_locks` 里有 `unlock_at`），到点自愈。
+- 代理在 **OpenWrt 侧 ShellCrash**（网关透明代理），本机没有代理客户端；
+  上游 403 地区限制类报错先查路由器侧，**别在任务里加「开梯子」前置条件**。
+
+## 状态: 已完成
+
+---
+
