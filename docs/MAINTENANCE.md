@@ -236,11 +236,22 @@ python -c "import json,os; json.load(open(os.path.expanduser('~/.zcode/v2/provid
 
 `workbuddy/zcode_gateway_watch.ps1` 是一个**无窗口守护器**：ZCode **主进程**从无到有 →
 静默拉起 `wb2api` 和 `node tools/unified-router.js`；主进程退出 → 宽限 8 秒 +
-在途连接排空后停网关。日常只开 ZCode 就行，不用再手动开 cmd。
+在途连接排空（默认最多 5 秒）后停网关。日常只开 ZCode 就行，不用再手动开 cmd。
 
 主进程判据是「命令行既不含 `--type=`、也不含 `zcode.cjs` 的 `ZCode.exe`」——
-GPU / renderer / crashpad / CLI 宿主晚退几秒不会拖住网关。网关「就绪」以
-`/panel/` 返回 200 为准；统一路由「就绪」以 `/health` 返回 200 为准。
+GPU / renderer / crashpad / CLI 宿主晚退几秒不会拖住网关。拿到主进程后按**进程句柄**
+判存活（不是只记 PID），PID 被系统复用也不会把已退出的 ZCode 误判成还在跑。
+网关「就绪」以 `/panel/` 返回 200 为准；统一路由「就绪」以 `/health` 返回 200 为准。
+
+退出路径的三种收尾都会写日志：宽限期内 ZCode 回来 → `在 Ns 宽限期内重新出现，取消停止`；
+排空期内回来 → `在排空期间重新出现，取消停止并恢复统一路由`（已停的路由会立刻拉回）；
+确认退出 → 停路由 → 排空 → 停网关。守护器**启动时先对账**：没有 ZCode 主进程却还有
+网关 / 路由在监听，说明上次没停干净（守护器被结束、关机前 ZCode 已退等），直接清掉；
+要手动常驻网关时加 `-KeepOrphans`。每 15 分钟写一条 `心跳：ZCode=… 网关=… 路由=…`，
+日志里长时间没有心跳就说明守护器本身没了。
+
+> **关窗 ≠ 退出**：ZCode 默认 `closeToTrayOnWindows=true`，点右上角 × 只是最小化到托盘，
+> 主进程还在，网关 / 路由保持运行是预期行为。要触发停止请从托盘菜单「退出」。
 
 | 动作 | 命令（在仓库根执行） |
 |---|---|
@@ -256,12 +267,14 @@ GPU / renderer / crashpad / CLI 宿主晚退几秒不会拖住网关。网关「
 | `WB_GATEWAY_BASE` | `http://127.0.0.1:7863` | 健康检查 + `/panel/` 就绪判定 + provider 指向校验 |
 | `ZCODE_WATCH_LOG` | `%LOCALAPPDATA%\ZCodeGateway` | 守护器、网关与路由的日志目录 |
 | `-PollMilliseconds` | `500` | 主进程轮询间隔；越小拉起越快 |
-| `-StopGraceSeconds` | `8` | 主进程退出后等多久再停（防止更新 / 重启误杀） |
-| `-DrainTimeoutSeconds` | `30` | 停网关前等在途连接排空的上限，超时才强制停止 |
+| `-StopGraceSeconds` | `8` | 主进程退出后等多久再停（防止更新 / 重启误杀；宽限内回来会写日志） |
+| `-DrainTimeoutSeconds` | `5` | 停网关前等在途连接排空的上限，超时才强制停止；排空期 ZCode 回来立刻取消 |
+| `-HeartbeatSeconds` | `900` | 心跳日志间隔；写 `心跳：ZCode=… 网关=… 路由=…`，用来判断守护器是否还活着 |
 | `-ProcessName` | `ZCode` | 被跟随的进程名；换客户端时改这个 |
 | `-RouterPort` | `7871` | 统一路由监听端口（五个 chat 组按这个端口写 `baseUrl`） |
 | `-RouterScript` | `<仓库>/tools/unified-router.js` | 统一路由脚本路径 |
 | `-NoRouter` | 关 | 不启动 / 不停止统一路由 |
+| `-KeepOrphans` | 关 | 启动时不清掉「没有 ZCode 但还在监听」的遗留网关 / 路由 |
 
 `-Status` 会顺带读出 `provider_config.json` 里五个 chat provider 的模型数、
 `baseUrl` 是否指向统一路由、`apiKey` 是否存在（**只报状态，不打印值**）。

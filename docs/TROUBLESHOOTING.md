@@ -349,15 +349,18 @@ ls "$APPDATA/Microsoft/Windows/Start Menu/Programs/Startup/" | grep -i zcode
 | `WB_GATEWAY_DIR` 指错，找不到 `wb2api.exe` | 改环境变量，或确认仓库内默认目录 `workbuddy/gateway/` 存在（它整目录被 `.gitignore` 排除，**克隆后不会自带**；重建方法见 [MAINTENANCE.md](MAINTENANCE.md) §8） |
 | 网关启动后立刻退出 | 看 `%LOCALAPPDATA%\ZCodeGateway\gateway.stderr.log` |
 | 统一路由启动后立刻退出 | 看 `%LOCALAPPDATA%\ZCodeGateway\router.stderr.log`；常见是 PATH 里没有 `node`，或 7871 被占用 |
-| 关 ZCode 后网关/路由还在 | 先等满 8 秒宽限 + 最多 30 秒在途连接排空（`-DrainTimeoutSeconds`）；仍不走在 `-Status` 里看守护器是否还活着，必要时 `stop-gateway.bat` 并手动结束 `unified-router.js` |
+| 关 ZCode 后网关/路由还在 | 先确认 ZCode 真的退出了：点窗口右上角 × 只是**最小化到托盘**（`closeToTrayOnWindows=true`），主进程还在，保持运行是预期；要从托盘菜单「退出」 |
+| 托盘退出后网关/路由还在 | 等 8 秒宽限 + 最多 5 秒排空（`-DrainTimeoutSeconds`）。日志里若出现「在 Ns 宽限期内重新出现」，说明 ZCode 退出后 8 秒内又被拉起（更新 / 重开），守护器按设计取消停止；若确认 ZCode 长时间不在，看日志有没有心跳、`-Status` 里守护器是否还活着，没有就 `-Install`，必要时 `stop-gateway.bat` + 手动结束 `unified-router.js` |
 | `-Status` 的 Provider 行显示「不匹配」或「key 缺失」 | 五个 chat 组没指向统一路由（或分离模式下 `workbuddy-*` 没指向网关）：重跑 `workbuddy_zcode_sync.py --apply`，或检查 `ZCODE_PERSONAL_PROVIDER_CONFIG_FILE` |
 | `-Status` 显示「有 N 个进程但未识别到主进程」 | ZCode 升级可能改了命令行判据。看 `watchdog.log`；确认新版主进程命令行后更新 `Get-ZCodeMainProcess` 的过滤条件 |
 | 自启快捷方式在，登录后却没起 | 目标应为 `wscript.exe "<仓库>\workbuddy\zcode_gateway_watch.vbs"`，用 `-Install` 重建 |
 | 想彻底回到手动 | `-Uninstall`，之后按网关目录的 `run.bat` / `stop-gateway.bat` 控制；统一路由手动 `node tools/unified-router.js` |
 
-> 守护器现在做三件事：**主进程**出现时拉起网关 + 统一路由、主进程退出且连接排空后停止、
-> 运行期间任一进程挂了自动重启。ZCode 只是最小化到托盘时主进程仍在，网关/路由也会保持运行
-> —— 这是预期行为。生命周期设计的取舍见 [MAINTENANCE.md](MAINTENANCE.md) §8。
+> 守护器现在做四件事：**主进程**出现时拉起网关 + 统一路由、主进程退出且连接排空后停止、
+> 运行期间任一进程挂了自动重启、启动时清掉没有 ZCode 的遗留网关 / 路由。
+> ZCode 只是最小化到托盘时主进程仍在，网关/路由也会保持运行 —— 这是预期行为。
+> 每次状态迁移都写 `watchdog.log`（含「宽限期内重新出现」和每 15 分钟一次的心跳），
+> 生命周期设计的取舍见 [MAINTENANCE.md](MAINTENANCE.md) §8。
 
 ---
 

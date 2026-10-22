@@ -9,8 +9,17 @@
       * ZCode 主进程从无到有 -> 确认网关 / 统一路由在跑，不在就静默启动；
       * ZCode 主进程从有到无 -> 等 StopGraceSeconds 宽限 + 在途连接排空后停。
     主进程 = 命令行既不含 --type= 也不含 zcode.cjs 的那个 ZCode.exe（Electron 主进程），
-    这样 GUI 子进程 / crashpad / CLI 宿主晚退几秒也不会拖住网关。
+    这样 GUI 子进程 / crashpad / CLI 宿主晚退几秒也不会拖住网关。拿到主进程后按进程句柄
+    判存活（不是只看 PID），这样 PID 被系统复用也不会把已退出的 ZCode 误判成还在跑。
+    宽限期内 ZCode 又回来（更新 / 重启 / 误关重开）会写一条日志并取消停止；排空期间回来
+    同样取消，并立即把已停的统一路由重新拉起。
+
+    启动时做一次对账：如果当前没有 ZCode 主进程，却还有网关 / 路由在监听（上次守护器被
+    结束、关机前 ZCode 已退等），直接清掉，避免孤儿进程活到下次重启。接 `-KeepOrphans`
+    可跳过这一步（例如你想手动常驻网关）。
+
     网关或路由在 ZCode 运行期间意外退出会自动重启（每 HealthCheckSeconds 检查一次）。
+    每 HeartbeatSeconds 写一条心跳（默认 15 分钟），用来判断守护器本身是否还活着。
 
     统一路由 tools/unified-router.js 负责把 cn:/global: 模型转到网关、其余转到
     OpenCode-Go；五个 chat provider 的 baseUrl 指向它（默认 127.0.0.1:7871）。
@@ -37,7 +46,14 @@
     只跑一轮状态检查就退出（用于调试）。
 
 .PARAMETER DrainTimeoutSeconds
-    停网关前等待在途连接排空的上限（秒），默认 30；超时才强制停止。
+    停网关前等待在途连接排空的上限（秒），默认 5；ZCode 已退出时基本没有有效在途请求，
+    排空期间 ZCode 回来会立刻取消停止，不会为此白等。
+
+.PARAMETER HeartbeatSeconds
+    心跳日志间隔（秒），默认 900。写成一行 `心跳：ZCode=... 网关=... 路由=...`。
+
+.PARAMETER KeepOrphans
+    启动时不清理「没有 ZCode 但网关 / 路由还在」的遗留进程。
 
 .PARAMETER RouterPort
     统一路由监听端口，默认 7871。
@@ -60,10 +76,12 @@ param(
     [int]$StopGraceSeconds = 8,
     [int]$HealthCheckSeconds = 15,
     [int]$StartTimeoutSeconds = 25,
-    [int]$DrainTimeoutSeconds = 30,
+    [int]$DrainTimeoutSeconds = 5,
+    [int]$HeartbeatSeconds = 900,
     [string]$RouterScript,
     [int]$RouterPort = 7871,
     [switch]$NoRouter,
+    [switch]$KeepOrphans,
     [string]$LogDir = $env:ZCODE_WATCH_LOG,
     [string]$MutexName = 'Local\ZCodeGatewayWatch',
     [switch]$Status,
@@ -72,6 +90,8 @@ param(
     [switch]$DryRun,
     [switch]$Once
 )
+
+$ScriptVersion = '2026-10-21.2'
 
 $ProcessName = $ProcessName -replace '\.exe$', ''
 
@@ -92,7 +112,7 @@ if (-not $RouterScript) {
 }
 $RouterScript = [System.IO.Path]::GetFullPath($RouterScript)
 $LogFile = Join-Path $LogDir 'watchdog.log'
-$WatchScript = $MyInvocation.MyCommand.Path
+$WatchScript = [System.IO.Path]::GetFullPath($MyInvocation.MyCommand.Path)
 $VbsScript = Join-Path $PSScriptRoot 'zcode_gateway_watch.vbs'
 
 function Write-Log {
@@ -144,25 +164,37 @@ function Test-GatewayReady {
 }
 
 function Wait-GatewayDrained {
-    param([int]$TimeoutSeconds)
+    param([int]$TimeoutSeconds, [switch]$AbortIfZCodeReturns)
     $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
     while ((Get-Date) -lt $deadline) {
+        if ($AbortIfZCodeReturns -and (Get-ZCodeMainProcess)) { return 'zcode-returned' }
         try {
             $conns = @(Get-NetTCPConnection -LocalPort $GatewayUri.Port -State Established -ErrorAction Stop)
         } catch {
             $conns = @()
         }
-        if ($conns.Count -eq 0) { return $true }
+        if ($conns.Count -eq 0) { return 'drained' }
         Start-Sleep -Milliseconds 500
     }
-    return $false
+    return 'timeout'
+}
+
+function Test-ProcessAlive {
+    # 用进程句柄判存活：PID 被复用也不会把已退出的进程当成还活着
+    param([System.Diagnostics.Process]$Target)
+    if (-not $Target) { return $false }
+    try { return -not $Target.HasExited } catch { return $false }
 }
 
 function Get-ZCodeMainProcess {
     # Electron 主进程的判据：命令行既没有 --type=（GPU/renderer/crashpad），
     # 也没有 zcode.cjs（app-server / plugin-host）。子进程晚退不会拖住网关。
     $exeName = $ProcessName + '.exe'
-    $procs = @(Get-CimInstance Win32_Process -Filter "name='$exeName'" -ErrorAction SilentlyContinue)
+    try {
+        $procs = @(Get-CimInstance Win32_Process -Filter "name='$exeName'" -ErrorAction Stop)
+    } catch {
+        return $null
+    }
     if ($procs.Count -eq 0) { return $null }
     return $procs | Where-Object {
         $_.CommandLine -and
@@ -254,7 +286,11 @@ function Start-Gateway {
 
 function Stop-Gateway {
     param([int]$GatewayPid)
-    if ($GatewayPid -le 0) { return }
+    if ($GatewayPid -le 0) { $GatewayPid = Get-GatewayPid }   # 没接管过就按端口反查，别让遗留网关漏网
+    if ($GatewayPid -le 0) {
+        Write-Log "网关未在监听 $GatewayBase，无需停止"
+        return
+    }
     $proc = Get-Process -Id $GatewayPid -ErrorAction SilentlyContinue
     if (-not $proc) {
         Write-Log "网关 pid=$GatewayPid 已不在"
@@ -361,7 +397,11 @@ function Start-Router {
 
 function Stop-Router {
     param([int]$RouterPid)
-    if ($RouterPid -le 0) { return }
+    if ($RouterPid -le 0) { $RouterPid = Get-RouterPid }       # 同上：按端口反查遗留路由
+    if ($RouterPid -le 0) {
+        Write-Log "统一路由未在监听 $RouterBase，无需停止"
+        return
+    }
     $proc = Get-CimInstance Win32_Process -Filter "ProcessId=$RouterPid" -ErrorAction SilentlyContinue
     if (-not $proc) {
         Write-Log "统一路由 pid=$RouterPid 已不在"
@@ -481,7 +521,9 @@ if ($Status) {
     $main = Get-ZCodeMainProcess
     if ($procs.Count -gt 0) {
         if ($main) {
-            "ZCode：运行中（主进程 pid=$($main.ProcessId)，共 $($procs.Count) 个进程）"
+            $since = ''
+            try { $since = '，启动于 ' + $main.CreationDate.ToString('HH:mm:ss') } catch { }
+            "ZCode：运行中（主进程 pid=$($main.ProcessId)，共 $($procs.Count) 个进程$since）"
         } else {
             "ZCode：有 $($procs.Count) 个进程，但未识别到主进程"
         }
@@ -497,7 +539,23 @@ if ($Status) {
     } else {
         "网关：未监听"
     }
-    if (Test-WatcherRunning) { "守护器：运行中" } else { "守护器：未运行" }
+    if (Test-WatcherRunning) {
+        $watcher = Get-CimInstance Win32_Process -Filter "name='powershell.exe'" -ErrorAction SilentlyContinue |
+            Where-Object { $_.CommandLine -and $_.CommandLine.Contains('zcode_gateway_watch.ps1') } |
+            Select-Object -First 1
+        $watcherPid = if ($watcher) { $watcher.ProcessId } else { '?' }
+        $staleNote = ''
+        if ($watcher) {
+            try {
+                if ($watcher.CreationDate -lt (Get-Item -LiteralPath $WatchScript).LastWriteTime) {
+                    $staleNote = '；注意：进程早于脚本修改时间，加载的是旧代码，重启守护器才生效'
+                }
+            } catch { }
+        }
+        "守护器：运行中 v$ScriptVersion（pid=$watcherPid$staleNote）"
+    } else {
+        "守护器：未运行"
+    }
     if ($NoRouter) {
         "统一路由：已禁用（-NoRouter）"
     } elseif (Test-RouterReady) {
@@ -530,51 +588,84 @@ if (-not $ownsMutex) {
     exit 0
 }
 
-Write-Log "守护器启动：进程名=$ProcessName 网关目录=$GatewayDir 地址=$GatewayBase 日志=$LogFile"
+Write-Log "守护器启动 v$ScriptVersion：进程名=$ProcessName 网关目录=$GatewayDir 地址=$GatewayBase 日志=$LogFile"
 if ($DryRun) { Write-Log '[dry-run] 只记录状态迁移，不启停任何进程' }
+if ($KeepOrphans) { Write-Log '启动对账已跳过（-KeepOrphans）' }
+
+# 启动对账：上次守护器可能没来得及停（被结束 / 关机前 ZCode 已退）。
+# 没有 ZCode 主进程却还有网关或路由在监听 -> 清掉，别让孤儿进程活到下次重启。
+if (-not $KeepOrphans) {
+    if (-not (Get-ZCodeMainProcess)) {
+        $orphanGateway = Get-GatewayPid
+        $orphanRouter = Get-RouterPid
+        if ($orphanGateway -gt 0 -or $orphanRouter -gt 0) {
+            if ($DryRun) {
+                Write-Log "[dry-run] 启动时没有 $ProcessName 主进程：将清理遗留网关 pid=$orphanGateway / 路由 pid=$orphanRouter"
+            } else {
+                Write-Log "启动时没有 $ProcessName 主进程：清理遗留网关 pid=$orphanGateway / 路由 pid=$orphanRouter"
+                Stop-Router -RouterPid $orphanRouter
+                Stop-Gateway -GatewayPid $orphanGateway
+            }
+        }
+    }
+}
 
 $gatewayPid = 0
 $routerPid = 0
 $zcodeWasRunning = $false
-$zcodeMainPid = 0
+$zcodeMainProc = $null      # Process 句柄：按句柄判存活，PID 被复用也不会把已退出的 ZCode 当成还在跑
+$zcodeMisses = 0
 $stopPendingSince = $null
 $nextStartAttempt = [DateTime]::MinValue
 $nextRouterStartAttempt = [DateTime]::MinValue
 $lastHealthCheck = [DateTime]::MinValue
 $lastNoMainLog = [DateTime]::MinValue
+$lastHeartbeat = Get-Date
 
 try {
     while ($true) {
         $now = Get-Date
 
-        if ($zcodeMainPid -gt 0) {
-            $alive = Get-Process -Id $zcodeMainPid -ErrorAction SilentlyContinue
-            if (-not $alive) { $zcodeMainPid = 0 }
-            $zcodeRunning = [bool]$alive
-        } else {
+        if ($zcodeMainProc -and -not (Test-ProcessAlive $zcodeMainProc)) {
+            $zcodeMainProc = $null
+            $zcodeMisses = 0
+        }
+        $zcodeRunning = [bool]$zcodeMainProc
+        if (-not $zcodeRunning) {
             $anyProcs = @(Get-Process -Name $ProcessName -ErrorAction SilentlyContinue)
-            if ($anyProcs.Count -gt 0) {
+            if ($anyProcs.Count -eq 0) {
+                $zcodeMisses = 0
+            } else {
                 $main = Get-ZCodeMainProcess
                 if ($main) {
-                    $zcodeMainPid = [int]$main.ProcessId
-                    $zcodeRunning = $true
-                } else {
-                    $zcodeRunning = $false
-                    if (($now - $lastNoMainLog).TotalSeconds -ge 30) {
+                    try { $zcodeMainProc = Get-Process -Id $main.ProcessId -ErrorAction Stop }
+                    catch { $zcodeMainProc = $null }
+                    if ($zcodeMainProc) { $zcodeRunning = $true; $zcodeMisses = 0 }
+                }
+                if (-not $zcodeRunning) {
+                    $zcodeMisses++
+                    # 连续两次认不出主进程才算退出：CIM 偶发失败时不至于误停 / 误报
+                    if ($zcodeWasRunning -and $zcodeMisses -lt 2) {
+                        $zcodeRunning = $true
+                    } elseif (($now - $lastNoMainLog).TotalSeconds -ge 30) {
                         Write-Log "有 $($anyProcs.Count) 个 $ProcessName 进程，但未识别到主进程（按已退出处理）"
                         $lastNoMainLog = $now
                     }
                 }
-            } else {
-                $zcodeRunning = $false
             }
         }
+        $zcodePidText = if ($zcodeMainProc) { $zcodeMainProc.Id } else { '?' }
 
         if ($zcodeRunning) {
-            $stopPendingSince = $null
+            # 只有真正拿到主进程句柄才取消待停；单次 CIM 失败不能打断停止计时
+            if ($stopPendingSince -and $zcodeMainProc) {
+                $waited = [int]($now - $stopPendingSince).TotalSeconds
+                Write-Log "$ProcessName 在 ${waited}s 宽限期内重新出现（pid=$zcodePidText），取消停止"
+                $stopPendingSince = $null
+            }
 
             if (-not $zcodeWasRunning) {
-                Write-Log "检测到 $ProcessName 主进程启动（pid=$zcodeMainPid）"
+                Write-Log "检测到 $ProcessName 主进程启动（pid=$zcodePidText）"
                 if (-not $DryRun) {
                     foreach ($line in (Get-ProviderSummary)) {
                         if ($line -match '不匹配|未找到|未识别|读取失败|key 缺失') {
@@ -615,29 +706,58 @@ try {
                     # 宽限期内可能被重新打开（ZCode 更新重启 / 误关），再确认一次
                     $recheck = if ($DryRun) { $null } else { Get-ZCodeMainProcess }
                     if ($recheck) {
+                        try { $zcodeMainProc = Get-Process -Id $recheck.ProcessId -ErrorAction Stop }
+                        catch { $zcodeMainProc = $null }
+                        $zcodeMisses = 0
                         Write-Log "$ProcessName 主进程已回来（pid=$($recheck.ProcessId)），取消停网关"
-                        $zcodeMainPid = [int]$recheck.ProcessId
                         $stopPendingSince = $null
                         $zcodeWasRunning = $true
+                    } elseif ($DryRun) {
+                        Write-Log "[dry-run] 将停止统一路由 pid=$routerPid / 网关 pid=$gatewayPid"
+                        $routerPid = 0
+                        $gatewayPid = 0
+                        $stopPendingSince = $null
+                        $zcodeWasRunning = $false
                     } else {
-                        if ($DryRun) {
-                            Write-Log "[dry-run] 将停止统一路由 pid=$routerPid / 网关 pid=$gatewayPid"
+                        # 先停路由断新流量，再排空网关；排空期间 ZCode 回来则立刻取消
+                        Stop-Router -RouterPid $routerPid
+                        $drain = Wait-GatewayDrained -TimeoutSeconds $DrainTimeoutSeconds -AbortIfZCodeReturns
+                        if ($drain -eq 'zcode-returned') {
+                            $back = Get-ZCodeMainProcess
+                            if ($back) {
+                                try { $zcodeMainProc = Get-Process -Id $back.ProcessId -ErrorAction Stop }
+                                catch { $zcodeMainProc = $null }
+                            }
+                            $backPid = if ($back) { $back.ProcessId } else { '?' }
+                            Write-Log "$ProcessName 在排空期间重新出现（pid=$backPid），取消停止并恢复统一路由"
+                            $stopPendingSince = $null
+                            $zcodeWasRunning = $true
+                            $routerPid = Ensure-Router
+                            $nextRouterStartAttempt = if ($routerPid -gt 0 -or $NoRouter) { [DateTime]::MinValue } else { $now.AddSeconds(60) }
                         } else {
-                            Stop-Router -RouterPid $routerPid
-                            if (Wait-GatewayDrained -TimeoutSeconds $DrainTimeoutSeconds) {
+                            if ($drain -eq 'drained') {
                                 Write-Log '在途连接已排空'
                             } else {
                                 Write-Log "在途连接 ${DrainTimeoutSeconds}s 未排空，强制停止"
                             }
                             Stop-Gateway -GatewayPid $gatewayPid
+                            $routerPid = 0
+                            $gatewayPid = 0
+                            $stopPendingSince = $null
+                            $zcodeWasRunning = $false
+                            $zcodeMainProc = $null
                         }
-                        $routerPid = 0
-                        $gatewayPid = 0
-                        $stopPendingSince = $null
-                        $zcodeWasRunning = $false
                     }
                 }
             }
+        }
+
+        if ($HeartbeatSeconds -gt 0 -and ($now - $lastHeartbeat).TotalSeconds -ge $HeartbeatSeconds) {
+            $zcodeState = if ($zcodeRunning) { 'up' } else { 'down' }
+            $gatewayState = if (Test-GatewayPort) { 'up' } else { 'down' }
+            $routerState = if ($NoRouter) { 'off' } elseif (Test-RouterReady) { 'up' } else { 'down' }
+            Write-Log "心跳：ZCode=$zcodeState 网关=$gatewayState 路由=$routerState"
+            $lastHeartbeat = $now
         }
 
         if ($Once) { break }
