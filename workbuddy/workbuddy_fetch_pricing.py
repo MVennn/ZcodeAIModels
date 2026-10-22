@@ -39,7 +39,7 @@
 | `img` | 是否支持图片输入 | `supports_images` / `supports_image` / `image` |
 | `efforts` | 支持的推理档位 | `efforts` / `supported_efforts` |
 | `default_effort` | 默认推理档位 | `default_effort` |
-| `can_disable` | 是否可关闭思考 | `can_disable` |
+| `can_disable` | 是否可关闭思考 | `can_disable_thinking` / `can_disable` |
 | `only_reasoning` | 是否仅推理模型 | `only_reasoning` |
 
 用法
@@ -163,7 +163,7 @@ def normalize(model: dict) -> dict | None:
         "img": _as_bool(_first(model, "supports_images", "supports_image", "image", default=False)),
         "efforts": efforts if isinstance(efforts, list) else [],
         "default_effort": str(_first(model, "default_effort", default="") or ""),
-        "can_disable": _as_bool(_first(model, "can_disable", default=False)),
+        "can_disable": _as_bool(_first(model, "can_disable_thinking", "can_disable", default=False)),
         "only_reasoning": _as_bool(_first(model, "only_reasoning", default=False)),
     }
 

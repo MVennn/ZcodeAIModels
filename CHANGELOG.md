@@ -16,6 +16,15 @@
 
 ## [未发布] — 2026-10-21
 
+### WorkBuddy 价格表（2026-10-22）
+
+- 修复 `workbuddy/workbuddy_fetch_pricing.py` —— `can_disable` 读错字段名：面板实际返回
+  `can_disable_thinking`，旧脚本只找 `can_disable`，缺失时默认 `false`，导致 2026-10-22
+  快照把全部模型的「可关思考」写成 false，与 `docs/MODEL-PROVIDERS.md` 的 ✅ 和实测矛盾。
+  归一化改为 `can_disable_thinking` → `can_disable`；重新抓取后 15 个模型为 true，
+  文档表里 4 个 ✅ 模型全部对上。重抓同时看到 `cn:glm-5.2` / `cn:hy4-preview` 的夜间促销
+  （0.50x / 0x），文档表仍按标准价 0.79 / 0.29，不改。
+
 ### 收尾大扫除（2026-10-22）
 
 - 清理 磁盘 —— 删 `workbuddy/__pycache__/`（40K，`.gitignore` 已排除、可再生成）与
