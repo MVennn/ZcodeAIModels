@@ -3,14 +3,17 @@
 > **一句话**：这里放**面向使用者**的 Release 说明 —— 形状、动词、覆盖率红线、
 > 固定尾巴都在本篇定义，别的文档不重复。
 
-放**面向使用者**的 Release 说明，文件名 = 版本号：
+放**面向使用者**的 Release 说明，文件名 = `versionName`（无 `v` 前缀）：
 
 ```
-docs/release-notes/v0.1.0.md
+docs/release-notes/0.1.0.md
 ```
 
-发版时找 `docs/release-notes/<版本号>.md`；找不到就退回 `CHANGELOG.md` 的对应段落
+发版时找 `docs/release-notes/<versionName>.md`；找不到就退回 `CHANGELOG.md` 的对应段落
 （并在日志里 `::warning::` —— 那段是写给开发者的，使用者看到的是噪音）。
+`versionName` 的正本在根目录 `CHANGELOG.md` 的版本标题里，
+进位规则见 [VERSIONING.md](../VERSIONING.md) ——
+发版 tag 另带 `v` 前缀（`v0.1.0`），文件名不带。
 
 ## 为什么要单独放一份
 
@@ -158,7 +161,7 @@ Release 说明里都得能找到对应行**。详细叙事留在 CHANGELOG，Rel
 ## 改已经发出去的说明
 
 改完文案直接重写同一份文件、重新发布即可（同名文件会被覆盖）。
-写完 `docs/release-notes/<版本>.md`、把 `CHANGELOG.md` 的版本段落补上、
+写完 `docs/release-notes/<versionName>.md`、把 `CHANGELOG.md` 的版本段落补上、
 在 `CHANGELOG.md` 里把该版本从「未发布」改成正式版本号，就完成了一次发版。
 
 > 注意：改说明文件本身不会触发任何构建；

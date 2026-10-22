@@ -76,10 +76,12 @@
 
 - **文档正本**：每条规则只在一篇文档里定义，其余位置只留一句话 + 链接。
   正本映射表见 [docs/DOC-RULES.md](docs/DOC-RULES.md) §2。
+- **文档命名**：`docs/` 下一律 `ALL-CAPS-WITH-HYPHENS.md`（`release-notes/` 例外：
+  文件名 = `versionName`，**不带 `v` 前缀**）。规则见 [docs/DOC-RULES.md](docs/DOC-RULES.md) §1。
 - **链接**：一律相对链接 + 半角括号；锚点必须真实存在。
 - **每篇文档开头**必须有 `> **一句话**：…` 引言块。
 - **中文**：简体中文。务实，给结论，给证据；不确定的写「待补」并说明缺什么。
 - **单篇 ≤ 800 行**。
 - **不要 `git init` / `git add` / 提交**，除非明确要求。
-- **不要动** `docs/模型速查表.md`、`docs/archive/`、`evidence/`、`PROGRESS.md`
+- **不要动** `docs/MODEL-QUICK-REF.md`、`docs/archive/`、`evidence/`、`PROGRESS.md`
   与任何脚本，除非任务明确要求改它们。

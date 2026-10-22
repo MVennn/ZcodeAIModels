@@ -1,6 +1,6 @@
 # OpenCode Go 模型筛选 + ShellCrash 订阅优化分析
 
-> **一句话**：Go 套餐模型与订阅结构的阶段性分析（2026-10-19；结论已被 [../模型速查表.md](../模型速查表.md) 与 [../MODEL-PROVIDERS.md](../MODEL-PROVIDERS.md) 取代大半，故归档）。
+> **一句话**：Go 套餐模型与订阅结构的阶段性分析（2026-10-19；结论已被 [../MODEL-QUICK-REF.md](../MODEL-QUICK-REF.md) 与 [../MODEL-PROVIDERS.md](../MODEL-PROVIDERS.md) 取代大半，故归档）。
 
 日期：2026-10-19
 数据来源：opencode.ai/v2/docs/console/go/、`https://opencode.ai/zen/go/v1/models`、路由器 10.0.0.1 实测

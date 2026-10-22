@@ -11,7 +11,7 @@ docs/ 分四类（索引见 [README.md](README.md)）：
 
 | 类别 | 收什么 | 现有成员 |
 |---|---|---|
-| 模型与 Provider | 有哪些 provider、模型归哪组、走什么协议、参数怎么写 | MODEL-PROVIDERS、模型速查表、archive/OPENCODE-GO-模型与订阅优化分析 |
+| 模型与 Provider | 有哪些 provider、模型归哪组、走什么协议、参数怎么写 | MODEL-PROVIDERS、MODEL-QUICK-REF、archive/OPENCODE-GO-ANALYSIS |
 | 流程与规范 | 怎么写文档、怎么维护、版本怎么晋升、凭据放在哪、工具清单怎么记、发版说明 | DOC-RULES、MAINTENANCE、TOOLS、VERSIONING、SECRETS、release-notes/README |
 | 排错与踩坑 | 出问题了怎么查、为什么会这样 | PITFALLS、TROUBLESHOOTING |
 | 参考资料 | 面向使用者的 Release 说明、证据快照、许可证、外部榜单、上游调研 | release-notes/、根 README / AGENTS / CHANGELOG / NOTICE / PROGRESS / LICENSE、evidence/、BENCHMARKS、UPSTREAM、third-party/ |
@@ -20,6 +20,17 @@ docs/ 分四类（索引见 [README.md](README.md)）：
 让读者不用往下翻就知道这篇管什么。新文档没有它不算写完。
 
 「一句话」块要能独立成立 —— 读者只看这三行就该知道这篇能不能解决他的问题。
+
+### 文件命名：**全大写 + 连字符**
+
+`docs/` 下的文件一律 `ALL-CAPS-WITH-HYPHENS.md`（如 `MODEL-PROVIDERS.md`、
+`MODEL-QUICK-REF.md`），`docs/archive/` 与 `docs/release-notes/` 同样适用
+（例外：`release-notes/` 下的说明文件名 = `versionName`，如 `0.1.0.md`）。
+
+- **禁止中文文件名、中英混排文件名**（历史遗留的 `模型速查表.md`、
+  `OPENCODE-GO-模型与订阅优化分析.md` 已按此规则改名）。
+- 改名一律 `git mv`，改完**全仓 grep 旧名**，把引用方逐个改到新位置（见 §4）。
+- 降级为历史快照的文档，名字也要守住这条 —— 定位写在文档里，不写在文件名里。
 
 ---
 
@@ -37,7 +48,7 @@ docs/ 分四类（索引见 [README.md](README.md)）：
 | 脚本改 ZCode 配置的哪几处、两个 `--apply` 脚本的行为差异 | [MODEL-PROVIDERS.md](MODEL-PROVIDERS.md) §1、§1.1 |
 | `--apply` 的备份文件名与回退步骤 | [MAINTENANCE.md](MAINTENANCE.md) §4 |
 | 写配置期间与 ZCode 界面的互斥、热重载注意事项 | [MAINTENANCE.md](MAINTENANCE.md) §5（机制解释见 [PITFALLS.md](PITFALLS.md) §8） |
-| 文档怎么写、怎么分类、怎么互链 | [DOC-RULES.md](DOC-RULES.md)（本篇） |
+| 文档怎么写、怎么分类、怎么互链、文件怎么命名 | [DOC-RULES.md](DOC-RULES.md)（本篇 §1） |
 | 维护流程（价格表刷新 / 探测限速 / 快照保留 / 备份回退 / 热重载） | [MAINTENANCE.md](MAINTENANCE.md) |
 | 排错步骤（现象 → 排查 → 原因 / 解法） | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) |
 | 为什么会出这个坑（机制解释） | [PITFALLS.md](PITFALLS.md) |
@@ -54,11 +65,12 @@ docs/ 分四类（索引见 [README.md](README.md)）：
 
 ### 禁止重复清单（本次建仓发现的反例，勿重蹈）
 
-1. **`docs/模型速查表.md` ↔ `docs/MODEL-PROVIDERS.md`**：前者是 2026-10-20 的速查快照，
+1. **`docs/MODEL-QUICK-REF.md` ↔ `docs/MODEL-PROVIDERS.md`**：前者是 2026-10-20 的速查快照，
    后者是新建的正本。两边都有 provider 分组与关思考写法。本轮的处理是
-   **MODEL-PROVIDERS 为正本、速查表降级为历史快照**并在速查表顶部保留原状；
+   **MODEL-PROVIDERS 为正本、速查表降级为历史快照**（已在速查表顶部加
+   「结论已并入 MODEL-PROVIDERS.md，本篇保留作历史快照」声明，内容保留原状）；
    后续若继续维护速查表，**只允许补实测数据**，分组与参数口径一律回 MODEL-PROVIDERS。
-2. **`docs/archive/OPENCODE-GO-模型与订阅优化分析.md` ↔ MODEL-PROVIDERS**：
+2. **`docs/archive/OPENCODE-GO-ANALYSIS.md` ↔ MODEL-PROVIDERS**：
    分析报告里的协议归属表、价格带表与正本重叠。归档件**只读**，不改、不删；
    要引用结论去正本。
 3. **`evidence/PROGRESS.workbuddy.md` ↔ 根 `PROGRESS.md`**：前者是 WorkBuddy 接入线
@@ -117,8 +129,10 @@ docs/ 分四类（索引见 [README.md](README.md)）：
 | 改了凭据的存放位置或新增了凭据 | [SECRETS.md](SECRETS.md)（位置清单）、`.gitignore` 的排除项 |
 | 改了版本晋升 / 发版规则 | [VERSIONING.md](VERSIONING.md)；根 [CHANGELOG.md](../CHANGELOG.md)（版本号本身） |
 | 改了许可证 | 根 [LICENSE](../LICENSE)、[NOTICE](../NOTICE)、根 [README.md](../README.md) 的许可证段 |
-| 新增 / 删除文档 | [README.md](README.md) 索引（见 §7） |
+| 新增 / 删除 / 改名文档 | [README.md](README.md) 索引（见 §7）+ 全仓 grep 旧文件名改引用方（见 §4） |
+| 文件改名（含中文名改全大写连字符） | `git mv` + 全仓 grep 旧名逐个改引用；**不要动 git tag** |
 | 改了版本号规则 | [VERSIONING.md](VERSIONING.md) + 本篇 §2 映射表 |
+| 改了 Release 说明文件名口径（`versionName`，无 `v` 前缀） | [release-notes/README.md](release-notes/README.md) + [VERSIONING.md](VERSIONING.md) §3 |
 
 ---
 
@@ -126,7 +140,9 @@ docs/ 分四类（索引见 [README.md](README.md)）：
 
 - **单篇 ≤ 800 行。** 超了就按「正文档 + 历史篇」拆：正文档留结论与约束，
   历史 / 根因分析移到 archive/。范例：[MODEL-PROVIDERS.md](MODEL-PROVIDERS.md)（正文档）
-  + [模型速查表.md](模型速查表.md) 与 [archive/](archive/)（历史快照）。
+  + [MODEL-QUICK-REF.md](MODEL-QUICK-REF.md) 与 [archive/](archive/)（历史快照）。
+- **索引行 = 定位，不是摘要**：[README.md](README.md) 里每篇的一句话定位压到
+  30~60 字一行读完，详细内容留在文档里 —— 索引只负责「该翻哪篇」。
 - **样例时效**：带日期标注的样例（「2026-10-19 实测」「月额度 $60」）可容忍过时 ——
   它们是历史记录；但**分组结构、provider 数量、模型归属**这类清单类内容
   必须随配置变更同步，不允许停留在旧状态。
