@@ -1,0 +1,51 @@
+name: 功能建议
+description: 想接入新的供应商、新的探测项或更省事的同步方式
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        提建议前可以先翻翻已有的 Issue，并确认
+        [docs/MODEL-PROVIDERS.md](https://github.com/MVennn/ZcodeAIModels/blob/main/docs/MODEL-PROVIDERS.md)
+        里「接一个新供应商」的四步已经覆盖了你的场景。
+
+  - type: textarea
+    id: scenario
+    attributes:
+      label: 什么场景不顺手
+      description: |
+        先说场景再说想法——「接哪个供应商、现在卡在哪一步、要手工补什么」。
+      placeholder: |
+        例：
+        新供应商的模型清单和价格都放在网页上，没有 API，
+        现在只能手工抄进 provider 分组，想有一个可复用的抓取步骤。
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 期望的效果（可选）
+      description: 希望新增脚本、扩展现有探测项，还是只补文档方法？
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: 范围确认
+      options:
+        - label: 这个建议只涉及接入脚本、探测方法或 `provider_config.json` 的写法，不修改 ZCode 客户端本体。
+          required: true
+        - label: 凭据仍走环境变量，不会把 key / token 写进代码、示例或日志。
+          required: true
+        - label: 我知悉新供应商需要在真实账号与真实请求体下验证，愿意配合验证（并会遵守探测间隔）。
+          required: false
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: 补充信息（可选）
+      description: 供应商文档、接口示例、价格页链接等；不要贴 key
+    validations:
+      required: false

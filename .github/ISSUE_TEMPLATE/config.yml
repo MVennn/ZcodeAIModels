@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 排错手册
+    url: https://github.com/MVennn/ZcodeAIModels/blob/main/docs/TROUBLESHOOTING.md
+    about: 接入、探测、同步与配置写入的常见问题。
+  - name: 接入方法与落点
+    url: https://github.com/MVennn/ZcodeAIModels/blob/main/docs/MODEL-PROVIDERS.md
+    about: 接一个新供应商的四步，以及 provider_config.json 的三处落点。

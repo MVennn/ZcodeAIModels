@@ -1,0 +1,104 @@
+name: 问题反馈（Bug）
+description: 供应商接不上、探测结果异常、同步写坏配置、模型分组不对
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈！请尽量把下面的信息填全，尤其是**脚本、完整命令与输出**——
+        模型接入的问题往往和请求体、鉴权方式、套餐状态有关，只写「连不上」定位不了。
+
+        反馈前先查 [docs/TROUBLESHOOTING.md](https://github.com/MVennn/ZcodeAIModels/blob/main/docs/TROUBLESHOOTING.md)
+        与 [docs/PITFALLS.md](https://github.com/MVennn/ZcodeAIModels/blob/main/docs/PITFALLS.md)。
+
+  - type: checkboxes
+    id: acknowledgment
+    attributes:
+      label: 反馈前确认
+      options:
+        - label: 我已知悉脚本会修改本机 ZCode 的 `provider_config.json`（写前自动备份），并且我已自行再备份一份。
+          required: true
+        - label: 我确认贴出的命令、日志、截图里没有 API key、token、账号或其它凭据；环境变量只写变量名，不写值。
+          required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: 出了什么问题
+      description: |
+        现象 + 复现步骤：跑了哪个脚本、卡在哪一步、预期结果与实际结果分别是什么。
+      placeholder: |
+        例：
+        1. 执行 python opencode-go/ops/go_model_sync.py --apply
+        2. 同步报告显示模型已写入，但 ZCode 模型列表里没有
+        3. 预期：列表出现新分组；实际：只有旧分组
+    validations:
+      required: true
+
+  - type: input
+    id: zcode-version
+    attributes:
+      label: ZCode 版本
+      description: 设置 / 关于页里的版本号，或安装目录里的版本信息
+      placeholder: "例：3.16.2"
+    validations:
+      required: true
+
+  - type: input
+    id: provider-model
+    attributes:
+      label: 涉及的 provider 与模型
+      description: provider 名称 / 模型 id；多个用逗号分隔
+      placeholder: "例：opencode-go-chat / deepseek-v4.1-flash"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: script
+    attributes:
+      label: 出问题的是哪个脚本
+      options:
+        - opencode-go/ops/go_model_sync.py
+        - opencode-go/probe/probe_models.py
+        - opencode-go/ops/opencode-header-proxy.js
+        - workbuddy/workbuddy_probe_zcode.py
+        - workbuddy/workbuddy_zcode_sync.py
+        - workbuddy/workbuddy_fetch_pricing.py
+        - 文档或其它
+    validations:
+      required: true
+
+  - type: input
+    id: command
+    attributes:
+      label: 执行的完整命令
+      description: 带上参数；环境变量只写名字
+      placeholder: "例：python opencode-go/ops/go_model_sync.py --apply"
+    validations:
+      required: true
+
+  - type: textarea
+    id: output
+    attributes:
+      label: 输出 / 报错原文
+      description: 把命令输出或同步报告的相关段落整段贴进来；贴前先脱敏
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: config
+    attributes:
+      label: 相关配置片段（可选）
+      description: "`provider_config.json` 里相关的分组或模型条目；key / token 替换成 `<REDACTED-...>`"
+      render: json
+    validations:
+      required: false
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: 截图或补充信息（可选）
+      description: 相关环境变量是否已设置（只写变量名）、套餐状态、复现频率等
+    validations:
+      required: false

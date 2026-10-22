@@ -467,3 +467,20 @@ CN/全球交织、不同厂商混排，主力 `cn:deepseek-v4.1-flash` 落到低
 
 ---
 
+# 2026-10-22 仓库门面：Issue 表单
+
+## 任务目标
+对齐 GSAuxiliary 的仓库门面：补上 Issue 表单，让反馈自带版本、脚本、命令与脱敏后的输出。
+
+## 已完成变更
+- [x] 新增 `.github/ISSUE_TEMPLATE/bug_report.yml` —— ZCode 版本、provider / 模型、脚本、
+      完整命令、输出与配置片段；确认已备份 `provider_config.json`、贴出的内容不含凭据
+- [x] 新增 `.github/ISSUE_TEMPLATE/feature_request.yml` —— 场景、期望效果、范围确认
+- [x] 新增 `.github/ISSUE_TEMPLATE/config.yml` —— 关掉空白 Issue，挂排错手册与接入方法
+
+## 自检
+- `python tools/check-docs.py` ✓，退出码 0
+- 三份 YAML 均可被 `yaml.safe_load` 解析
+
+## 状态: 已完成
+
