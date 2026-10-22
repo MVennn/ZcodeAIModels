@@ -19,7 +19,7 @@ ZCode 的 chat 模型原按用途分组（速度/经济），组名与价格脱�
 - [x] 各档模型：免费 = beam-free、minimax-m3.1-flash-free、longcat-2.5-preview-free；低耗 = glm-5.3-flash、mimo-v2.6-flash、mimo-v2.5、hy3；高耗 = minimax-m3、longcat-2.0；主力/对话/备用不变。
 - [x] 给 minimax-m3.1-flash-free、minimax-m3 加空 map 覆盖（`optionSpecs.reasoningLevel.map="{}"`，不发送思考参数），与 beam-free 一致；三个模型不再受 UI 思考等级影响。
 - [x] 脚本 `~/.zcode/v2/apply-chat-regroup.js`（默认 dry-run，--apply 才写；备份 + 原子替换 + 写前哈希校验）；备份 `provider_config.json.bak-regroup-20261019150317`。
-- [x] 重写 `模型速查表.md`：新增"额度可撑输出"列、关思考写法表、调用硬约束；实测脚本 `scripts/thinking-off-probe.js`、`scripts/opencode-header-proxy.js`。
+- [x] 重写 `MODEL-QUICK-REF.md`（原 `模型速查表.md`）：新增"额度可撑输出"列、关思考写法表、调用硬约束；实测脚本 `scripts/thinking-off-probe.js`、`scripts/opencode-header-proxy.js`。
 
 ## 验收
 - 19/19 模型规则与 providerId 一一对应；provider 顺序 主力→免费→低耗→高耗→对话→备用；文件 8591 字节、JSON 合法。
@@ -52,7 +52,7 @@ ZCode 的 chat 模型原按用途分组（速度/经济），组名与价格脱�
 - [x] 首次 --apply：收录 muse-spark-1.2/1.3-contributor（$0.10/$0.20、月额度 $60、额度可撑 300M，全场最耐用，只支持 openai-responses），配 `reasoningLevel.map="{}"`；provider 标签"备用"→"响应"（providerId 不变）
 - [x] 排除：minimax-m2.5（官方弃用日 2026-08-05 已过）、17 个价格带外/价格未知模型
 - [x] 建定时任务"每天 10:00 自动收录 Go 套餐新模型"（automationId automation-5ad749e3-0d25-4323-afbc-7ae30cdc7288，模型继承为免费 minimax-m3.1-flash-free）
-- [x] 更新 `模型速查表.md`（响应组改名+ muse-spark 两行、分协议鉴权头、自动收录说明）
+- [x] 更新 `MODEL-QUICK-REF.md`（原 `模型速查表.md`；响应组改名+ muse-spark 两行、分协议鉴权头、自动收录说明）
 - [x] 体检：19 个已配置模型全部 200，无弃用/协议漂移
 
 ## 状态: 已完成
@@ -518,3 +518,35 @@ CN/全球交织、不同厂商混排，主力 `cn:deepseek-v4.1-flash` 落到低
 
 ## 状态: 已完成
 
+
+---
+
+# 2026-10-23 第 N 轮：同步脚本自动清理失效模型
+
+## 任务目标
+用户要求：弃用的、模型列表里已没有的模型，在同步时就地移除，不要只写在报告里。
+范围限三个同步脚本；不改定时任务、不手改 provider_config.json。
+
+## 已完成变更
+- [x] `opencode-go/ops/go_model_sync.py`：`--apply` 时移除弃用（410 / 弃用日期表）
+      与上游不可用（402 Endpoint unavailable / 400 Unsupported model / 404）的已配置模型，
+      删 `personalModelIds` + `modelOrder` + `modelConfigRules` 三处
+- [x] 同上：体检跳过 `cn:` / `global:` 前缀的 WorkBuddy 模型，不再误报 Go 探测异常
+- [x] `workbuddy/workbuddy_zcode_sync.py`：统一模式下清理不再被选中的 `cn:` / `global:` 模型；
+      网关返回残缺列表时只报 kept、不删
+- [x] `workbuddy/workbuddy_fetch_pricing.py`：新表比旧表少 30% 以上拒写（退出码 2），`--force` 覆盖
+- [x] 实测清掉 4 个模型：`minimax-m3.1-flash-free`（410）、`longcat-2.0` / `longcat-2.5-preview-free`（402）、
+      `mimo-v2.5-pro`（400）；18 个 WorkBuddy 模型未动；备份 `provider_config.json.bak-gosync-20261023-000011`
+
+## 验收
+- 三个脚本 `python -m py_compile` 全部退出码 0
+- 干跑复核：Go dry-run 列 4 个待删、0 个新收录；WorkBuddy dry-run 仍选中 18 个、stale 0
+- 单测：残缺列表（34/56）下 `apply_unified` stale=0 / uncertain=18 且模型原样保留；
+      完整列表下 stale=18；价格表脚本残缺输入 ret=2 且文件未被覆盖，`--force` 后 ret=0
+- `git grep` 配置备份确认 4 个名字在 provider_config.json 中出现次数为 0
+
+## 待解决 / 注意事项
+- `cn:hy4-preview` 因夜间免费促销（0.29x → 0x）从高代移入免代，促销结束后倍率变化会再次移动它
+- `mimo-v2.5-pro` 若上游恢复支持需人工加回主力组（脚本只删不加）
+
+## 状态: 已完成

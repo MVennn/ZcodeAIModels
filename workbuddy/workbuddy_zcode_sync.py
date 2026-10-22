@@ -400,12 +400,22 @@ def reclassify_backup(config: dict) -> list[str]:
     return moved
 
 
-def apply_unified(config: dict, tiers: dict[str, list[dict]], probe: dict[str, dict]) -> int:
+def apply_unified(
+    config: dict,
+    tiers: dict[str, list[dict]],
+    probe: dict[str, dict],
+    live_ids: set[str],
+    pricing_ids: set[str],
+) -> tuple[int, list[str], list[str]]:
     """Merge WorkBuddy tiers into the OpenCode chat providers.
 
     The merged providers point at tools/unified-router.js, which routes
     cn:/global: models back to the WorkBuddy gateway and everything else to
-    OpenCode-Go. Returns the number of WorkBuddy model entries merged.
+    OpenCode-Go. Returns (entries merged, stale ids removed, uncertain ids
+    kept). A stale id is either still in the live list but excluded (rate cap,
+    blocked, ...) or absent from a complete live list. When the live list is
+    shorter than the pricing snapshot, missing ids are only reported, because
+    that usually means the gateway returned a partial list.
     """
     root = config.setdefault("config", {})
     provider_rules = provider_rules_of(config)
@@ -420,12 +430,31 @@ def apply_unified(config: dict, tiers: dict[str, list[dict]], probe: dict[str, d
 
     # Remove every WorkBuddy model from every target provider first, so a
     # re-run can move a model between tiers without leaving a duplicate.
+    # Prefixed models no longer selected are dropped for good, unless the live
+    # model list looks partial (then they are kept and reported).
+    live_ids = {str(x) for x in live_ids}
+    pricing_ids = {str(x) for x in pricing_ids}
+    live_complete = bool(pricing_ids) and live_ids >= pricing_ids
     all_wb = {str(rec["id"]) for recs in tiers.values() for rec in recs}
+    stale: set[str] = set()
+    uncertain: set[str] = set()
     for target_pid in UNIFIED_TARGETS.values():
         target = by_id.get(target_pid)
         if target is None:
             continue
-        ids = [mid for mid in (target["config"].get("personalModelIds") or []) if mid not in all_wb]
+        ids = []
+        for mid in (target["config"].get("personalModelIds") or []):
+            mid_s = str(mid)
+            if mid_s in all_wb:
+                continue
+            if mid_s.startswith(("cn:", "global:")):
+                if mid_s in live_ids or live_complete:
+                    stale.add(mid_s)
+                else:
+                    uncertain.add(mid_s)
+                    ids.append(mid)  # 列表残缺，先原样保留
+                continue
+            ids.append(mid)
         target["config"]["personalModelIds"] = ids
         target["config"]["modelOrder"] = ids
 
@@ -461,12 +490,18 @@ def apply_unified(config: dict, tiers: dict[str, list[dict]], probe: dict[str, d
         r for r in model_rules
         if not str(r.get("providerId", "")).startswith("workbuddy-")
     ]
+    if stale:
+        targets = set(UNIFIED_TARGETS.values())
+        model_rules[:] = [
+            r for r in model_rules
+            if not (r.get("modelId") in stale and r.get("providerId") in targets)
+        ]
     order = root.setdefault("providerOrder", [])
     order[:] = [pid for pid in order if not str(pid).startswith("workbuddy-")]
     for pid in UNIFIED_ORDER:
         if pid not in order:
             order.append(pid)
-    return added
+    return added, sorted(stale), sorted(uncertain)
 
 
 def reclassify_unified_backup(config: dict) -> list[str]:
@@ -640,7 +675,9 @@ def main() -> int:
             for rec in tiers[tier]:
                 target = "main" if str(rec["id"]) in MAIN_MODEL_IDS else tier
                 unified_tiers[target].append(rec)
-        added = apply_unified(config, unified_tiers, probe)
+        added, stale, uncertain = apply_unified(
+            config, unified_tiers, probe, set(by_id), set(pricing)
+        )
         print(f"config      : {CONFIG_FILE}")
         print("mode        : unified (WorkBuddy -> OpenCode chat tiers)")
         print(f"router base : {ROUTER_BASE}")
@@ -649,6 +686,14 @@ def main() -> int:
         for tier in ("main", "low", "free", "high", "backup"):
             print(f"  {tier:6} -> {UNIFIED_TARGETS[tier]}: {len(unified_tiers[tier])}")
         print(f"excluded    : {len(excluded)}")
+        if stale:
+            print(f"removed     : {len(stale)} stale WorkBuddy models (no longer selected upstream)")
+            for mid in stale:
+                print(f"  - {mid}")
+        if uncertain:
+            print(f"kept        : {len(uncertain)} models missing from a partial live list (kept, re-check next run)")
+            for mid in uncertain:
+                print(f"  ? {mid}")
         if not args.apply:
             print("[dry-run] no changes written; pass --apply to write")
             return 0

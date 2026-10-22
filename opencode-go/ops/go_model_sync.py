@@ -277,8 +277,8 @@ def probe_headers(protocol=None):
     return h
 
 
-def probe(model, protocol, thinking=True):
-    """返回 (status, kind)。kind: ok / protocol_unsupported / deprecated / unauthorized / error"""
+def probe_detail(model, protocol, thinking=True):
+    """返回 (status, kind, raw)。kind: ok / protocol_unsupported / deprecated / unauthorized / error"""
     if protocol == "chat/completions":
         body = {"model": model, "messages": [{"role": "user", "content": "hi"}], "max_tokens": 4096}
         if thinking:
@@ -301,19 +301,68 @@ def probe(model, protocol, thinking=True):
         except urllib.error.HTTPError as e2:
             st, raw = e2.code, e2.read().decode("utf-8", "replace")
         except Exception as e2:
-            return 0, "error:" + type(e2).__name__
+            return 0, "error:" + type(e2).__name__, str(e2)
     if st == 200:
-        return st, "ok"
+        return st, "ok", raw
     low = raw.lower()
     if "modeldeprecat" in low or "has been deprecated" in low:
-        return st, "deprecated"
+        return st, "deprecated", raw
     if "modelprotocolunsupported" in low or "does not support this protocol" in low:
-        return st, "protocol_unsupported"
+        return st, "protocol_unsupported", raw
     if st == 401:
-        return st, "unauthorized"
+        return st, "unauthorized", raw
     if st == 429:
-        return st, "rate_limited"
-    return st, "error"
+        return st, "rate_limited", raw
+    return st, "error", raw
+
+
+def probe(model, protocol, thinking=True):
+    """返回 (status, kind)"""
+    st, kind, _ = probe_detail(model, protocol, thinking)
+    return st, kind
+
+
+def is_workbuddy_id(model):
+    """统一路由把 cn:/global: 开头的模型转给 WorkBuddy，不属于 Go 套餐。"""
+    return model.startswith(("cn:", "global:"))
+
+
+def upstream_message(raw):
+    """从上游错误体里取一句话，放进报告。"""
+    try:
+        data = json.loads(raw)
+        err = data.get("error")
+        msg = err.get("message") if isinstance(err, dict) else err
+        if msg:
+            return str(msg).replace("\n", " ")[:200]
+    except Exception:
+        pass
+    return (raw or "").strip().replace("\n", " ")[:200]
+
+
+UNAVAILABLE_MARKERS = (
+    "endpoint is unavailable",
+    "unsupported model",
+    "model is unavailable",
+)
+
+
+def stale_reason(model, st, kind, raw, deprecated_dates, live, hint):
+    """返回该配置模型应被移除的原因；None 表示保留。调用方已排除 WorkBuddy 前缀。"""
+    if model in deprecated_dates:
+        return "已过官方弃用日 %s" % deprecated_dates[model]
+    if kind == "deprecated":
+        return "上游已弃用：HTTP %s %s" % (st, upstream_message(raw))
+    if kind == "error" and st in (400, 402, 404):
+        low = (raw or "").lower()
+        if any(x in low for x in UNAVAILABLE_MARKERS):
+            where = "仍在清单但上游不可用" if (model in live or model in hint) else "已不在任何清单"
+            return "%s：HTTP %s %s" % (where, st, upstream_message(raw))
+        if model not in live and model not in hint:
+            return "已不在实时/文档模型清单：HTTP %s %s" % (st, upstream_message(raw))
+    if kind == "protocol_unsupported" and model not in live and model not in hint:
+        return "已不在实时/文档模型清单，且拒绝当前协议"
+    return None
 
 
 def probe_protocols(model, hint=None):
@@ -473,6 +522,30 @@ def move_model(cfg, model, target_provider_id):
             break
 
 
+def prune_model(cfg, model):
+    """从所有 provider 的模型清单和 modelConfigRules 中彻底删掉一个模型。"""
+    touched = []
+    for r in provider_rules(cfg):
+        c = r.setdefault("config", {})
+        hit = False
+        for key in ("personalModelIds", "modelOrder"):
+            ids = c.get(key)
+            if isinstance(ids, list) and model in ids:
+                c[key] = [m for m in ids if m != model]
+                hit = True
+        if hit:
+            touched.append(r["providerId"])
+    mcr = cfg["config"].get("modelConfigRules", {})
+    if isinstance(mcr, dict):
+        for key in ("providerModelRules", "manualProviderModelRules"):
+            rules = mcr.get(key)
+            if isinstance(rules, list):
+                rules[:] = [r for r in rules if r.get("modelId") != model]
+    elif isinstance(mcr, list):
+        mcr[:] = [r for r in mcr if r.get("modelId") != model]
+    return touched
+
+
 def reclassify_backup(cfg):
     """Ensure the 备用 provider exists and holds BACKUP_MODEL_IDS.
     Returns the list of models actually moved."""
@@ -568,23 +641,35 @@ def main():
     new_models = [m for m in candidates if m not in conf]
     log("- 已配置 %d 个; 待评估新模型 %d 个" % (len(conf), len(new_models)))
 
-    # ---- 已配置模型体检（弃用 / 协议漂移）
+    # ---- 已配置模型体检（弃用 / 协议漂移 / 上游已下架）
+    removed = []
     if not args.no_existing:
         log("\n## 已配置模型体检")
+        wb_skipped = 0
+        verb = "移除" if (args.apply and not args.probe_only) else "将移除"
         for m, pid in sorted(conf.items()):
-            if m in deprecated:
-                log("  ⚠ %s 已过官方弃用日 %s" % (m, deprecated[m]))
+            if is_workbuddy_id(m):
+                wb_skipped += 1
+                continue
             proto = ("responses" if "responses" in pid else
                      "messages" if "messages" in pid else "chat/completions")
-            st, kind = probe(m, proto, thinking=False)
-            if kind == "deprecated":
-                log("  ✗ %s 上游已弃用（HTTP %s），建议从配置移除" % (m, st))
+            st, kind, raw = probe_detail(m, proto, thinking=False)
+            why = stale_reason(m, st, kind, raw, deprecated, live, hint)
+            if why:
+                removed.append((m, why))
+                log("  - %s %s：%s" % (verb, m, why))
             elif kind == "protocol_unsupported":
                 log("  ✗ %s 现在拒绝 %s 协议，协议归属可能变了" % (m, proto))
             elif kind == "unauthorized":
                 log("  ⚠ %s 返回 401（凭据/隐私授权问题）" % m)
             elif kind != "ok":
                 log("  ⚠ %s 探测异常: %s (HTTP %s)" % (m, kind, st))
+        if wb_skipped:
+            log("  · 跳过 %d 个 cn:/global: 开头的 WorkBuddy 模型（由统一路由处理，不属于 Go 套餐）" % wb_skipped)
+        if not removed:
+            log("  无需移除")
+        removed_ids = {m for m, _ in removed}
+        new_models = [m for m in new_models if m not in removed_ids]
 
     # ---- 新模型评估
     log("\n## 新模型评估")
@@ -644,6 +729,10 @@ def main():
 
     # ---- 写入
     if args.apply and not args.probe_only:
+        for m, _ in removed:
+            touched = prune_model(cfg, m)
+            if touched:
+                log("  · 已从 %s 删除 %s" % (", ".join(touched), m))
         # 同一组内按版本号倒序追加，保持厂商块连续
         by_provider = {}
         for r in added:
@@ -661,13 +750,13 @@ def main():
         moved = reclassify_backup(cfg)
         if moved:
             log("  · 备用档移动: " + ", ".join(moved))
-        if added or moved:
+        if added or moved or removed:
             backup = args.config + ".bak-gosync-" + stamp()
             shutil.copy2(args.config, backup)
             write_config(cfg, args.config)
             log("\n已写入 %s（备份 %s）" % (args.config, os.path.basename(backup)))
         else:
-            log("\n没有需要写入的新模型，配置未改动")
+            log("\n没有需要写入的新模型或失效模型，配置未改动")
     elif args.apply:
         log("\n只探测，配置未改动")
 

@@ -53,6 +53,9 @@
     # 指定输出位置
     python workbuddy_fetch_pricing.py --output cache/wb_pricing.json
 
+    # 确认是真实的大规模下架，跳过“列表骤降”保护
+    python workbuddy_fetch_pricing.py --force
+
 环境变量
 --------
 | 变量 | 默认 | 说明 |
@@ -199,6 +202,7 @@ def main() -> int:
     ap.add_argument("--api-key", default=GATEWAY_KEY, help="网关 api_key（默认取 WB_GATEWAY_KEY）")
     ap.add_argument("--output", default=str(DEFAULT_OUTPUT), help="输出路径（默认 %(default)s）")
     ap.add_argument("--dry-run", action="store_true", help="只打印结果，不写文件")
+    ap.add_argument("--force", action="store_true", help="列表骤降时仍然写入（确认是真实下架）")
     ap.add_argument("--timeout", type=int, default=25, help="请求超时秒数（默认 %(default)s）")
     args = ap.parse_args()
 
@@ -243,6 +247,20 @@ def main() -> int:
         print(f"   新增 {len(added)} 个：{', '.join(added[:8])}{' …' if len(added) > 8 else ''}")
     if removed:
         print(f"   下架 {len(removed)} 个：{', '.join(removed[:8])}{' …' if len(removed) > 8 else ''}")
+
+    # 安全阀：网关偶尔会返回残缺列表（例如只剩 global 池）。数量骤降时不覆盖
+    # 旧表，否则下游同步会把正常模型当成“已下架”从配置里删掉。
+    if old and len(rows) < len(old) * 0.7:
+        pct = 100 - len(rows) * 100 // len(old)
+        print(
+            f"!! 上游返回 {len(rows)} 条，旧表 {len(old)} 条，减少 {pct}%；疑似网关临时残缺。",
+            file=sys.stderr,
+        )
+        if removed:
+            print(f"   被判定为下架的 {len(removed)} 个：{', '.join(removed)}", file=sys.stderr)
+        if not args.force and not args.dry_run:
+            print("   未写入；确认是真实下架后加 --force 重跑。", file=sys.stderr)
+            return 2
 
     if args.dry_run:
         print("（--dry-run，未写文件）")

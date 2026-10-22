@@ -10,11 +10,53 @@
 - 「功能更新」= 新增了脚本 / 新增了 provider 分组 / 现有脚本的行为变了。
 - 只修 bug、改文档、调参数 → **+0.0.1**。
 - 本仓库**没有编译产物**，版本号以本文件的段落标题为准
-  （与 `docs/release-notes/v<version>.md` 的文件名必须一致）。
+  （与 `docs/release-notes/<versionName>.md` 的文件名必须一致；文件名**不带 `v` 前缀**，
+  发版 tag 才带 —— 口径见 [docs/VERSIONING.md](docs/VERSIONING.md) §3）。
 
 ---
 
 ## [未发布] — 2026-10-21
+
+### 同步脚本自动清理失效模型（2026-10-23）
+
+脚本行为变了，按本文件第 10 行的口径「现有脚本的行为变了 = 功能更新」；未发版，
+版本号不动（规则见 [docs/VERSIONING.md](docs/VERSIONING.md) §5）。
+
+- 调整 `opencode-go/ops/go_model_sync.py` —— 已配置模型体检从「只报告」改为
+  「`--apply` 时直接移除」：上游弃用（410 / 弃用日期表）、端点不可用（402
+  `Endpoint is unavailable`）、模型不支持（400 `Unsupported model`）的模型，
+  连同 `personalModelIds`、`modelOrder`、`modelConfigRules` 一并删掉，报告写
+  「移除」和上游原话。原来只写「建议从配置移除」，删不删全靠人盯
+- 调整 `opencode-go/ops/go_model_sync.py` —— 体检跳过 `cn:` / `global:` 开头的
+  WorkBuddy 模型（统一路由把它们转给网关，不属于 Go 套餐），不再把它们报成
+  Go 探测异常；本轮实测清掉 4 个：`minimax-m3.1-flash-free`（410 弃用）、
+  `longcat-2.0` 与 `longcat-2.5-preview-free`（402）、`mimo-v2.5-pro`（400）
+- 调整 `workbuddy/workbuddy_zcode_sync.py` —— 统一模式下，不再被选中的
+  `cn:` / `global:` 模型从配置删除并列出名字（原来只重排选中的，网关下架的会一直留着）
+- 调整 `workbuddy/workbuddy_zcode_sync.py` —— 加残缺列表保护：网关偶尔只返回
+  部分模型（本轮实测遇到一次 34/56），这时缺失的模型只报告 `kept`、不删除，
+  避免把正常模型误判成已下架
+- 调整 `workbuddy/workbuddy_fetch_pricing.py` —— 新列表比旧表少 30% 以上时
+  拒绝覆盖旧表（退出码 2），确认是真实下架需加 `--force`，防止残缺响应覆盖价格表
+
+### 文档骨架对齐基准仓（2026-10-22）
+
+不动版本号（只改文档，规则见 [docs/VERSIONING.md](docs/VERSIONING.md) §5）。
+
+- 调整 文档 —— 文件命名统一为**全大写 + 连字符**：`docs/模型速查表.md` → `docs/MODEL-QUICK-REF.md`、
+  `docs/archive/OPENCODE-GO-模型与订阅优化分析.md` → `docs/archive/OPENCODE-GO-ANALYSIS.md`；
+  三处文件均用 `git mv`，引用方（docs/README.md、docs/DOC-RULES.md、AGENTS.md、PROGRESS.md）
+  全部改到新名。命名规则写入 [docs/DOC-RULES.md](docs/DOC-RULES.md) §1
+- 调整 文档 —— `docs/release-notes/v0.1.0.md` → `docs/release-notes/0.1.0.md`：
+  基准仓口径是「文件名 = `versionName`，无 `v` 前缀」；**git tag 仍是 `v0.1.0`，未动**
+- 调整 文档 —— `docs/README.md` 索引重写：开头引言块与结尾提醒对齐基准仓，
+  四张表的链接逐条复核，过长的一句话定位（尤其 MODEL-PROVIDERS 那行）压缩到一行读完；
+  索引行长度纪律写入 [docs/DOC-RULES.md](docs/DOC-RULES.md) §6
+- 调整 文档 —— `docs/VERSIONING.md` 补「§5 不发版的时候：不动版本号」（按本仓情况改写，
+  含「改文件名不算发版」这一条）；§2 判断口诀与边界情况表对齐基准仓，补两条本仓边界
+- 调整 文档 —— `docs/MODEL-QUICK-REF.md` 补「一句话」引言块 + 降级声明
+  （结论已并入 MODEL-PROVIDERS.md，本篇保留作历史快照）
+- 验证 —— `python tools/check-docs.py` 通过（20 篇）
 
 ### WorkBuddy 价格表（2026-10-22）
 
@@ -153,7 +195,7 @@ ZCode 的每日自动收录任务报「触发运行失败」。根因是自动�
 - 调整 文档 —— 新增 `docs/PITFALLS.md`（踩坑总汇）。
 - 调整 文档 —— 新增 `docs/TROUBLESHOOTING.md`（排错手册，现象 → 排查步骤 → 原因 / 解法）。
 - 调整 文档 —— 新增 `docs/MAINTENANCE.md`（价格表刷新 / 探测限速 / 快照保留 / 备份回退 / 热重载注意事项）。
-- 调整 文档 —— 新增 `docs/release-notes/README.md`（Release 说明格式正本）与 `docs/release-notes/v0.1.0.md`（首版说明）。
+- 调整 文档 —— 新增 `docs/release-notes/README.md`（Release 说明格式正本）与 `docs/release-notes/0.1.0.md`（首版说明；当时文件名带 `v` 前缀，2026-10-22 统一去掉）。
 - 调整 进度 —— 根 `PROGRESS.md` 承接本仓唯一进度台账（追加式批次日志）。
 - 调整 进度 —— 原 `PROGRESS.workbuddy.md` 归档到 `evidence/`，作为 WorkBuddy 接入线的历史台账。
 
