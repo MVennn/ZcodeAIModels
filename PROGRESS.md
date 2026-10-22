@@ -574,7 +574,7 @@ CN/全球交织、不同厂商混排，主力 `cn:deepseek-v4.1-flash` 落到低
 - 守卫有效性正反验证：注入测试行（本机路径 + 真实邮箱）→ 退出码 1 且两条都报出；
       当前工作树 → 退出码 0（270 个文件）
 - `python tools/check-secrets.py` 与 `python tools/check-docs.py` 均通过
-- `git grep 本机用户目录 HEAD` 为空（工作树与 HEAD 树都已清）
+- 本机用户目录在全历史 blob 中零命中（工作树与 HEAD 树均已清）
 
 ## 待解决 / 注意事项
 - 历史提交 `92baac2` 的旧 blob 仍在 GitHub 上（force-push 不会立刻删服务端旧对象），
