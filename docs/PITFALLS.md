@@ -265,3 +265,36 @@ python workbuddy_fetch_pricing.py --dry-run  # 只看差异
 其余转到 OpenCode-Go。代价是多一个常驻进程；它随 ZCode 起停（见
 [MAINTENANCE.md](MAINTENANCE.md) §8）。**不要把路由端口暴露到公网**，也不要把两个
 上游的 key 混进同一个 provider。
+
+## 13. 凭据扫描的占位符不能整行放行
+
+**现象**：`tools/check-secrets.py` 对「示例与真值同一行」完全失明。
+
+**根因**：`PLACEHOLDER` 命中后整行 `continue`；行内出现 `example.com` / `<...>` /
+`YOUR-` 时，同一行的真 `oc_sk_` / `sk-` token 不会被报。
+
+**解法**：只豁免匹配片段本身（`m.group(0)`），示例 URL 仍按预期放行。
+
+## 14. `workbuddy/gateway/` 是上游独立 clone，改动只在本地
+
+**现象**：在网关里修了日志脱敏、示例配置、启动告警，`git status` 却什么都不显示，
+CHANGELOG 里写的条目在远端仓里找不到对应代码。
+
+**机制**：主仓 `.gitignore` 用 `/workbuddy/gateway/` **整目录**排除 —— 里面是
+`auths/` 账号凭据、`config.json`（api_key）、`data/` 运行时状态与 `wb2api.exe`。
+更新方式是 `git -C workbuddy/gateway pull --ff-only`，不是本仓管理。
+
+**怎么避**：改网关代码前先确认它在不在 `git ls-files` 里；本地改动单独记账，
+不要写进本仓 CHANGELOG（那里只记随仓分发的内容）。二进制重建后留 `.bak` 再替换。
+
+## 15. 首次启动的日志与示例配置都不能带凭据
+
+**现象**：网关首次启动时把自动生成的 `api_key` 明文打进 stdout；守护器把 stdout
+落到 `logs/gateway.stdout.log`，等于凭据明文落盘。示例配置里的 `api_key` 是
+`test_key`，而 README 的部署步骤要求 `cp` 这份文件。
+
+**解法**：启动日志只提示「已写入该文件」，不打印值；示例配置用 `CHANGE_ME` 这类
+一眼就知道要改的占位符；`api_key` 为空或仍是占位符、且监听地址不是回环时打 WARN。
+
+**下次怎么避**：任何「首次运行自动生成凭据」的路径，都当成凭据泄露面审一遍 ——
+日志、示例文件、错误信息、面板回显四个地方都要看。
