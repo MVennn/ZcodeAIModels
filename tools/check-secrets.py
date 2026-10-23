@@ -4,7 +4,7 @@
 
 用法：
     python tools/check-secrets.py            # 扫描已跟踪文件
-    python tools/check-secrets.py --all      # 扫描工作树（含未跟踪，排除 .git/.work/vault）
+    python tools/check-secrets.py --all      # 扫描工作树（含未跟踪，排除 .git/.work/vault 与两个上游 clone）
 
 退出码：0 通过 / 1 发现疑似敏感信息。
 这是 `docs/SECRETS.md` 的可执行版本 —— 文档说「本仓不保存凭据与本机路径」，
@@ -25,6 +25,9 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SKIP_DIRS = {".git", ".work", "vault", "third-party", "node_modules", "dist", "__pycache__",
              ".codegraph"}
+# 整目录被 .gitignore 排除的上游 clone：内含运行时凭据、二进制与上游作者的本机路径，
+# 不是本仓的源码/文档，--all 也不该扫（否则每次都会报上游自带的路径）。
+SKIP_REL_PREFIXES = ("workbuddy/gateway/", "qoder/gateway/")
 SKIP_EXT = {".png", ".jpg", ".jpeg", ".gif", ".ico", ".pdf", ".gz", ".pyc", ".woff", ".woff2",
             ".zip", ".mrs"}
 
@@ -98,6 +101,9 @@ def main() -> int:
     files = walk_files() if "--all" in sys.argv else tracked_files()
     bad = []
     for rel in files:
+        rel_norm = rel.replace("\\", "/")
+        if any(rel_norm.startswith(prefix) for prefix in SKIP_REL_PREFIXES):
+            continue
         if os.path.splitext(rel)[1].lower() in SKIP_EXT:
             continue
         parts = rel.replace("\\", "/").split("/")

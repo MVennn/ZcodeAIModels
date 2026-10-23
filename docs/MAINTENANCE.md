@@ -6,6 +6,13 @@
 模型清单与参数口径的正本在 [MODEL-PROVIDERS.md](MODEL-PROVIDERS.md)；
 出问题的排查在 [TROUBLESHOOTING.md](TROUBLESHOOTING.md)。
 
+> **2026-10-23 起**：ZCode 统一为四组（主力 / 免费 / 低耗 / 高耗），最终写入者是
+> `tools/model_alias.py`。旧的 Go / WorkBuddy / Qoder sync 只作数据采集；日常顺序是
+> `arena_leaderboard.py --refresh --write` → `model_probe.py` →
+> `model_alias.py --probe-file … --apply`。命名/积分规则见
+> [MODEL-ALIAS.md](MODEL-ALIAS.md)，榜单扩充口径见
+> [BENCHMARKS.md](BENCHMARKS.md) §8。
+
 ---
 
 ## 1. 价格表 / 模型目录刷新
@@ -100,10 +107,14 @@ curl -s http://127.0.0.1:7863/panel/api/models \
 |---|---|---|
 | OpenCode-Go 新模型收录 | **每天一次** | `python opencode-go/ops/go_model_sync.py --apply` |
 | 已配置模型体检 | 跟上面同一次 | 同上（默认会体检；`--no-existing` 可跳过） |
+| 外部榜单 → 主力候选 | **每天一次**（随 08:00 / 22:00 与工作日时段） | `python tools/arena_leaderboard.py --refresh --write` |
+| 候选变化 → 重写四组 | 随上一步；候选没变脚本会跳过 | `python tools/model_alias.py --slot auto --probe-file ~/.zcode/v2/model_probe.json --apply` |
 | WorkBuddy 可用性复探 | **换套餐 / 换账号池后**才需要全量重探 | `python workbuddy/workbuddy_probe_zcode.py --sleep 20` |
 | 某个模型单独复探 | 按需 | `python workbuddy/workbuddy_probe_zcode.py --only <前缀> --sleep 20 --force` |
 
 **不要**把全量探测挂成高频定时任务 —— 探测会消耗额度，也会触发上游限流。
+榜单接口不消耗本仓额度，可以随时 `--refresh` 看排名；`--apply` 只在候选集合或规则
+变化时才重写配置（脚本自己判断），所以不会每 10 分钟抖一次模型 ID。
 
 ### 2.2 限速（硬约束）
 
@@ -153,12 +164,14 @@ WorkBuddy 侧**只能用** `workbuddy_probe_zcode.py`（它先调 `zcode_effecti
 
 ## 4. `--apply` 前的备份与回退
 
-### 4.1 两个脚本都会自动备份
+### 4.1 三个脚本都会自动备份
 
 | 脚本 | 备份文件名 | 写入方式 |
 |---|---|---|
 | `go_model_sync.py --apply` | `provider_config.json.bak-gosync-<时间戳>` | 写 `.tmp` → 校验 JSON → `os.replace` 原子替换 |
 | `workbuddy_zcode_sync.py --apply` | `provider_config.json.bak-wbproxy-<时间戳>` | 同上（`.tmp-wbproxy` → `os.replace`） |
+| `qoder/qoder_zcode_sync.py --apply` | `provider_config.json.bak-qoder-merge-<时间戳>`（`--separate` 为 `.bak-qoder-<时间戳>`） | 同上（`.tmp-qoder` → `os.replace`） |
+| `tools/model_alias.py --apply` | `provider_config.json.bak-alias-<时间戳>` | 同上（`.tmp-alias` → `os.replace`） |
 
 ### 4.2 手动备份（建议在批量操作前额外做一份）
 
@@ -185,7 +198,7 @@ python -c "import json,os; json.load(open(os.path.expanduser('~/.zcode/v2/provid
 
 ### 4.4 `--apply` 的两种风险
 
-两个同步脚本各自的写入行为（默认合并 / 只追加、`--separate` 的风险、正确姿势）以
+三个同步脚本各自的写入行为（默认合并 / 只追加、`--separate` 的风险、正确姿势）以
 [MODEL-PROVIDERS.md](MODEL-PROVIDERS.md) §1.1 为**正本**；本节只管备份与回退。
 
 ---
@@ -209,7 +222,8 @@ python -c "import json,os; json.load(open(os.path.expanduser('~/.zcode/v2/provid
 
 | 周期 | 动作 |
 |---|---|
-| **每天** | `python opencode-go/ops/go_model_sync.py --apply`（Go 新模型自动收录）；`python workbuddy/workbuddy_fetch_pricing.py` → `probe_zcode.py --max-rate 0.3 --sleep 20` → `workbuddy_zcode_sync.py --max-rate 0.3 --apply`（WorkBuddy 新模型自动收录，ZCode 每天 **12:00** 任务；上限 0.30 = 主力价位，超过的"贵不加"）。网关 key 按 [SECRETS.md](SECRETS.md) §2 取（`workbuddy/gateway/config.json` 的 `api_key`）—— 统一路由把 WorkBuddy 并进五个 chat 组后，`provider_config.json` 里已没有 `workbuddy-*` provider，别再从那里取 |
+| **每天** | `python tools/model_probe.py` → `python tools/model_alias.py --slot auto --probe-file ~/.zcode/v2/model_probe.json --apply`（四组 + alias map 的最终写入）。旧的数据采集可先跑 Go/WorkBuddy/Qoder sync，再由 `model_alias.py` 归一化；不要在它之后单独跑旧 sync 的 `--apply`。规则见 [MODEL-ALIAS.md](MODEL-ALIAS.md) §6 |
+| **每天 08:00 / 22:00 + 工作日 09:00 / 12:00 / 14:00 / 18:00** | `python workbuddy/workbuddy_fetch_pricing.py` → `python tools/model_alias.py --slot auto --apply`（峰谷价切换，见 [MODEL-ALIAS.md](MODEL-ALIAS.md) §4.1） |
 | **每月** | 复核 [MODEL-PROVIDERS.md](MODEL-PROVIDERS.md) 里的价格 / 额度（`wb_pricing.json` 已由每日任务自动刷新） |
 | **换套餐 / 换账号池后** | 全量重探 WorkBuddy（`--sleep 20`）+ 重跑同步 |
 | **每次接入新供应商** | 照 §1.1 的通用做法写一份取数脚本 + 在 [MODEL-PROVIDERS.md](MODEL-PROVIDERS.md) §0 的表里补一行；凭据按 [SECRETS.md](SECRETS.md) §2、§3.5 加环境变量 |
@@ -312,6 +326,28 @@ clone 一起删掉**，别在不确认的情况下跑。
 >
 > 排查见 [TROUBLESHOOTING.md](TROUBLESHOOTING.md) §11。
 
+### 8.1 Qoder（qoder2api-hub，8790）
+
+Qoder 的 **hub 进程不跟随 ZCode**，是常驻 detached 进程（这样 ZCode 不在时
+09:00 / 21:00 的签到也能跑）；但合并模式下 `qoder:` 模型经 7871 路由，路由仍随
+ZCode 起停：
+
+| 场景 | 命令 |
+|---|---|
+| 启动 | `qoder/gateway/start-qoder-proxy.bat`（detached，关窗口不退出） |
+| 停止 | `qoder/gateway/stop-qoder-proxy.bat` |
+| 健康 | `curl http://127.0.0.1:8790/ping` / `curl http://127.0.0.1:8790/health` |
+| 日志 | `qoder/gateway/qoder-proxy.log` / `qoder-proxy.err.log` |
+| 签到状态 | `qoder/gateway/accounts/scheduler/state.json` |
+| 升级 | `git -C qoder/gateway pull --ff-only` → stop → start |
+| 每日同步 | `python tools/model_probe.py`（可加 `--group 免费`）→ `python tools/model_alias.py --slot auto --probe-file ~/.zcode/v2/model_probe.json --apply`；Qoder 显示名为 `Q/积分/型号` |
+
+> Qoder 的专用 `qoder_probe_zcode.py` / `qoder_zcode_sync.py` 现在只作数据采集与兼容；
+> 四组统一探测用 `tools/model_probe.py`，最终写入用 `tools/model_alias.py`。
+
+> ⚠️ 重启机器后 hub 不会自动起（当前没有注册开机自启）；需要时手动
+> `start-qoder-proxy.bat`。Qoder 的账号、签到与模型细节见 [QODER.md](QODER.md)。
+
 ---
 
 ## 9. 相关文档
@@ -322,7 +358,9 @@ clone 一起删掉**，别在不确认的情况下跑。
 | Release 说明怎么写 | [release-notes/README.md](release-notes/README.md) |
 | 凭据（OpenCode-Go key / 网关 key / ZCode 配置路径）在哪 | [SECRETS.md](SECRETS.md) |
 | provider 分组、协议类型、参数矩阵 | [MODEL-PROVIDERS.md](MODEL-PROVIDERS.md) |
-| 脚本改 ZCode 配置的哪几处、两个 `--apply` 脚本的行为差异 | [MODEL-PROVIDERS.md](MODEL-PROVIDERS.md) §1、§1.1 |
+| 统一命名、积分换算、四组、alias map 与协议桥 | [MODEL-ALIAS.md](MODEL-ALIAS.md) |
+| 脚本改 ZCode 配置的哪几处、三个 `--apply` 脚本的行为差异 | [MODEL-PROVIDERS.md](MODEL-PROVIDERS.md) §1、§1.1 |
+| Qoder 的端口、账号、同步与探测 | [QODER.md](QODER.md) |
 | 排障步骤 | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) |
 
 ---
@@ -331,4 +369,6 @@ clone 一起删掉**，别在不确认的情况下跑。
 
 | 日期 | 做了什么 | 结果 |
 |---|---|---|
+| 2026-10-23 | 统一模型命名：四组（主力/免费/低耗/高耗）、`渠道/积分/型号`、alias map、协议桥接 | 43 个模型 / 4 个 provider；37 ok，5 个 WB GB 因池冷却暂为瞬时限流 |
+| 2026-10-23 | 接入 Qoder：qoder2api-hub clone 到 `qoder/gateway`（8790）、OAuth 账号、独立 `qoder` provider、同步/探测脚本与文档 | 7 个模型探测 200；免费 `DeepSeek-Flash` 1.1s；`Qwen3.8-Flash` 因 10605 排队暂不收录 |
 | 2026-10-22 | 收尾大扫除：清 `__pycache__` 与过期定价备份；对齐模型计数 / 快照日期、Release 说明反馈入口、AGENTS 的 CodeGraph 状态 | 仓库 53109K → 53053K；`python tools/check-docs.py` 通过 |

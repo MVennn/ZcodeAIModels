@@ -660,3 +660,363 @@ ZCode 免代档；此前同步把它们漏了。定位根因并修复，再把�
   策略按日自动执行；本次未创建定时任务（用户此前要求不擅建）。
 
 ## 状态: 已完成
+
+---
+
+# 2026-10-23 第 N+3 轮：接入 Qoder（qoder2api-hub 独立 provider）
+
+## 任务目标
+按用户确认：Qoder 用 qoder2api-hub，Agent2API 暂不采用；WorkBuddy2API 与
+OpenCode-Go 保持不动。把 Qoder 做成 ZCode 里的独立 provider，并保留可重复的
+探测 / 清理 / 同步流程。
+
+## 已完成变更
+- [x] clone `qoder2api-hub` 到 `qoder/gateway/`（整目录 gitignore，含自己的 `.git`）
+- [x] 8790 启动：API key + 面板密码持久化到 `accounts/settings.json`，改用
+      `start-qoder-proxy.bat` detached 运行；`qoder/.env.local` 只给脚本读
+- [x] Qoder CN OAuth 设备授权，账号入库（`qoder.com.cn`，personal_professional_trial）；
+      `python _install_umid.py` 装好 UMID；启动巡检签到 +100 Credits（余额 399）
+- [x] `qoder/qoder_zcode_sync.py`：拉 `/v1/models` → 排除 Auto/Fast 别名 →
+      按 price_factor 升序 → 写独立 `qoder` provider（默认 `--max-price 0.8`）
+- [x] `qoder/qoder_probe_zcode.py`：用 ZCode 真实 body 探测，状态写
+      `qoder/qoder_probe.json`；`--probe-file` 只保留 `ok`
+- [x] `provider_config.json` 写入 `qoder` provider（7 个模型，排在免费组之后）；
+      备份 `provider_config.json.bak-qoder-20261023-165457`
+- [x] 文档：新增 `docs/QODER.md`；更新 `MODEL-PROVIDERS.md`（§4.9、§5.2、§1.1）、
+      `TOOLS.md`、`SECRETS.md`、`TROUBLESHOOTING.md`、`README.md`、`NOTICE`、
+      `docs/README.md`、`.gitignore`
+
+## 验收
+- `GET /health`：`ok=true`、version 1.7.0、accounts 1、accounts_ready 1、
+  api_key_required true
+- `/v1/models`：CN 目录 14 个（含 Auto/Fast）；探测 7 个 `ok`
+- `qoder/DeepSeek-Flash`（免费）：HTTP 200、1.1s、`billable:false`；流式 SSE 200
+- `ListModels`：`qoder/DeepSeek-Flash`、`qoder/GLM-5.3-Flash`、
+  `qoder/MiniMax-M3.1-Flash`、`qoder/DeepSeek-V4-Pro`、`qoder/Qwen3.8-Max`、
+  `qoder/GLM-5.3`、`qoder/Kimi-K2.8-Preview` 均可见，顺序按 price_factor
+- 签到：2026-10-23 16:56 启动巡检 +100 Credits，余额 399；下一次 21:00
+
+## 待解决 / 注意事项
+- `Qwen3.8-Flash` 免费但上游 10605 排队（queueCount ≈ 19k，p3），75s 超时，
+  按「跑不通即清」暂不收录；复通后重新 probe + sync 会自动加回
+- 免费 `DeepSeek-Flash` 也会排队：2026-10-23 17:10 服务端 64s 后 200，
+  17:14 复测 93.9s 后 502（10605，queueCount 0）；probe 结果已加 `ever_ok`，
+  排队/超时不误杀曾 200 的模型，只有从未成功过的才会被排除
+- qoder2api-hub 目前是常驻 detached 进程，**未**接进 `zcode_gateway_watch.ps1`；
+  重启机器后需要手动 `start-qoder-proxy.bat`（或以后再加守护）
+- ZCode CLI 没有 `--model` 参数，无法用一条命令指定 `qoder/...` 做端到端对话；
+  已用 `zcode_effective_body.js` 真实 body 探测 + `ListModels` 验证 provider 可用
+- 付费模型会消耗试用额度（300 起步），日常优先用免费的 `DeepSeek-Flash`
+
+## 状态: 已完成
+
+---
+
+# 2026-10-23 第 N+4 轮：Qoder 并入现有 chat 组（qoder: 前缀 + 7871 分流）
+
+## 任务目标
+用户要求把 Qoder 从独立 provider 合并到之前的「免费 / 低耗 / 高耗」分组，减少
+provider 列表；Qoder hub 与 WorkBuddy/OpenCode 的现有链路保持不变。
+
+## 已完成变更
+- [x] `tools/unified-router.js` 新增 `qoder:` 分支：路由到 8790、剥掉前缀、
+      用 `QD_API_KEY` 鉴权；`/health` 与启动日志加 `qoder`；key 从
+      `qoder/.env.local` / 环境变量 / 旧 provider 规则读取
+- [x] `opencode-go/ops/go_model_sync.py`：`is_non_go_id()` 把 `qoder:` 视作
+      非 Go 模型，体检/清理跳过，日志改为 `cn:/global:/qoder:`
+- [x] `qoder/qoder_zcode_sync.py` 默认改为**合并模式**：
+      price 0 → 免费、0 < x ≤ 0.2 → 低耗、> 0.2 → 高耗；模型 id 加 `qoder:`；
+      移除旧的独立 `qoder` provider；`--separate` 保留旧模式；切换模式可重复执行
+- [x] `qoder/qoder_probe_zcode.py` 默认经 7871 + `qoder:` 前缀探测（与 ZCode
+      实际路径一致），候选从 8790 `/v1/models` 取（不在配置里的模型也能复探）；
+      `--direct` 可直连 8790
+- [x] 重启 7871 路由；写入合并配置：免费 1 个、低耗 2 个、高耗 4 个 Qoder 模型；
+      provider 列表仍是 7 个
+- [x] 文档同步：QODER.md、MODEL-PROVIDERS.md §4.9、TOOLS.md、SECRETS.md、
+      MAINTENANCE.md §8.1、TROUBLESHOOTING.md、README.md、CHANGELOG.md
+
+## 验收
+- `ListModels`：`opencode-go-chat-free/qoder:DeepSeek-Flash`；
+  `opencode-go-chat-fast/qoder:GLM-5.3-Flash`、`qoder:MiniMax-M3.1-Flash`；
+  `opencode-go-chat-slow/qoder:DeepSeek-V4-Pro`、`qoder:Qwen3.8-Max`、
+  `qoder:GLM-5.3`、`qoder:Kimi-K2.8-Preview`；独立 `qoder` provider 不再出现
+- `curl http://127.0.0.1:7871/health`：`qoder.key=true`
+- 经 7871 发 `qoder:GLM-5.3-Flash`：HTTP 200，0.9s
+- 经 7871 + 真实 ZCode body 探测：7 个 ok；`Qwen3.8-Flash` 仍 10605 排队
+- Go 侧 `is_non_go_id("qoder:...")=True`；WorkBuddy dry-run 只处理自己的模型，
+  不删除 `qoder:` 条目
+- 备份：`provider_config.json.bak-qoder-merge-20261023-172830`
+
+## 待解决 / 注意事项
+- `Qwen3.8-Flash` 仍因上游排队不收录；复通后 probe ok + sync 自动加回
+- `qoder:` 模型依赖 7871 路由；hub 常驻、router 随 ZCode 起停
+- 若以后想回到独立 provider：`python qoder/qoder_zcode_sync.py --separate --apply`
+- 免费 `DeepSeek-Flash` 高峰仍可能排队/502；交互优先用低耗档的 0.1 模型
+
+## 状态: 已完成
+
+---
+
+# 2026-10-23 第 N+5 轮：统一模型命名（四组 + 积分 + alias map + 协议桥）
+
+## 任务目标
+用户要求把三家渠道统一成 `渠道 : 型号 : 积分`，按渠道/公司排序，只留
+主力/免费/低耗/高耗四组，并让本地路由处理格式差异（一步到位）。
+
+## 已完成变更
+- [x] 新增 `tools/model_alias.py`：从当前 provider 配置收集模型，按
+      WB/OC/QD 与地区/系列重命名，按积分分到四组；生成
+      `~/.zcode/v2/model-alias-map.json`；备份 `.bak-alias-*`；可重复执行
+- [x] 积分口径：WB `eff_rate` 原样；OC 以 `deepseek-v4.1-flash`
+      $0.15/$0.60 ↔ 0.11（1 积分 = $3.409/M，1:1 混合）；QD `price_factor × 0.86`
+- [x] 四组：主力 4 / 免费 9 / 低耗 18 / 高耗 12，共 43 个模型；`备用` 解散，
+      `对话`/`响应` 折入四组
+- [x] 新增 `tools/model_probe.py`：用 `zcode_effective_body.js`（带 provider id）
+      复算真实 body，经 7871 探测；结果 `~/.zcode/v2/model_probe.json`，带 `ever_ok`
+- [x] 新增 `tools/protocol_bridge.js`：chat ↔ Anthropic Messages / OpenAI Responses，
+      非流式上游 + 合成 chat SSE，工具调用双向转换
+- [x] `tools/unified-router.js`：优先读 alias map，按 channel 还原上游并注入 key；
+      旧前缀保留为 legacy 回退；`/health` 增加 alias 条数
+- [x] `workbuddy/zcode_effective_body.js`：叠加用户 `providerModelRules`，
+      让新 ID 的 `map="{}"` 在探测里生效
+- [x] `go_model_sync.py`：`WB:`/`OC:`/`QD:` 视作非 Go 模型跳过
+- [x] 文档：新增 `docs/MODEL-ALIAS.md`；更新 MODEL-PROVIDERS / TOOLS / MAINTENANCE /
+      TROUBLESHOOTING / README / CHANGELOG / docs 索引
+
+## 验收
+- `ListModels`：4 个 provider、43 个模型；ID 形如
+  `WB : DeepSeek-V4.1-FS : 0.11`、`OC : DeepSeek-V4.1-FS : 0.11`、`QD : GLM-5.3 : 0.69`
+- 直连：WB/OC/QD 各取一个 → HTTP 200（1–2s）
+- 桥接：`OC : Qwen3.8-FS : 0.09`（messages）、`OC : GPT-6-Luna : 0.09`（responses）→ 200；
+  工具调用返回 `tool_calls`；流式桥接返回 SSE
+- 空 map：`OC : MiniMax-M3 : 0.22`、`OC : Beam : 0.00` 的 effective body 只剩
+  `max_completion_tokens`，请求 200
+- 全量探测：37 ok；5 个 WB GB 模型 `no_healthy_account`（池冷却，按瞬时限流保留）
+- 旧 ID：`cn:deepseek-v4.1-flash`、`qoder:GLM-5.3`、`glm-5.3-flash` 仍可走
+- 备份：`provider_config.json.bak-alias-20261023-180240`
+
+## 待解决 / 注意事项
+- 5 个 WB GB 模型当前是池冷却，不是模型死；恢复后 probe 会转 ok
+- `deepseek-v4-flash-vision-exp`、`minimax-m2.7` 无公布价格，暂不收录
+- 桥接模型是非流式上游 + 合成 SSE，首字不是逐 token；chat 模型仍原生流式
+- 价格写进 ID：调价会改名，旧会话靠 alias map 的 legacy 继续可用
+- 旧 sync/probe 现在是数据采集器；最终写入只跑 `model_alias.py`
+- 项目规模已明显变大，下一步需要重新规划（用户已提出）
+
+## 状态: 已完成
+
+---
+
+# 2026-10-23 第 N+6 轮：可读模型名 + 峰谷价
+
+## 任务目标
+用户要求去掉 `-f`/`-sg` 等噪音、显示名改成可读大小写（如
+`WB : DeepSeek-V4.1-FS : 0.11`），并让早晚不同的模型倍率随时段变化。
+
+## 已完成变更
+- [x] `model_alias.py` 的 `ABBR` 改为可读名字：`DeepSeek-V4.1-FS`、`GLM-5.3-FS`、
+      `MiniMax-M3.1-FS`、`MiMo-V2.6-Pro`、`HY4-Preview` 等；去掉 `-f`/`-sg`/`-free`
+- [x] 价格后缀去掉 `X`：`WB : DeepSeek-V4.1-FS : 0.11`、`QD : GLM-5.3 : 0.69`
+- [x] `--slot auto|peak|offpeak`：Qoder 用 `price_factor_peak/valley` 与
+      22:00–08:00 Asia/Shanghai 窗口；WorkBuddy 用 `list_rate`/`eff_rate`
+      （峰价取 list，谷价取带夜间/错峰标签的 eff，auto 取刷新后的 eff）
+- [x] 生成器输出/alias map 增加 `slot` 字段；备份 `.bak-alias-*`（时间戳到微秒，避免同秒覆盖）
+- [x] `model_probe.py` 结果改为按**原始模型 ID** 存 key，显示名只作 `display`；
+      `model_alias.py` 的 probe 过滤沿 legacy 链匹配，改价/换时段不会丢探测记录
+- [x] 文档：MODEL-ALIAS 增加峰谷价小节；QODER/README/CHANGELOG/TOOLS/MAINTENANCE
+      示例统一为可读名
+
+## 验收
+- `ListModels`：43 个模型 / 4 组，ID 形如 `WB : DeepSeek-V4.1-FS : 0.11`、
+  `OC : GLM-5.3-FS : 0.10`、`QD : Qwen3.8-Max : 0.43`
+- 峰谷价：`QD:CN-DeepSeek-V4-FS` 峰 0.09 / 谷 0.00；
+  `QD:CN-Qwen3.8-Max` 峰 0.43 / 谷 0.17
+- 直连/桥接：WB/OC/QD、messages（`OC:Qwen3.8-FS`）、responses（`OC:GPT-6-Luna`）
+  均 200；旧 ID `WB:CN-DSP-V41-F:X0.11` 仍可路由
+- 峰谷切换实测：offpeak 时 QD DeepSeek `0.00`（免费 9 / 低耗 18），
+  Qwen3.8-Max `0.17`；auto（当前峰价）恢复 `0.09` / `0.43`（免费 8 / 低耗 19）
+- 备份：`provider_config.json.bak-alias-20261023-181125`
+
+## 待解决 / 注意事项
+- 自动早晚切换需要每天 08:00 / 22:00 跑
+  `python workbuddy/workbuddy_fetch_pricing.py` → `python tools/model_alias.py --slot auto --apply`
+  （当前未注册定时任务）
+- 峰谷切换会改显示名；旧 ID 由 alias map 的 legacy 兼容，ZCode 模型选择器需重新点一次
+- WorkBuddy 的谷价依赖时段刷新 `eff_rate`；不刷新时 auto 停在最后一次取价
+- 项目规模继续变大，重新规划时把“时段取价/定时重写”纳入维护层
+
+## 状态: 已完成
+
+---
+
+# 2026-10-23 第 N+7 轮：CN/GB 合并 + 空格格式 + OC 峰谷价
+
+## 任务目标
+用户要求 WorkBuddy 的 CN/GB 合成一个 `WB` 口子（GB 优先、GB 全不可用回退 CN），
+显示名加空格（`WB : DeepSeek-V4.1-FS : 0.03`），并确认 OpenCode-Go 的夜间折扣
+也要纳入峰谷价。
+
+## 已完成变更
+- [x] `model_alias.py` 的 WB 合并：按 base model 分组（`-sg` 视为地区变体，
+      不单独分组）；GB 为 primary，CN 进 `fallbacks`；同价 CN/GB 合并；
+      GB 免费/付费价档各自保留
+- [x] 显示名格式：去掉地区、冒号两侧加空格，`WB : 模型 : 积分`；
+      `-f`/`-sg` 不再出现
+- [x] alias map 增加 `fallbacks` 与 `legacy_ids`；CN 旧 ID 映射到主价档，
+      旧会话仍可路由
+- [x] `unified-router.js` 新增 `forwardChain`：429/502/503/504 时按
+      primary → fallback 重试；GB SG 503 实测回退 CN 成功（1.2s 200）
+- [x] OpenCode-Go 峰谷价：仅 DeepSeek V4.1 Flash / V4 Pro；峰时 UTC 周一至周五
+      01:00–04:00、06:00–10:00；V4.1 Flash 0.22/0.11，V4 Pro 0.77/0.39；
+      其他 OC 模型固定
+- [x] `model_alias.py --slot auto|peak|offpeak` 同时覆盖 WB/OC/QD
+- [x] 文档示例统一成空格格式；MAINTENANCE 增加工作日 09/12/14/18 的 OC 边界
+
+## 验收
+- 合并后 36 个显示名 / 4 provider：主力 3、免费 5、低耗 17、高耗 11
+- `WB : DeepSeek-V4.1-FS : 0.03` 在 GB 503 时自动回退 `cn:deepseek-v4.1-flash`，
+  HTTP 200；router 日志出现 `[router] ... -> 503, fallback ...`
+- `WB : GLM-5.3-FS : 0.08`、`WB : HY4-Preview : 0.29` 均配置了 CN fallback
+- OC 峰价 `OC : DeepSeek-V4.1-FS : 0.22` / 谷价 `0.11`；auto 当前（18:xx CST）
+  为谷价 0.11
+- 空间格式的模型 ID 在 ListModels / 7871 请求中正常
+- 备份：`provider_config.json.bak-alias-20261023-184142-356100` 等
+
+## 待解决 / 注意事项
+- 5 个 WB GB 模型仍在池冷却；fallback 已生效，但 CN 号也冷却时会返回 503
+- 自动峰谷切换需要 08:00/22:00 + 工作日 09:00/12:00/14:00/18:00 跑
+  `workbuddy_fetch_pricing.py` → `model_alias.py --slot auto --apply`；当前未注册
+- 显示的是 GB 主价；回退 CN 时实际扣费可能更高（CN 价档未显示）
+- 项目继续变大，重新规划时把“合并/回退/时段取价”作为独立层
+
+## 状态: 已完成
+
+---
+
+# 2026-10-23 第 N+8 轮：Qwen3.8-Flash 提进主力
+
+## 任务目标
+按用户之前推荐的「AI 能力专项测试」榜单和「DeepSeek = 100 基准」规则，找性能与
+价格都和 DeepSeek 接近的模型，加进主力组。
+
+## 选型依据
+- 基准：DeepSeek V4.1 Flash，榜单 #11，总分 **342.40**，积分 **0.11**
+- 候选：Qwen3.8-Flash，榜单 #4，总分 **372.95**，积分 **0.09**
+  - 智力指数 108.9（372.95 ÷ 342.40 × 100）
+  - 价格指数 81.8（0.09 ÷ 0.11 × 100）
+  - 满足「智力 ≥100 且价格 ≤100」的主力规则
+- 其他接近项：GLM-5.3-Flash 334.15 / 0.10（智力 97.6，未过 100）；
+  GLM-5.3 345~351 / 0.69（价格 6 倍）；HY4-Preview 350.71 / 0.29（价格 2.6 倍）。
+
+## 已完成变更
+- [x] `tools/model_alias.py` 的 `MAIN_IDS` 加入 `qwen3.8-flash`
+- [x] 重新生成：主力 3 → 4，低耗 17 → 16，其余不变；
+      主力模型：WB DeepSeek-V4.1-FS 0.03、OC DeepSeek-V4.1-FS 0.11、
+      OC Qwen3.8-FS 0.09、OC MiMo-V2.6-Pro 0.19
+- [x] 文档：MODEL-ALIAS 主力规则、BENCHMARKS §5 角色与说明、CHANGELOG
+
+## 验收
+- `ListModels`：`opencode-go-chat/OC : Qwen3.8-FS : 0.09` 出现在「主力」
+- 经 7871 发 `OC : Qwen3.8-FS : 0.09`（messages 桥接）→ HTTP 200，1.8s
+- 备份：`provider_config.json.bak-alias-20261023-184640-938600`
+
+## 待解决 / 注意事项
+- 该分数来自 `qoder` 平台的 QWEN3.8-FLASH · XHIGH；本仓走 OpenCode-Go messages，
+  平台差异存在，实测只验证了可用性，不代表分数完全一致
+- 主力现在有两个 DeepSeek 和两个 Qwen/MiMo；后续是否把 OC Qwen3.8-FS 设为默认
+  由用户决定，当前只是加入列表
+- 峰谷价/CN-GB fallback 逻辑不受本次调整影响
+
+## 状态: 已完成
+
+---
+
+# 2026-10-23 第 N+9 轮：ArenaGalleri 榜单自动扩充主力
+
+## 任务目标
+用户给出 <https://gallery.arenaofbias.icu/#/leaderboard>（会持续更新），要求每次更新
+重拉榜单、看排名，把「性能和 DeepSeek 差不多、价格也差不多」的模型扩进主力。
+
+## 榜单事实
+- 页面是 SPA；数据在 <https://api.arenaofbias.icu/api/leaderboard>，返回 `rows`
+  （模型 × effort 一行）、`updatedAt`、`refreshIntervalSeconds = 600`
+- 2026-10-23 拉取：242 行 / 94 题 / 822 位投票者
+- 基准 `deepseek-v4.1-flash`：非临时、≥50 局的最高分是 `XHigh` 1100（#47，241 局）
+- 行里有 `provisional`（临时名次）；直接按最高分取会拿到 7～9 局的小样本，默认排除
+
+## 选型规则（写进脚本默认值）
+分数 ≥ 基准 95%、积分 ≤ 0.11、非临时、≥50 局、积分 > 0；价格按谷价/eff/valley 判断，
+峰时切价不影响主力成员；0 积分模型留在免费组，避免免费组被抽空。
+
+## 已完成变更
+- [x] 新增 `tools/arena_leaderboard.py`：拉榜（失败回落缓存）→ 归一化模型名 →
+      按上述窗口从 `model-alias-map.json` 的**已配置模型**里筛候选 → 写
+      `~/.zcode/v2/arena-main.json`；`--refresh / --write / --apply / --status`
+- [x] 名字归一：只留字母数字，`claude-haiku-5.5` ↔ `claude-haiku-5-5` 自动对齐；
+      `-sg`、`-contributor`、`hy4-preview-f` 的 `-f` 视为同模型；
+      `-next` / `-1017` 不合并
+- [x] `tools/model_alias.py`：新增 `--arena-main` / `--no-arena`，按
+      `(channel, upstream)` 扩充主力；alias map 条目增加 `main_reason`；
+      修复 `--probe-file` 分支 `transient_kept` 未初始化的 `NameError` 隐患
+- [x] 候选集合或规则没变时不重写配置，避免榜单 10 分钟一更新就抖模型 ID
+- [x] 文档：BENCHMARKS §8（接口/口径/候选表/映射边界/回退）、MODEL-ALIAS §4.2、
+      TOOLS、MAINTENANCE §2.1、README、CHANGELOG
+- [x] 重新生成四组：主力 4 → 7，免费 5、低耗 16 → 13、高耗 11，共 36 个
+
+## 验收
+- 新增主力：`OC : MiMo-V2.6-FS : 0.06`（1112，101.1%）、
+  `WB : Space-Bunny : 0.08`（1075，97.7%）、
+  `OC : Claude-Haiku-5.5 : 0.09`（1064，96.7%）
+- 经 7871 实测 chat：三者均 HTTP 200（8.2s / 1.2s / 1.7s）；
+  `OC : Qwen3.8-FS : 0.09` 仍 200
+- `provider_config.json`：主力 7 / 免费 5 / 低耗 13 / 高耗 11；
+  alias map 36 个模型 / 122 条 legacy
+- 重复跑 `arena_leaderboard.py`：候选未变 → 打印「跳过 model_alias.py」
+- 备份：`provider_config.json.bak-alias-20261023-185721-025500`
+
+## 待解决 / 注意事项
+- 榜单里 `qwen3.8-flash` 只有 `-next` 版本，`minimax-m3.1-flash` 只有 `m3.1`，
+  两者不自动匹配；Qwen 的主力资格仍来自旧榜（§5）
+- 自动刷新尚未注册定时任务；建议随 08:00/22:00 与工作日峰谷边界跑
+  `arena_leaderboard.py --refresh --write`，再跑 `model_alias.py --apply`
+- 榜单分数是原平台成绩，经本仓中转不等价；主力成员只代表「值得优先试」，
+  不等于本仓实测质量
+- 掉出窗口会自动退回原积分组，主力不是只增不减
+
+## 状态: 已完成
+
+---
+
+# 2026-10-23 第 N+10 轮：显示名压缩为 `W/0.03/DeepSeek-41-Fs`
+
+## 任务目标
+用户认为 `WB : DeepSeek-V4.1-FS : 0.03` 仍然太长，指定格式
+`W/0.03/DeepSeek-41-Fs`，其余模型跟进。
+
+## 已完成变更
+- [x] `model_alias.py`：显示名改为 `单字母/积分/紧凑型号`；新增
+      `CHANNEL_LETTER = {WB:W, OC:O, QD:Q}`；`ABBR` 全部换成紧凑名
+      （去 `V`、去版本点、`Flash`→`Fs`）
+- [x] 未知模型的后备缩写也做同样压缩（去版本点、去前缀 `V`、`Flash`→`Fs`）
+- [x] 重新生成四组 + alias map：36 个模型，主力 7 / 免费 5 / 低耗 13 / 高耗 11；
+      旧空格 ID 进 `legacy`（86 条）
+- [x] 重写 `arena-main.json`，候选的 `display` 同步为新格式
+- [x] 文档示例全部改为新格式；CHANGELOG / PROGRESS / 记忆同步
+
+## 验收
+- 新 ID：`W/0.03/DeepSeek-41-Fs`、`O/0.11/DeepSeek-41-Fs`、`O/0.09/Qwen-38-Fs`、
+  `O/0.06/MiMo-26-Fs`、`W/0.08/Space-Bunny`、`O/0.09/Claude-Haiku-55`
+- 经 7871 实测：上述新 ID 均 200（Qoder 的 `Q/0.09/GLM-53-Fs`、
+  `Q/0.09/MiniMax-M31-Fs` 也 200）
+- 旧 ID 仍可路由：`OC : Qwen3.8-FS : 0.09`、`WB : DeepSeek-V4.1-FS : 0.03` → 200
+- `Q/0.09/DeepSeek-4-Fs` 90s 超时：Qoder 免费 DeepSeek-Flash 上游排队（已知问题），
+  非命名问题；同渠道其他模型正常
+- 备份：`provider_config.json.bak-alias-20261023-190833-508200`
+
+## 待解决 / 注意事项
+- 旧空格 ID 只在 legacy 里，等 ZCode 会话都切换后可以自然淘汰；暂时不要清
+- `Q/…/DeepSeek-4-Fs` 免费排队严重，交互优先用 `Q/0.09/GLM-53-Fs` 或
+  `Q/0.09/MiniMax-M31-Fs`
+- 榜单候选文件里的 `display` 会随 alias map 重新生成；`channel/upstream` 不受影响
+
+## 状态: 已完成

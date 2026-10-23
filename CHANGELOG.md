@@ -17,6 +17,39 @@
 
 ## [未发布]
 
+### 显示名压缩为 `W/0.03/DeepSeek-41-Fs`（2026-10-23）
+
+- 模型 ID 从 `渠道 : 型号 : 积分` 改为 `单字母/积分/紧凑型号`：`W` WorkBuddy、
+  `O` OpenCode-Go、`Q` Qoder；型号去掉版本里的 `V` 和点、`Flash` 缩写为 `Fs`
+  （`DeepSeek-41-Fs`、`Qwen-38-Fs`、`GLM-53-Fs`、`MiniMax-M31-Fs`、`MiMo-26-Fs`、
+  `Claude-Haiku-55`）。
+- `model_alias.py` 新增 `CHANNEL_LETTER`，`ABBR` 全部换成紧凑名；alias map 的
+  `legacy` 保留旧空格 ID，老会话仍可路由。
+- 重新生成四组：仍是 36 个模型，主力 7 / 免费 5 / 低耗 13 / 高耗 11；
+  新 ID 经 7871 实测 200，旧 ID 也仍 200。
+- 文档/记忆中的示例同步为新格式。
+
+### 主力按外部榜单自动扩充（2026-10-23）
+
+- 新增 `tools/arena_leaderboard.py`：拉 ArenaGalleri 实时榜
+  （`https://api.arenaofbias.icu/api/leaderboard`，10 分钟刷新），以
+  `deepseek-v4.1-flash` 为基准，筛出「分数 ≥95%、积分 ≤0.11、非临时、≥50 局、
+  积分 >0」的**已配置模型**，写 `~/.zcode/v2/arena-main.json`。
+- `tools/model_alias.py` 新增 `--arena-main` / `--no-arena`：默认读候选文件，
+  按 `(channel, upstream)` 扩充主力；alias map 条目增加 `main_reason`
+  （`manual` / `arena`）。顺手修复 `--probe-file` 分支里 `transient_kept` 未初始化、
+  一旦命中「改名未探测」就 `NameError` 的隐患。
+- 2026-10-23 首次扩充：主力 4 → **7**，新增
+  `OC : MiMo-V2.6-FS : 0.06`（1112 分，基准 101.1%）、
+  `WB : Space-Bunny : 0.08`（1075，97.7%）、
+  `OC : Claude-Haiku-5.5 : 0.09`（1064，96.7%）；三个模型经 7871 实测 chat 200。
+  免费模型（0 积分）仍留在免费组；榜单掉出窗口会自动退回原组。
+- 榜单接口失败时用本地缓存；候选集合或规则没变时不重写配置，分数波动不会引起
+  模型 ID 抖动。
+- 文档：`BENCHMARKS.md` 新增 §8（接口、口径、候选表、名字映射边界与回退），
+  `MODEL-ALIAS.md` §4.2 / §6 / §7、`TOOLS.md`、`MAINTENANCE.md` §2.1、`README.md`
+  同步更新。
+
 ### 同步脚本：免费 `-f` 模型漏收修复 + 「跑不通即清」策略（2026-10-23）
 
 - 修复 `workbuddy/workbuddy_zcode_sync.py` 的 `rate_of()` —— 原先只重新解析原始
@@ -31,6 +64,64 @@
   口径：跑不通即清、复通即加回（WorkBuddy 侧本就按 blocked/unavailable 移除，未改）
 - 文档对齐：`MAINTENANCE.md` §7 待办 6/7 标记已修并新增第 8 条；
   `TROUBLESHOOTING.md` §13 对应三行改为「自动处理 / 已修」；`TOOLS.md` 同步两处脚本说明
+
+### 统一模型命名：四组 + alias map + 协议桥（2026-10-23）
+
+- ZCode provider 统一为四组：**主力 / 免费 / 低耗 / 高耗**；`备用` 按积分并入高耗，
+  `对话` / `响应` 两个协议组折入四组。
+- 模型 ID 改为 `渠道 : 型号 : 积分`（`WB : DeepSeek-V4.1-FS : 0.11`、`OC : DeepSeek-V4.1-FS : 0.11`、
+  `QD : GLM-5.3 : 0.69`）；价格写进显示名，调价时靠 alias map 的 legacy 兼容旧会话。
+- 显示名改为可读大小写并去掉 `-f` / `-sg` / `-free`（`DeepSeek-V4.1-FS`、`GLM-5.3-FS`、
+  `HY4-Preview`），价格后缀不再带 `X`。
+- `model_alias.py --slot auto|peak|offpeak`：Qoder 按 `price_factor_peak/valley` 与
+  22:00–08:00 窗口取价；WorkBuddy 用时段刷新后的 `eff_rate`。08:00 / 22:00 各重写一次
+  即可让倍率随早晚变化；模型 ID 变化由 legacy map 兼容旧会话。
+- WorkBuddy 的 CN/GB 合并成一个 `WB` 口子：GB 优先、GB 全不可用时路由自动回退 CN；
+  同价 CN/GB 对合并，GB 免费/付费价档保留；显示名去掉地区并改成
+  `WB : DeepSeek-V4.1-FS : 0.03`（冒号两侧有空格）。
+- OpenCode-Go 的 DeepSeek V4.1 Flash / V4 Pro 加入峰谷价：峰时 UTC 周一至周五
+  01:00–04:00、06:00–10:00，其余时间谷价；V4.1 Flash 峰 0.22 / 谷 0.11，
+  V4 Pro 峰 0.77 / 谷 0.39。
+- `Qwen3.8-Flash` 提进主力：榜单 #4 总分 372.95、积分 0.09；DeepSeek V4.1 Flash
+  #11 是 342.40 / 0.11，智力与价格都更优。它走 messages 桥接，已实测 chat 200。
+- 积分换算：WorkBuddy `eff_rate` 原样；OpenCode-Go 以 `deepseek-v4.1-flash`
+  $0.15 入 / $0.60 出 ↔ 0.11（1 积分 = $3.409/M，1:1 混合）；Qoder `price_factor × 0.86`
+  （同名模型比值中位数）。
+- 新增 `tools/model_alias.py`：生成四组 + `~/.zcode/v2/model-alias-map.json`；
+  `--probe-file` 只保留 ok（或曾 ok 的瞬时限流）。
+- 新增 `tools/model_probe.py`：用 ZCode 真实 body（含 provider 的 `optionSpecs`
+  覆盖）探测四组，经 7871，桥接模型也覆盖。
+- 新增 `tools/protocol_bridge.js`：chat ↔ Anthropic Messages / OpenAI Responses，
+  非流式上游 + 合成 chat SSE，支持文本、思考与工具调用。
+- `tools/unified-router.js` 优先按 alias map 还原上游，旧 `cn:`/`global:`/`qoder:`
+  前缀保留为 legacy 回退；`/health` 增加 alias 条数。
+- `go_model_sync.py` 把 `WB:`/`OC:`/`QD:` 视作非 Go 模型跳过，避免体检误删。
+- 当前 43 个模型 / 4 个 provider；37 个 ok，5 个 WB GB 模型因账号池冷却暂为瞬时限流。
+- 旧的三个 sync / 两个 probe 降级为数据采集与兼容；`model_alias.py` 是唯一最终写入者。
+
+
+
+- 新增 `qoder/` 适配器：qoder2api-hub（MIT）clone 到 `qoder/gateway/`（整目录
+  gitignore），默认 `127.0.0.1:8790`；API key 与面板密码持久化在
+  `accounts/settings.json`，脚本从 git-ignored 的 `qoder/.env.local` 读 `QD_API_KEY`
+- Qoder CN 账号通过 OAuth 设备授权入库；`_install_umid.py` 装好签到所需的 UMID；
+  启动巡检签到 +100 Credits
+- 新增 `qoder/qoder_zcode_sync.py`：拉 `/v1/models` → 排除 Auto/Fast 别名 →
+  按 `price_factor` 升序 → 写独立 `qoder` provider（默认 `--max-price 0.8`）；
+  `--probe-file` 只保留探测 `ok` 的模型
+- 新增 `qoder/qoder_probe_zcode.py`：用 ZCode 真实 body 探测，7 个模型 200；
+  `Qwen3.8-Flash` 因上游 10605 排队（≈19k，p3）暂不收录，复通后自动加回；
+  结果带 `ever_ok`，排队/超时不误杀曾 200 的模型（免费 `DeepSeek-Flash` 排队时 64s 后 200，也可能 90s+ 后 502）
+- （`--separate` 旧模式）独立的 `qoder` provider 排在 `opencode-go-chat-free`
+  之后；7 个模型未配 `optionSpecs` 覆写（原生四件套全通）
+- 默认改为**合并模式**（2026-10-23 同日调整）：模型加 `qoder:` 前缀并入免费
+  （price 0）/ 低耗（≤0.2）/ 高耗（>0.2）三个 chat 组；7871 路由剥前缀后转 8790；
+  不再创建独立 `qoder` provider，provider 列表仍是 7 个。`--separate` 保留旧模式
+- 兼容性：`go_model_sync.py` 把 `qoder:` 视作非 Go 模型跳过体检/清理；
+  `workbuddy_zcode_sync.py` 的合并逻辑只清 `cn:`/`global:`，不会动 `qoder:`
+- 文档：新增 `docs/QODER.md`，更新 `MODEL-PROVIDERS.md` §4.9/§5.2、`TOOLS.md`、
+  `SECRETS.md`、`TROUBLESHOOTING.md` §14、`MAINTENANCE.md` §8.1、`README.md`、`NOTICE`
+- 边界：WorkBuddy2API 与 OpenCode-Go 不动；Agent2API 评估后暂不采用
 
 > 未发版，版本号不动（[docs/VERSIONING.md](docs/VERSIONING.md) §5）。
 

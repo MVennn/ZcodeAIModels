@@ -1,5 +1,5 @@
-> **一句话**：本仓库是驱动几个第三方服务与组件（WorkBuddy2API Panel、OpenCode Go、
-> ZCode、Python、Node.js）的工具；`third-party/` 下**随仓分发**少量上游文件
+> **一句话**：本仓库是驱动几个第三方服务与组件（WorkBuddy2API Panel、qoder2api-hub、
+> OpenCode Go、ZCode、Python、Node.js）的工具；`third-party/` 下**随仓分发**少量上游文件
 > （ZCode 的规则数据与规则引擎源码、ZCodium 的规则切片），下面逐个说明来源、许可与使用理由。
 
 zcode-ai-models
@@ -9,9 +9,10 @@ This product is licensed under the MIT License. See the LICENSE file in the
 repository root for the full text.
 
 The OpenCode-Go API key used by the probe scripts is **not** stored in this
-repository: it is read from the `OPENCODE_GO_KEY` environment variable, and the
-WorkBuddy gateway key from `WB_GATEWAY_KEY`. Where each credential comes from
-is documented in docs/SECRETS.md (locations only, never values).
+repository: it is read from the `OPENCODE_GO_KEY` environment variable, the
+WorkBuddy gateway key from `WB_GATEWAY_KEY`, and the Qoder gateway key from
+`QD_API_KEY` (or the git-ignored qoder/.env.local). Where each credential comes
+from is documented in docs/SECRETS.md (locations only, never values).
 
 ==============================================================================
 Third-party services and components
@@ -33,6 +34,24 @@ repository.
   workbuddy/gateway/ (with its own .git), but that directory is git-ignored
   and is not part of the published tree. The MIT license text of the
   upstream project is reproduced below for reference.
+
+- qoder2api-hub (an OpenAI/Anthropic-compatible gateway for Qoder)
+  https://github.com/shuishuipingan/qoder2api-hub
+  Licensed under the MIT License.
+  Why used: it exposes the user's own Qoder account (CN / Intl) as an
+  OpenAI-compatible HTTP endpoint on 127.0.0.1:8790, which lets the Qoder
+  models be used from the ZCode client. This repository only sends HTTP
+  requests to it and ships the sync/probe scripts; the gateway source is NOT
+  redistributed. A local working clone may live at qoder/gateway/ (with its
+  own .git), but that directory is git-ignored and is not part of the
+  published tree. See the upstream repository for the MIT license text.
+
+- Qoder (qoder.com.cn / qoder.com)
+  A commercial AI coding service. Not open source; it is governed by the
+  Qoder terms of service, not by an open-source license.
+  Why used: it provides the model account that qoder2api-hub exposes. The
+  gateway reuses the user's own OAuth device-flow session; no Qoder account,
+  token or quota is distributed with this repository.
 
 - OpenCode Zen / Go (opencode.ai)
   https://opencode.ai/

@@ -322,9 +322,9 @@ def probe(model, protocol, thinking=True):
     return st, kind
 
 
-def is_workbuddy_id(model):
-    """统一路由把 cn:/global: 开头的模型转给 WorkBuddy，不属于 Go 套餐。"""
-    return model.startswith(("cn:", "global:"))
+def is_non_go_id(model):
+    """统一路由把 cn:/global:/qoder:/WB:/OC:/QD: 开头的模型转给对应上游，不属于 Go 套餐。"""
+    return model.upper().startswith(("CN:", "GLOBAL:", "QODER:", "WB:", "OC:", "QD:"))
 
 
 def upstream_message(raw):
@@ -651,7 +651,7 @@ def main():
         wb_skipped = 0
         verb = "移除" if (args.apply and not args.probe_only) else "将移除"
         for m, pid in sorted(conf.items()):
-            if is_workbuddy_id(m):
+            if is_non_go_id(m):
                 wb_skipped += 1
                 continue
             proto = ("responses" if "responses" in pid else
@@ -668,7 +668,7 @@ def main():
             elif kind != "ok":
                 log("  ⚠ %s 探测异常: %s (HTTP %s)" % (m, kind, st))
         if wb_skipped:
-            log("  · 跳过 %d 个 cn:/global: 开头的 WorkBuddy 模型（由统一路由处理，不属于 Go 套餐）" % wb_skipped)
+            log("  · 跳过 %d 个 cn:/global:/qoder: 开头的非 Go 模型（由统一路由处理，不属于 Go 套餐）" % wb_skipped)
         if not removed:
             log("  无需移除")
         removed_ids = {m for m, _ in removed}

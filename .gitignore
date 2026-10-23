@@ -78,3 +78,9 @@ desktop.ini
 # 本机私有凭据回退文件
 .env.local
 .opencode-key
+
+# qoder2api-hub clone (own .git, credentials live inside)
+/qoder/gateway/
+
+# ---- Qoder 活数据（探测结果，可重跑再生）----
+/qoder/qoder_probe.json

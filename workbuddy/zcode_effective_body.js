@@ -173,6 +173,39 @@ function evalMap(expr, level, maxTokens) {
   return out;
 }
 
+// ── 5b. 用户 providerModelRules（provider_config.json）──────────────
+// The builtin file only contains ZCode's shipped rules. Per-model overrides
+// written by the sync scripts live in provider_config.json and are applied
+// last by the engine, so append them after the builtin rules.
+function loadUserProviderRules() {
+  const file = process.env.ZCODE_PERSONAL_PROVIDER_CONFIG_FILE ||
+    path.join(os.homedir(), '.zcode', 'v2', 'provider_config.json');
+  try {
+    const cfg = JSON.parse(fs.readFileSync(file, 'utf8'));
+    const modelConfig = (cfg.config && cfg.config.modelConfigRules) || {};
+    const out = [];
+    for (const entry of modelConfig.providerModelRules || []) {
+      out.push({
+        type: 'provider-model',
+        providerId: entry.providerId,
+        modelId: entry.modelId,
+        config: entry.config || {},
+      });
+    }
+    for (const entry of modelConfig.manualProviderModelRules || []) {
+      out.push({
+        type: 'manual-provider-model',
+        providerId: entry.providerId,
+        modelId: entry.modelId,
+        config: entry.config || {},
+      });
+    }
+    return out;
+  } catch {
+    return [];
+  }
+}
+
 // ── 6. 主流程 ───────────────────────────────────────────────────────────
 function parseArgs(argv) {
   const opts = { ids: [] };
@@ -205,7 +238,7 @@ const MAX_TOKENS = opts.maxTokens || Number(process.env.ZCODE_MAX_OUTPUT_TOKENS)
 
 const { path: builtinPath, from: builtinFrom } = findBuiltin();
 const raw = JSON.parse(fs.readFileSync(builtinPath, 'utf8'));
-const rules = flattenRules(raw.config.modelConfigRules);
+const rules = [...flattenRules(raw.config.modelConfigRules), ...loadUserProviderRules()];
 if (opts.verbose) {
   console.error(`builtin: ${builtinPath}  (${builtinFrom})`);
   console.error(`规则总数: ${rules.length}  apiType=${API_TYPE}  baseUrl=${BASE_URL ?? '(无)'}`);
@@ -221,11 +254,14 @@ function pickLevel(values) {
 
 const result = {};
 for (const id of opts.ids) {
+  const providerId = opts.providerId ||
+    (rules.find((rule) => rule.modelId === id &&
+      (rule.type === 'provider-model' || rule.type === 'manual-provider-model')) || {}).providerId;
   const { config, matched } = resolveConfig(rules, {
     modelId: id,
     apiType: API_TYPE,
     baseUrl: BASE_URL,
-    providerId: opts.providerId,
+    providerId,
     templateId: opts.templateId,
   });
   const spec = config?.optionSpecs?.reasoningLevel || {};

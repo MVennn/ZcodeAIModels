@@ -1,8 +1,8 @@
-# 外部跑分参考：AI 能力专项测试
+# 外部跑分参考：AI 能力专项测试 + ArenaGalleri
 
-> **一句话**：第三方公开榜「AI 能力专项测试」（7 题 · 4 方向 · 总分 400）的入口、口径与
-> 2026-09-11 快照，给 [MODEL-PROVIDERS.md](MODEL-PROVIDERS.md) 的成本档补一个「质量」维度。
-> **数据不是本仓实测**，引用时必须带来源与日期。
+> **一句话**：两套第三方公开榜的入口、口径与快照 —— 「AI 能力专项测试」
+> （7 题 · 4 方向 · 总分 400，2026-09-11 快照）和 ArenaGalleri 实时对局榜
+> （每 10 分钟更新，用于自动扩充主力）；**数据不是本仓实测**，引用必须带来源与日期。
 
 ---
 
@@ -136,7 +136,7 @@
 |---|---|---:|---:|---|
 | 主力（OpenCode-Go） | `deepseek-v4.1-flash` | #11 | 342.40 | `dsh` |
 | 低耗（OpenCode-Go） | `glm-5.3-flash` | #12 | 334.15 | `zcode` |
-| 中文（OpenCode-Go） | `qwen3.8-flash` | #4 | 372.95 | `qoder` |
+| 主力（OpenCode-Go，messages 桥接） | `qwen3.8-flash` | #4 | 372.95 | `qoder` |
 | 长上下文（OpenCode-Go） | `minimax-m3` | #25 | 279.78 | `workbuddy` |
 | 后台批量（OpenCode-Go） | `hy3` | #28 | 237.47 | `workbuddy` |
 | WorkBuddy 网关（高代 / 免代） | `hy4-preview` | #7 | 350.71 | `workbuddy` |
@@ -158,7 +158,7 @@
 
 | 模型 | 最强方向 | 分数 | 次强 | 最弱 | 本仓成本档 |
 |---|---|---:|---|---|---|
-| `qwen3.8-flash` | 文字 | 96.19 | 后端 94.00 | 前端 91.05 | 中文 / messages |
+| `qwen3.8-flash` | 文字 | 96.19 | 后端 94.00 | 前端 91.05 | 主力 / messages |
 | `deepseek-v4.1-flash` | 前端 | 89.55 | 文字 87.77 | 后端 79.50 | 主力 / chat |
 | `glm-5.3-flash` | 前端 | 85.68 | 文字 84.45 | 后端 81.00 | 低耗 / chat |
 | `hy4-preview` | 知识 | 94.09 | 前端 93.81 | 后端 79.00 | WorkBuddy 高代 / 免代 |
@@ -174,10 +174,11 @@
 - **平台差异是真实存在的**。同一个 `glm-5.3`，`zcode` 351.01、`qoder` 345.50，
   差 5.5 分；`deepseek-v4` 系列里 `DSV4F0731` 311.02、`DSV4F-VE-OCGO` 245.70，
   差距更大。不要把「模型名」当成「跑分」。
-- **榜单把 `qwen3.8-flash` 推成全能型**：四项都在本仓已配模型的前二
-  （文字 96.19、后端 94.00、知识 91.71、前端 91.05）。但它在 ZCode 侧走
-  `opencode-go-messages`，不是主力 chat；要把它提成默认，先验证协议与工具调用，
-  不能只按分数搬。
+- **`qwen3.8-flash` 已进主力（2026-10-23）**：四项都在本仓已配模型的前二
+  （文字 96.19、后端 94.00、知识 91.71、前端 91.05）。榜单总分 372.95、
+  积分 0.09；DeepSeek V4.1 Flash 是 342.40 / 0.11，智力和价格都更优。
+  它在 ZCode 侧走 `opencode-go-messages`，已通过 `protocol_bridge` 的
+  chat 入口实测 200，协议与工具调用可用。
 - `deepseek-v4.1-flash` 没有单项第一，但四项都进前三，是「无短板」型；
   本仓选它当主力还因为额度最大（$80 / 133M）。榜单分数解释不了主力选择，
   成本与稳定性才是主因。
@@ -269,6 +270,9 @@ WorkBuddy 倍率 **0.11**。
 - **统一模式下备用档是 `opencode-go-chat-backup`**：同时装 OpenCode 的 `minimax-m3`
   与 WorkBuddy 的 `cn:deepseek-v4-flash`、`cn:minimax-m3`。`workbuddy-backup` 只在
   `--separate` 模式出现。
+- **这里的「未上榜」已被第二套榜补上**：`mimo-v2.6-flash`、`space-bunny`、
+  `claude-haiku-5-5` 等在 ArenaGalleri 有分数，2026-10-23 按 §8 的规则进了主力。
+  两套榜的量纲、effort 与平台不同，**不要直接比分数**，各自的基准只在本篇内有效。
 
 ---
 
@@ -310,3 +314,83 @@ WorkBuddy 倍率 **0.11**。
   需要细节时直接看 board-02 / board-03。
 - 站点若改口径（题目数、方向权重、总分上限），**先改本篇 §2**，再改 §3 / §4 的表 ——
   否则快照与口径会对不上。
+
+---
+
+## 8. ArenaGalleri 实时榜（主力扩充口径）
+
+> 2026-10-23 起，主力不再只靠人工挑选：`tools/arena_leaderboard.py` 重拉这个榜，
+> 按「DeepSeek 基准 + 价格上限」自动扩充，并写 `~/.zcode/v2/arena-main.json`
+> 给 `tools/model_alias.py` 消费。
+
+### 8.1 入口与数据
+
+| 项 | 值 |
+|---|---|
+| 页面 | <https://gallery.arenaofbias.icu/#/leaderboard> |
+| 数据接口 | <https://api.arenaofbias.icu/api/leaderboard> |
+| 更新节奏 | 响应里 `refreshIntervalSeconds = 600`（10 分钟） |
+| 规模（2026-10-23 拉取） | 242 行、94 题、822 位投票者；`rows` 每行是「模型 × effort」 |
+| 行字段 | `rank / model / vendor / effort / score / games / winRate / provisional` 等 |
+
+页面是 SPA，直接抓 HTML 拿不到数据；数据在接口里。`provisional=true` 是局数不足的
+临时名次，默认不参与比较。
+
+### 8.2 选型规则
+
+基准固定为 **`deepseek-v4.1-flash`**，取它在榜上**非临时、≥50 局**的最高分行
+（2026-10-23 是 `XHigh`，1100 分，#47）。
+
+一个模型进主力需要同时满足：
+
+1. 分数 ≥ 基准 × `--min-ratio`（默认 **95%**）；
+2. 积分 ≤ `--max-price`（默认 **0.11**，即 DeepSeek 的谷价）；
+3. 该模型在榜上非临时名次，且 ≥ `--min-games`（默认 **50**）局；
+4. 积分 > 0（0 积分模型留在「免费」组，否则免费组会被抽空；`--allow-free` 可放开）。
+
+价格按**谷价/eff/valley** 判断（`price_basis = offpeak`），所以主力成员不会因为
+峰时切价而来回跳组；显示名里的积分仍由 `model_alias.py --slot auto` 决定。
+
+### 8.3 2026-10-23 首次自动扩充
+
+| 模型（显示名） | 积分 | 榜上分数 | 相对基准 | 名次 | 来源 |
+|---|---:|---:|---:|---:|---|
+| `O/0.06/MiMo-26-Fs` | 0.06 | 1112 | 101.1% | #42 | `mimo-v2.6-flash` · Max · 59 局 |
+| `W/0.08/Space-Bunny` | 0.08 | 1075 | 97.7% | #58 | `space-bunny` · High · 153 局 |
+| `O/0.09/Claude-Haiku-55` | 0.09 | 1064 | 96.7% | #66 | `claude-haiku-5.5` · High · 72 局 |
+
+主力从 4 个扩到 **7 个**（另 4 个是人工 `MAIN_IDS`：`W/0.03/DeepSeek-41-Fs`、
+`O/0.11/DeepSeek-41-Fs`、`O/0.09/Qwen-38-Fs`、`O/0.19/MiMo-26-Pro`）。
+三个新模型都经 7871 实测 chat 200。
+`GLM-53-Fs` 三渠道只有 90.2%，`HY4-Preview` 免费档 0 积分、付费档 0.29 超价，
+都没进。
+
+### 8.4 名字映射的边界
+
+榜单名与上游 id 用「只留字母数字」归一后比较（`claude-haiku-5.5` ↔
+`claude-haiku-5-5` 能对上）。这三个后缀视为同模型：
+
+- `-sg`（地区变体）、`-contributor`（数据贡献档）、`hy4-preview-f` 的 `-f`（免费档）。
+
+**不要**把 `-next`、`-1017`、`-max` 当同模型。当前对不上的有：
+
+- `qwen3.8-flash`：榜上只有 `qwen3.8-flash-next`，不是同一个模型；它的主力资格
+  来自 §5 的另一套榜（总分 372.95）。
+- `minimax-m3.1-flash`：榜上只有 `minimax-m3.1`，无法确认是不是 Flash 档，暂不匹配。
+
+对不上的模型保持人工分组，不会被自动降级。
+
+### 8.5 刷新与回退
+
+```bash
+python tools/arena_leaderboard.py --refresh          # 只看候选，不落盘
+python tools/arena_leaderboard.py --refresh --write  # 写 arena-main.json
+python tools/arena_leaderboard.py --refresh --apply  # 写候选并重写四组
+python tools/arena_leaderboard.py --status           # 看已保存的候选
+```
+
+- 榜单每 10 分钟更新，但**只有候选集合或规则变化**才会触发 `model_alias.py`；
+  分数小幅波动不会反复改配置。
+- 掉出窗口的模型自动退回原积分组；这是「扩充」也是「校准」。
+- 接口挂了用本地缓存（`~/.zcode/v2/arena-leaderboard.json`），不会把主力清空。
+- 想完全回到人工挑选：`model_alias.py --no-arena --apply`，或删掉 `arena-main.json`。

@@ -4,19 +4,20 @@
 > 本篇**只写位置，不写值**。
 >
 > **通用规则**：**任何**供应商的凭据都**只走环境变量** —— 读环境变量、缺失就明确报错退出。
-> 本仓只列两个示例供应商（OpenCode-Go / WorkBuddy）的具体变量名；接别的供应商照同一模式加一行即可。
+> 本仓列三个示例供应商（OpenCode-Go / WorkBuddy / Qoder）的具体变量名；接别的供应商照同一模式加一行即可。
 
 ---
 
 ## 1. 为什么单独立一篇
 
-本仓的两个示例凭据（OpenCode-Go API key、WorkBuddy 网关 key）原先**明文写在探测脚本里**，
+本仓的三个示例凭据（OpenCode-Go API key、WorkBuddy 网关 key、Qoder 网关 key）原先**明文写在探测脚本里**，
 会随仓库一起走；拆仓时已改为从**环境变量**读（见 §2）。
 但「改成环境变量」只解决了一半 —— 还剩下这些容易被忽略的敞口：
 
 - **ZCode 的 `provider_config.json` 本身就带 `apiKey`** —— 它是本机文件，不该入库；
 - **脚本自己产生的 `.bak-*` 备份**里同样带 key；
-- **`workbuddy/cache/` 与 `workbuddy/logs/` 是活数据缓存**（含账号池探测结果），随机器走，不随仓库走。
+- **`workbuddy/cache/` 与 `workbuddy/logs/` 是活数据缓存**（含账号池探测结果），随机器走，不随仓库走；
+- **`qoder/gateway/accounts/` 是 Qoder 的 OAuth token 与面板/Key 设置**，随机器走，不随仓库走。
 
 统一列一次位置，比到处找强；也比「顺手把值删掉」安全 —— **值该轮换，而不是该被藏起来**。
 
@@ -30,6 +31,9 @@
 | **WorkBuddy 网关 key** | 本机 `wb2api` 网关自己的 `api_key`（网关面板 / 配置里） | 2 个 WorkBuddy 脚本从环境变量 **`WB_GATEWAY_KEY`** 读 | **不入库**。网关换账号池时一并轮换 |
 | **统一路由的上游 key** | 不新增凭据文件：OpenCode key 从 `provider_config.json` / `OPENCODE_GO_KEY` 读，WorkBuddy key 从 `workbuddy/gateway/config.json` / `WB_GATEWAY_KEY` 读 | `tools/unified-router.js` 启动时读取；只监听 `127.0.0.1`；`/health` 只返回 key 是否存在，不返回值 | **不入库**。轮换上游 key 后重启路由 |
 | **网关账号池凭据**（`auths/`，4 个号） | 本机 `workbuddy/gateway/auths/`（上游 clone 的运行目录）；`config.json` 里还有网关自己的 `api_key` | 整个 `workbuddy/gateway/` 被 `.gitignore` 排除；仓库里只出现 `WB_GATEWAY_KEY` 这个变量名 | **不入库**。换账号池时整目录一起换 |
+| **Qoder API key**（`qd-…`） | qoder2api-hub 的 `qoder/gateway/accounts/settings.json`；本地脚本与 7871 路由从 `qoder/.env.local` 的 `QD_API_KEY` 读 | `qoder/qoder_zcode_sync.py` / `qoder_probe_zcode.py` 只从环境变量或本地 `.env.local` 读；合并模式**不**把 key 写进 provider_config（separate 模式才写） | **不入库**。轮换后同步改 `settings.json` 与 `.env.local` |
+| **Qoder 面板密码** | `qoder/gateway/accounts/settings.json` 的 PBKDF2 摘要；初始值来自 `qoder/.env.local` 的 `QD_PANEL_PASSWORD` | 本仓不出现值；`.env.local` 与整个 clone 都 gitignore | **不入库**。看板「设置」可改 |
+| **Qoder 账号凭据**（OAuth device token / refresh token） | `qoder/gateway/accounts/<uid>.json` | 整个 `qoder/gateway/` 被 `.gitignore` 排除 | **不入库**。换账号时整目录操作 |
 | **其它供应商的凭据**（你自己接的） | 该服务商自己的控制台 / 账号设置 | **一律走环境变量**，不落进源码、文档、缓存、日志。命名建议 `<供应商>_KEY` / `<供应商>_BASE`，与 §3.5 的表同格式 | **不入库**。加变量时同步补 §3.5 的表 |
 | **ZCode provider 配置**（含各 provider 的 `apiKey`） | 本机 `~/.zcode/v2/provider_config.json` | 不在本仓；`--apply` 产生的 `provider_config.json.bak-*` 备份同样含 key，已被 `.gitignore` 排除 | **不入库**。回退步骤见 [MAINTENANCE.md](MAINTENANCE.md) §4 |
 | **网关模型目录快照** | 网关 `/panel/api/models` | `evidence/wb_panel_models.json` —— 目录结构证据，**不含凭据**，随仓库分发 | 可入库 |
@@ -111,6 +115,22 @@ export WB_GATEWAY_KEY='<网关 api_key>'
 | `GO_SYNC_REPORT_DIR` | `opencode-go/ops/go_model_sync.py` | 本仓 `evidence/` | 用默认值 |
 | `ZCODE_BUILTIN` / `ZCODE_API_TYPE` | `workbuddy/zcode_effective_body.js` | 见脚本 | 用默认值 —— **不是凭据**，是协议开关 |
 | `OPENCODE_SESSION` | `opencode-go/ops/opencode-header-proxy.js` | `local-client-session` | 用默认值 —— **不是凭据**，是会话标识 |
+| **`QD_API_KEY`** | `qoder/qoder_zcode_sync.py`、`qoder/qoder_probe_zcode.py`（缺省回退 `qoder/.env.local`） | 无 | 明确报错退出（不静默） |
+| **`QD_GATEWAY_BASE`** | 同上 | `http://127.0.0.1:8790/v1` | 用默认值 |
+| `QD_PANEL_PASSWORD` | 首次启动 qoder2api-hub 时用；之后以 `accounts/settings.json` 的摘要为准 | 无 | 用已持久化的面板密码 |
+
+### 3.6 Qoder（qoder2api-hub）
+
+- **环境变量**：`QD_API_KEY`（必填）、`QD_GATEWAY_BASE`（默认 `http://127.0.0.1:8790/v1`）。
+- **谁在读**：`qoder/qoder_zcode_sync.py`、`qoder/qoder_probe_zcode.py`、
+  `tools/unified-router.js`（合并模式下 7871 用它给 Qoder 上游鉴权）。
+- **本机明文落点**：`qoder/.env.local`（`QD_API_KEY` / `QD_PANEL_PASSWORD`），
+  已被 `.gitignore` 排除；整个 `qoder/gateway/` clone 也被排除。
+- **网关侧持久化**：API Key 与面板密码的摘要在
+  `qoder/gateway/accounts/settings.json`；OAuth 账号在 `accounts/<uid>.json`。
+- **合并模式**：key 只在 `.env.local` / 路由里；`--separate` 才写进
+  provider_config.json 的 `qoder` provider。
+- **缺失时**：脚本明确报错退出；路由缺 key 时 `qoder:` 请求返回 502。
 
 > **接新供应商**：照这张表的格式加自己的行 ——
 > `<供应商>_KEY`（必填、无默认、缺失即报错）、`<供应商>_BASE`（有默认地址）、
@@ -125,10 +145,14 @@ export WB_GATEWAY_KEY='<网关 api_key>'
 | `workbuddy/cache/` | 网关倍率快照（`wb_pricing.json`）、探测结果缓存（`wb_zcode_probe.json`） | 活数据，含账号池相关信息；且需要定期刷新（见 [MAINTENANCE.md](MAINTENANCE.md) §1、§3） |
 | `workbuddy/logs/` | 探测日志（`wb_zcode_probe.log`） | 一次性日志 |
 | `opencode-go/probe/results/<日期>/` | 探测原始结果 | 体积大、可重跑再生 |
+| `qoder/gateway/accounts/` | Qoder OAuth token、面板/Key 设置、签到状态 | 含 token；整个 clone 被 `.gitignore` 排除 |
+| `qoder/qoder_probe.json` | Qoder 模型探测结果 | 活数据，可重跑再生 |
+| `qoder/.env.local` | 脚本用的 API key / 面板密码 | 明文凭据 |
 | `provider_config.json.bak-*` | 脚本 `--apply` 前自动备份 | **含 apiKey** |
 
 `.gitignore` 里对应的排除项：`/workbuddy/cache/*.json`、`/workbuddy/logs/`、
-`/workbuddy/cache/*.log`、`/opencode-go/probe/results/`、`*.bak-*`。
+`/workbuddy/cache/*.log`、`/opencode-go/probe/results/`、`/qoder/gateway/`、
+`/qoder/qoder_probe.json`、`*.env.local`、`*.bak-*`。
 
 > **结论随仓库走，原始快照放 `evidence/`** —— `evidence/` 下的模型目录快照与
 > 自动收录报告不含凭据，可以放心分发。
@@ -139,7 +163,7 @@ export WB_GATEWAY_KEY='<网关 api_key>'
 
 ```sh
 # 1) 确认没有把凭据文件带进去
-git ls-files | grep -E 'provider_config\.json|\.bak-|workbuddy/cache/|\.env$|\.key$'
+git ls-files | grep -E 'provider_config\.json|\.bak-|workbuddy/cache/|qoder/gateway/|qoder/qoder_probe\.json|\.env$|\.key$'
 
 # 2) 确认忽略规则生效
 git status --ignored --short | grep -E '^!!' | head -20
@@ -154,6 +178,7 @@ git diff --cached | grep -nE 'oc_sk_|apiKey|api_key|Bearer [A-Za-z0-9]'
       `process.env.OPENCODE_GO_KEY`）；
 - [ ] `provider_config.json` 及其 `.bak-*` 备份**不在** `git ls-files` 里；
 - [ ] `workbuddy/cache/`、`workbuddy/logs/`、`opencode-go/probe/results/` 不在库里；
+- [ ] `qoder/gateway/`、`qoder/.env.local`、`qoder/qoder_probe.json` 不在库里；
 - [ ] `evidence/` 下的文件不含 `apiKey` / `oc_sk_…`；
 - [ ] 轮换过 `OPENCODE_GO_KEY` 与网关 key 的话，**重新 export** 一遍；
       换了 key 之后旧值就失效，不必再从仓库里清理。
@@ -187,6 +212,7 @@ git diff --cached | grep -nE 'oc_sk_|apiKey|api_key|Bearer [A-Za-z0-9]'
 | `--apply` 的备份与回退 | [MAINTENANCE.md](MAINTENANCE.md) §4 |
 | 鉴权失败（401）与协议用错（400）怎么区分 | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) §2、§4 |
 | provider 分组、协议类型、参数矩阵 | [MODEL-PROVIDERS.md](MODEL-PROVIDERS.md) |
+| Qoder 的端口、账号、同步与探测 | [QODER.md](QODER.md) |
 | 忽略规则 | 仓库根 `.gitignore` |
 | 许可证 | 仓库根 [LICENSE](../LICENSE) |
 

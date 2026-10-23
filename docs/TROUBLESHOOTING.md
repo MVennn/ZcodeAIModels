@@ -437,12 +437,51 @@ python -c "import json,pathlib,urllib.request,urllib.error; ..."   # 复刻探�
 
 ---
 
+## 14. Qoder（qoder2api-hub，8790）【实例 C】
+
+先分三层确认：服务活着、账号可用、模型写进 ZCode。
+
+```bash
+curl -s http://127.0.0.1:8790/ping
+curl -s http://127.0.0.1:8790/health        # accounts / api_key_required / risk.queue
+python qoder/qoder_zcode_sync.py            # dry run：模型清单与 provider 计划
+```
+
+| 现象 | 怎么查 | 原因 / 解法 |
+|---|---|---|
+| ZCode 里没有 `qoder:` 模型 | `ListModels`；看五个 chat 组里是否有 `qoder:` 前缀的 model id + model rule；`curl http://127.0.0.1:7871/health` 的 `qoder.key`；8790 `/v1/models` 是否可达 | 同步没写，或被 ZCode 界面整份写回覆盖。重跑 `qoder_zcode_sync.py --apply`，不要与界面同时保存 |
+| 请求 401 | `qoder/.env.local` 的 `QD_API_KEY` 与 `qoder/gateway/accounts/settings.json` 是否一致；`--separate` 模式再看 provider_config 里的 `qoder` apiKey | 合并模式 key 只在 `.env.local` / 7871 路由；三处不一致时轮换后一起改，再重启 hub 与路由 |
+| 7871 `/health` 里 `qoder.key=false` 或 `qoder:` 请求 502 `Qoder key not configured` | 路由启动时没读到 `QD_API_KEY` | 确认 `qoder/.env.local` 存在且可读，然后重启路由（守护器会自动拉起） |
+| 502 / `10605` / `isQueued` | `/health` 的 `risk.queue`；`qoder/qoder_probe.json` 的状态 | 上游排队，不是本地故障。免费 `Qwen3.8-Flash` 最容易中，`DeepSeek-Flash` 也会（64s 后 200，或 90s+ 后 502）。`--probe-file` 只看 `ever_ok`：曾 200 的模型遇排队仍保留，只有从未成功过的才会被排除 |
+| 400 `invalid JSON body` | 请求体是否由 GBK shell 拼接、含中文 | 本地编码问题，不是网关。用 Python/UTF-8 或 UTF-8 文件发请求 |
+| 8790 没监听 / 看板打不开 | `netstat -ano | findstr 8790`；`qoder-proxy.log` / `qoder-proxy.err.log` | `start-qoder-proxy.bat`；端口冲突则换端口并同步 `qoder` provider 的 `baseUrl` |
+| 签到没加积分 | `accounts/scheduler/state.json` 的日志；看板签到记录 | 已签到是幂等；CN 活动可能未下发；国际版按设备去重。本机 2026-10-23 CN 已 +100 |
+| OAuth 一直 `pending` | 浏览器是否完成授权；`state` 是否过期 | 重新 `POST /accounts/login/start`，15 分钟内完成授权 |
+
+完整操作与边界见 [QODER.md](QODER.md)。
+
+---
+
+## 15. 统一命名 / alias map / 协议桥 【实例 C】
+
+| 现象 | 怎么查 | 原因 / 解法 |
+|---|---|---|
+| 模型名变成 `WB:` / `OC:` / `QD:` | 四个 provider 的 `personalModelIds`；`~/.zcode/v2/model-alias-map.json` 的条数；`GET 7871/health` 的 `alias.models` | 正常；由 `tools/model_alias.py` 生成。名字不对就重跑它 |
+| `OC:MiniMax-M3` / `OC:Beam` 400 `thinking` | `node workbuddy/zcode_effective_body.js --provider-id <pid> <model>` 的 body 是否只剩 `max_completion_tokens` | 这两类模型需要空 map；`model_alias.py` 会从旧规则复制，丢了就重跑 |
+| 桥接模型 502 `bridge upstream error` | 7871 日志；OC key；请求头是否有 `x-opencode-session` / 正常 UA | 桥接器已带 `opencode-cli/1.0` + `unified-bridge`；检查 OpenCode key |
+| 旧 ID（`cn:` / `qoder:` / bare OC）还能用 | alias map 的 `legacy` | 正常，老会话兼容；价格变化时旧显示名也会进 legacy |
+| WB GB 模型 503 `no_healthy_account` | `curl 127.0.0.1:7863/status` 的账号池 | 池冷却，按瞬时限流处理，不删模型 |
+| 调价后模型名变了 | alias map 的 `legacy` | 预期：积分写进显示名；老会话仍可路由 |
+
+---
+
 ## 附：通用排查顺序
 
-**换任何供应商都按这个顺序**（括号里是本仓两个实例的具体命令）：
+**换任何供应商都按这个顺序**（括号里是本仓三个实例的具体命令）：
 
 1. **先确认服务活着**（实例 B：`curl http://127.0.0.1:7863/status`；
-   实例 A：`curl https://opencode.ai/zen/go/v1/models`）。
+   实例 A：`curl https://opencode.ai/zen/go/v1/models`；
+   实例 C：`curl http://127.0.0.1:8790/health`）。
 2. **再看配置写没写进去**（`provider_config.json` + `.bak-*` 备份链）。
 3. **再看 ZCode 真实发了什么**（`workbuddy/zcode_effective_body.js`）。
 4. **最后才怀疑上游** —— 大部分「上游坏了」其实是本地配置或请求体的问题。

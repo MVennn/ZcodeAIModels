@@ -4,10 +4,17 @@
 > 工具调用能不能用、思考参数怎么关 —— 这篇是正本，其它文档只引用不重述。
 >
 > **范围**：本篇列的是**本仓已配置的两组 provider** ——
-> OpenCode-Go 七个（§2）与 WorkBuddy2API 四个（§4.2，分离模式）。
+> OpenCode-Go 七个（§2）与 WorkBuddy2API 四个（§4.2，分离模式）。Qoder 不是
+> 独立 provider：模型加 `qoder:` 前缀后并入五个 chat 组（§4.9）。
 > **接别的供应商**：方法见 §0；本篇的表是**快照**，不是通用规则。
 
-数据快照：**2026-10-20**（§4 WorkBuddy 的倍率与分档于 **2026-10-22** 复核，倍率 / 分档无变化）。
+数据快照：**2026-10-20**（§4 WorkBuddy 的倍率与分档于 **2026-10-22** 复核，倍率 / 分档无变化；
+§4.9 Qoder 的模型与价格于 **2026-10-23** 实测）。
+
+> **2026-10-23 起 provider 结构统一为四组**（主力 / 免费 / 低耗 / 高耗），模型 ID 改为
+> `渠道/积分/型号`，跨协议由本地路由桥接。**当前分组与命名以
+> [MODEL-ALIAS.md](MODEL-ALIAS.md) 为准**；本文 §2 / §4 的价格、协议与思考参数仍是
+> 数据来源，旧的七组 provider 口径保留作历史。
 价格 / 额度 / 倍率随服务商变动，改之前先看 [MAINTENANCE.md](MAINTENANCE.md) §1。
 
 ---
@@ -18,8 +25,8 @@
 
 > **一句话**：本篇的 §2 / §4 是**数据**；这一节是**方法** —— 换供应商时照这里做。
 
-四个步骤，与具体供应商无关。本仓的两个接入器（`opencode-go/`、`workbuddy/`）
-是参照实现。
+四个步骤，与具体供应商无关。本仓的三个接入器（`opencode-go/`、`workbuddy/`、
+`qoder/`）是参照实现。
 
 ### 0.1 四步
 
@@ -32,7 +39,7 @@
 
 ### 0.2 通用概念 ↔ 本仓叫法
 
-接新供应商时，下面这一列是**方法**，右边是本仓两个实例各自的叫法。
+接新供应商时，下面这一列是**方法**，右边是本仓三个实例各自的叫法。
 
 | 通用概念 | 本仓实例 A（OpenCode-Go） | 本仓实例 B（WorkBuddy2API） |
 |---|---|---|
@@ -42,6 +49,10 @@
 | 协议种类 | chat / messages / responses 三种并存 | 全部 OpenAI 兼容（`openai-chat-completions`） |
 | 目录接口 | `/zen/go/v1/models` + 文档页 + 全量目录页 + 本地配置（**四源并集**） | `/panel/api/models`（与 `/v1/models` 同源） |
 | 账号池限制 | 套餐额度按模型分别计算 | 账号池有类型限制（`personal_free_user`，见 §4.7） |
+
+第三个实例（Qoder）的计价单位是 `price_factor`（免费 = 0，越小越便宜），目录接口
+是 `/v1/models`；它**并入** OpenCode 的五个 chat 组，模型 id 加 `qoder:` 前缀，
+由 7871 路由剥前缀转发，见 §4.9。
 
 ### 0.3 不随供应商变的三件事
 
@@ -53,7 +64,7 @@
 
 ## 1. ZCode 侧的关系：配置落点与写入行为
 
-> **一句话**：脚本改 ZCode 的哪几处、两个同步脚本各自怎么写、写了怎么回退 —— 本节是这些口径的**正本**。
+> **一句话**：脚本改 ZCode 的哪几处、三个同步脚本各自怎么写、写了怎么回退 —— 本节是这些口径的**正本**。
 
 脚本只碰 `provider_config.json` 的三个位置（完整路径 `~/.zcode/v2/provider_config.json`）：
 
@@ -70,21 +81,23 @@
 设置界面里同时改** —— 界面保存时会整份写回，把脚本写的覆盖掉
 （机制见 [PITFALLS.md](PITFALLS.md) §8，热重载的其余注意事项见 [MAINTENANCE.md](MAINTENANCE.md) §5）。
 
-### 1.1 两个同步脚本的写入行为
+### 1.1 三个同步脚本的写入行为
 
 | 脚本 | 默认行为 | 风险 |
 |---|---|---|
 | `opencode-go/ops/go_model_sync.py --apply` | 只**追加**模型 + 备用档重排（`BACKUP_MODEL_IDS`）+ 改一个 provider 显示名（"备用"→"响应"） | 低。已有模型的**组内顺序**可能被打乱（新模型追加到组尾） |
 | `workbuddy/workbuddy_zcode_sync.py --apply` | 默认**合并** WorkBuddy 模型到五个 OpenCode chat 组（不改 OpenCode 模型与顺序）；`--separate` 才整条替换四个 `workbuddy-*` provider | 低（统一）/ 中（分离）。统一模式只动 WorkBuddy 模型与五个 chat 组的 `baseUrl`；分离模式会冲掉 `workbuddy-*` 上手工加的模型 |
+| `qoder/qoder_zcode_sync.py --apply` | 默认**合并**：拉 `/v1/models`，按 `price_factor` 把 `qoder:` 前缀模型并入免费/低耗/高耗三个 chat 组；`--separate` 才写独立 `qoder` provider；默认 `--max-price 0.8`；`--probe-file` 只保留探测 `ok`（或曾 ok 的瞬时限流） | 低。只增删 `qoder:` 条目与（separate 模式的）`qoder` provider，不碰其它模型 |
 
 **正确姿势**：先不带 `--apply` 跑一遍，看清它要写什么，再决定。
 
 ```bash
 python opencode-go/ops/go_model_sync.py            # 只出报告
 python workbuddy/workbuddy_zcode_sync.py           # 只打印计划
+python qoder/qoder_zcode_sync.py                   # 只打印 Qoder 计划
 ```
 
-两个脚本都**先备份再原子替换** `provider_config.json`（备份文件名与回退步骤见
+三个脚本都**先备份再原子替换** `provider_config.json`（备份文件名与回退步骤见
 [MAINTENANCE.md](MAINTENANCE.md) §4）。写配置期间**同一个时间只有一个写入者** ——
 脚本与 ZCode 界面不能同时改。
 
@@ -95,7 +108,7 @@ python workbuddy/workbuddy_zcode_sync.py           # 只打印计划
 入口：`https://opencode.ai/zen/go/v1`（Go 套餐，$10 与 $40 两档价格相同、额度不同）。
 限额**按模型分别计算**：5 小时 = 月额度 20%、每周 50%、每月 100%。
 
-### 2.1 七个 provider
+### 2.1 七个 OpenCode-Go provider（另有 Qoder，见 §4.9）
 
 | providerId | 显示名 | 协议 `api.type` | 模型数 | 收录口径 |
 |---|---|---|---:|---|
@@ -111,6 +124,8 @@ python workbuddy/workbuddy_zcode_sync.py           # 只打印计划
 > `tools/unified-router.js`（`http://127.0.0.1:7871/v1`），模型列表同时包含
 > OpenCode-Go 与 WorkBuddy；路由按 model 前缀分流。`对话` / `响应` 仍直连 OpenCode。
 > 分离模式（`workbuddy_zcode_sync.py --separate`）见 §4.2。
+>
+> **ZCode 里仍然只有 7 个 provider**：Qoder 模型以 `qoder:` 前缀并入五个 chat 组（见 §4.9）。
 
 > 「额度可撑输出」= **月额度 ÷ 输出单价**，是分档与排序的依据（每个模型额度独立，
 > 换模型 = 换一份独立额度）。
@@ -395,6 +410,55 @@ glm-5v-turbo 0.454、kimi-k3-1 0.901、gpt-5.3-codex 0.976。
 
 ---
 
+### 4.9 Qoder（qoder2api-hub，本次实例三）
+
+网关：qoder2api-hub（MIT），`http://127.0.0.1:8790/v1`，OpenAI Chat Completions。
+它**并入** §2 的五个 chat 组：模型 id 加 `qoder:` 前缀，由 7871 路由剥前缀后转给
+8790；WorkBuddy2API 与 OpenCode-Go 不受影响。完整操作见 [QODER.md](QODER.md)。
+
+**目录与计价**：`GET /v1/models` 直接给 `price_factor`、峰谷价、`reasoning_efforts`、
+`context_windows`、`disabled_reason`、`realm`。**price_factor 越小越便宜，0 = 免费**。
+目录是动态的，还会出现 `Auto` / `Fast` 这类路由别名（`upstream_key` 同名）—— 一律排除。
+
+| 模型 | price_factor | 落到 | 上下文 | 思考档位 | 2026-10-23 探测 |
+|---|---:|---|---:|---|---|
+| `DeepSeek-Flash` | 0.0 | 免费 | 200K（可选 1M） | low/high/max | 200，平时 1.1s；排队时 64s+ 或 502 |
+| `GLM-5.3-Flash` | 0.1 | 低耗 | 200K（可选 1M） | high/max | 200 |
+| `MiniMax-M3.1-Flash` | 0.1 | 低耗 | 200K | — | 200 |
+| `DeepSeek-V4-Pro` | 0.5 | 高耗 | 200K（可选 1M） | high/max | 200 |
+| `Qwen3.8-Max` | 0.5 | 高耗 | 200K（可选 1M） | low/medium/xhigh | 200；错峰 4 折 |
+| `GLM-5.3` | 0.8 | 高耗 | 200K（可选 1M） | low/high/max | 200 |
+| `Kimi-K2.8-Preview` | 0.8 | 高耗 | 200K（可选 1M） | low/high/max | 200 |
+
+排除项（2026-10-23）：
+
+- `Auto` / `Fast`：路由别名，无自身价格（同 §4.1 的 WorkBuddy 规则）；
+- `Kimi-K3`：price_factor 1.4，超过同步脚本默认上限 0.8；
+- `Qwen3.8-Flash`：免费，但上游 **10605 排队**（queueCount ≈ 19k，p3），75s 超时，
+  按「跑不通即清」暂时移出；复通后重新探测 + 同步会自动加回。
+
+`--probe-file` 的判定带 `ever_ok`：曾经 200 的模型遇到 `queued` / `timeout` /
+`rate_limited` 仍保留；只有从未成功过的模型才会因排队被排除。
+
+**落组规则**：`price_factor=0` → `opencode-go-chat-free`（免费）；
+`0 < x ≤ 0.2` → `opencode-go-chat-fast`（低耗）；`> 0.2` → `opencode-go-chat-slow`
+（高耗）。模型 id 带 `qoder:` 前缀，路由器剥掉后再发给 8790；`--separate` 才写
+独立 `qoder` provider。
+
+**思考参数**：7 个模型用 ZCode 原生四件套（`thinking` + `enable_thinking` +
+`reasoning_effort` + `reasoning`）探测全部 200，**没有配任何
+`optionSpecs.reasoningLevel.map` 覆写**。
+
+**脚本**：
+
+```bash
+python qoder/qoder_zcode_sync.py                                  # dry run
+python qoder/qoder_probe_zcode.py                                 # 真实 body 探测
+python qoder/qoder_zcode_sync.py --probe-file qoder/qoder_probe.json --apply
+```
+
+---
+
 ## 5. 关思考参数矩阵
 
 > §5.1 是**上游实测数据**（哪个模型认哪种写法，随模型变）；
@@ -430,6 +494,10 @@ map 是**一段 JS 表达式**，引擎求值成 JSON 对象后再发出去。
 **WorkBuddy 侧 18 个模型一个都没配覆盖** —— 探测确认它们**全部接受 ZCode 原生 body**。
 （与 OpenCode-Go 侧不同：那边 minimax-m3 会拒 `thinking:{type:"enabled"}`，这边 CodeBuddy 上游接受。）
 
+**Qoder 侧 7 个模型（带 `qoder:` 前缀，经 7871）也没有配覆盖** —— 2026-10-23 用
+`zcode_effective_body.js` 复算后探测，原生四件套全部 HTTP 200；`Qwen3.8-Max` 的合法档位是 low/medium/xhigh，
+`DeepSeek-V4-Pro` / `GLM-5.3` / `Kimi-K2.8-Preview` 是 low/high/max。
+
 ### 5.3 ZCode 内置规则的形状（为什么要复刻）
 
 ZCode 的内置规则 `resources/config/provider/zcode-builtin.json` 里：
@@ -456,12 +524,14 @@ ZCode 的内置规则 `resources/config/provider/zcode-builtin.json` 里：
 | 日常写代码 | 主力 `deepseek-v4.1-flash`；想省额度 → 低耗 `glm-5.3-flash` |
 | 零成本 | 免费 `beam-free`（快）或 `minimax-m3.1-flash-free`；网关侧 `workbuddy-free` |
 | 长上下文 | 高耗 `minimax-m3`（1M）；网关侧 `cn:deepseek-v4.1-flash`（1M） |
-| 子代理 / 小改动 | `claude-haiku-5-5` |
+| 子代理 / 小改动 | `claude-haiku-5-5`（主力）、`space-bunny`；更省 → 低耗 `mimo-v2.5` |
 | 中文任务 | `qwen3.8-flash` |
 | 后台批量 | `hy3`、`longcat-2.0`，夜里用 `longcat-2.5-preview-free` |
 | 别用于交互 | `longcat-2.0`、`longcat-2.5-preview-free`、`qwen3.7-plus` |
 
-> 本表只按**成本 / 额度 / 延迟**取舍，不按跑分排序。
+> 本表只按**成本 / 额度 / 延迟**取舍，不按跑分排序。主力里的榜单扩充成员
+> （`mimo-v2.6-flash`、`space-bunny`、`claude-haiku-5-5`）见
+> [BENCHMARKS.md](BENCHMARKS.md) §8。
 
 ### 6.1 按能力方向选（外部榜交叉，2026-09-11）
 
@@ -483,7 +553,7 @@ ZCode 的内置规则 `resources/config/provider/zcode-builtin.json` 里：
 
 | 档位 | 模型（统一模式下的实际归属） |
 |---|---|
-| 主力 | `deepseek-v4.1-flash`、`qwen3.8-flash`（messages，优先用）、`cn:deepseek-v4.1-flash`、`global:deepseek-v4.1-flash-sg`（global 受限） |
+| 主力 | `deepseek-v4.1-flash`、`qwen3.8-flash`（messages，优先用）、`cn:deepseek-v4.1-flash`、`global:deepseek-v4.1-flash-sg`（global 受限）；2026-10-23 榜单扩充：`mimo-v2.6-flash`、`space-bunny`、`claude-haiku-5-5` |
 | 低耗 | `glm-5.3-flash`、`muse-spark-1.3/1.2`（responses）、`hy3`、`cn:glm-5.3-flash`、`global:glm-5.3-flash`、`cn:hy3-x` |
 | 高耗 | `longcat-2.0`、`cn:hy4-preview`、`global:hy4-preview`、`cn:mimo-v2.6-pro` |
 | 免费 | `beam-free` 等（未上榜，按原组）、`global:deepseek-v4.1-flash`、`cn/global:hy3`、`cn/global:step-5-preview` |
@@ -492,6 +562,9 @@ ZCode 的内置规则 `resources/config/provider/zcode-builtin.json` 里：
 > 统一模式下 WorkBuddy 模型已在同一 provider 内，不再是独立组；providerId 仍是
 > 五个 chat 组（见 §4.0）。`cn:hy4-preview` 的实时价已回到 x0.29，2026-10-21
 > 全量同步把它从免代移到高耗。价格与分数的口径见 BENCHMARKS §5.4。
+>
+> **2026-10-23 起以 [MODEL-ALIAS.md](MODEL-ALIAS.md) 的四组为准**：`备用` 已解散，
+> 分组按积分实时计算；上表是旧榜质量快照，只用来判断「同一档里优先试谁」。
 
 ---
 
