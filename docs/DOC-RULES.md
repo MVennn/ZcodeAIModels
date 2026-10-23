@@ -119,6 +119,7 @@ docs/ 分四类（索引见 [README.md](README.md)）：
 
 | 变更 | 必须同步 |
 |---|---|
+| **修一个缺陷**（行为变化 / 判据修正 / 安全加固） | 对应正本补一条 **现象 → 根因 → 怎么避**：[PITFALLS.md](PITFALLS.md)；CHANGELOG 只是变更记录，**不算补文档** |
 | 新增 / 删除 provider，或某个模型的归属档位变了 | [MODEL-PROVIDERS.md](MODEL-PROVIDERS.md) 对应表、[PITFALLS.md](PITFALLS.md) 如有涉及 |
 | 某个模型的协议类型变了（chat / messages / responses） | [MODEL-PROVIDERS.md](MODEL-PROVIDERS.md) 的协议列 + [PITFALLS.md](PITFALLS.md) §2 |
 | 关思考参数矩阵变化 | [MODEL-PROVIDERS.md](MODEL-PROVIDERS.md) §5 |
