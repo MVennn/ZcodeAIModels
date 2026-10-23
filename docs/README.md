@@ -22,6 +22,7 @@
 | 文档 | 一句话定位 |
 |---|---|
 | [DOC-RULES.md](DOC-RULES.md) | **文档规则正本**：文件命名（全大写连字符）、分类定位、单一正本映射表、链接纪律、变更触发矩阵、体量预算 |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | **运行架构整合提案（待确认）**：四个常驻进程 293 MB 的实测拆解、`zgate` 单入口 + 按需子进程方案、`gateways/` 与 `providers/` 两轴目录重构、分阶段验收与回退 |
 | [MAINTENANCE.md](MAINTENANCE.md) | 日常维护：刷价格表、探测限速、快照保留、`--apply` 备份与回退、热重载注意事项 |
 | [TOOLS.md](TOOLS.md) | **工具清单正本**：运行环境、每个脚本的产物与去留标记、统一模式与 `--separate` 的区别 |
 | [VERSIONING.md](VERSIONING.md) | **版本晋升正本**：三段式进位、仓库发布号在哪维护、什么时候不动版本号。发版规则并入本篇 |
