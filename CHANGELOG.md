@@ -15,7 +15,28 @@
 
 ---
 
-## [未发布] — 2026-10-21 ~ 2026-10-23
+## [未发布]
+
+### 同步脚本：免费 `-f` 模型漏收修复 + 「跑不通即清」策略（2026-10-23）
+
+- 修复 `workbuddy/workbuddy_zcode_sync.py` 的 `rate_of()` —— 原先只重新解析原始
+  `credits` / `promo_credits` 字符串，免费 `-f` 模型（网关 `credits` 为空串）被判
+  `None`，按「无公布倍率」排除。改为优先信任价格表已归一化的 `eff_rate` / `list_rate`
+  （`wb_pricing.json` 本就是分档的唯一价格输入），缺失才回退原始串解析。
+  结果：`cn:hy4-preview-f`、`global:hy4-preview-f` 收进免代档（免代 5 → 7，其余档零位移）
+- 调整 `opencode-go/ops/go_model_sync.py` 的 `stale_reason()` —— 已配置模型体检从
+  「400/402/404 且带 unavailable 标记才移除」收紧为：`error` 类里仅豁免
+  **401（凭据/隐私授权）** 与 **429（限频冷却）**，其余 400/402/404/410 与 5xx
+  一律判「跑不通」并 `prune_model`；复通后由新模型评估自动加回。
+  口径：跑不通即清、复通即加回（WorkBuddy 侧本就按 blocked/unavailable 移除，未改）
+- 文档对齐：`MAINTENANCE.md` §7 待办 6/7 标记已修并新增第 8 条；
+  `TROUBLESHOOTING.md` §13 对应三行改为「自动处理 / 已修」；`TOOLS.md` 同步两处脚本说明
+
+> 未发版，版本号不动（[docs/VERSIONING.md](docs/VERSIONING.md) §5）。
+
+---
+
+## [0.2.0] — 2026-10-23
 
 ### 凭据守卫（2026-10-23）
 

@@ -229,8 +229,9 @@ python -c "import json,os; json.load(open(os.path.expanduser('~/.zcode/v2/provid
 | 3 | ~~`go_model_sync.py` 的 `REPORT_DIR` 仍硬编码旧仓库路径~~ **已修** | 拆仓时改为本仓内 `evidence/`，可用 `GO_SYNC_REPORT_DIR` 覆盖 | [PITFALLS.md](PITFALLS.md) §10 |
 | 4 | ~~根 `LICENSE` 文件未创建~~ **已修** | 仓库根已有 MIT 全文（见 [LICENSE](../LICENSE)），不再只有 `README.md` 里的一句话 | [CHANGELOG.md](../CHANGELOG.md) 「待补」 |
 | 5 | ~~`docs/VERSIONING.md` 未创建~~ **已修** | 版本晋升规则有独立正本 [VERSIONING.md](VERSIONING.md)，不再暂以 `CHANGELOG.md` 头部为正本 | [VERSIONING.md](VERSIONING.md) §1–§2 |
-| 6 | `go_model_sync.py` 的**体检**把全部已配置模型都探向 OpenCode-Go（**待修**） | 统一路由并组后，18 个 WorkBuddy 模型（`cn:*` / `global:*`）由本机网关供给，OpenCode-Go 那边一律回 400 `Model is unavailable` → 每天刷 18 条假异常 | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) §13 |
-| 7 | `workbuddy_zcode_sync.py` 的 `rate_of` 认不出 `credits` 为空的免费条目（**待修**） | `cn:hy4-preview-f` / `global:hy4-preview-f` 探测 ok、实际免费，却因倍率判成 `None` 被「无公布倍率」排除 → 漏收 | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) §13 |
+| 6 | ~~`go_model_sync.py` 的**体检**把全部已配置模型都探向 OpenCode-Go~~ **已修** | 体检按 id 前缀分流：`cn:*` / `global:*` 跳过（由统一路由供给），不再每天刷 18 条假异常 | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) §13 |
+| 7 | ~~`workbuddy_zcode_sync.py` 的 `rate_of` 认不出 `credits` 为空的免费条目~~ **已修** | 改为优先信任价格表归一化的 `eff_rate` / `list_rate`（免费 `-f` 条目为 0.0），缺失才回退原始串；`cn:hy4-preview-f` / `global:hy4-preview-f` 已收进免代档 | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) §13 |
+| 8 | ~~探测失败的已配置模型只打 ⚠、不清理~~ **已修** | 落实「跑不通即清、复通即加回」：Go 侧对 400/402/404/410/5xx 直接 `prune_model`（仅豁免 401/429）；WorkBuddy 侧 blocked/unavailable 亦移除 | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) §13 |
 
 ---
 

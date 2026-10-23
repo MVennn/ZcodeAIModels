@@ -157,7 +157,23 @@ ALIAS_IDS = {
 
 
 def rate_of(model: dict) -> float | None:
-    """Effective credit multiplier; None when the upstream quotes no price."""
+    """Effective credit multiplier.
+
+    Trust the normalized `eff_rate` / `list_rate` floats that
+    `workbuddy_fetch_pricing.py` already extracted into `wb_pricing.json`
+    (the sync's sole price input, per the module docstring). Fall back to
+    re-parsing the raw `credits` / `promo_credits` strings only when those
+    normalized fields are absent. This is what lets the free `-f` models
+    (e.g. `cn:hy4-preview-f`, whose gateway `credits` is an empty string but
+    whose normalized `eff_rate` is 0.0) be classified into the free tier
+    instead of being dropped as "no published rate". Truly unpriced models
+    (empty raw strings *and* no normalized rate) still return None; the probe
+    gate then drops unavailable ones before tiering.
+    """
+    for key in ("eff_rate", "list_rate"):
+        v = model.get(key)
+        if isinstance(v, (int, float)):
+            return float(v)
     for key in ("promo_credits", "credits"):
         raw = str(model.get(key) or "").strip()
         if not raw:

@@ -586,3 +586,77 @@ CN/全球交织、不同厂商混排，主力 `cn:deepseek-v4.1-flash` 落到低
   建议按本仓这份给其余仓补齐
 
 ## 状态: 已完成
+
+---
+
+# 2026-10-23 第 N+1 轮：修免费 -f 模型被漏收 + 收进免代档
+
+## 任务目标
+用户指出 `cn:hy4-preview-f`（及 `global:hy4-preview-f`）是夜间/免费入口，应进
+ZCode 免代档；此前同步把它们漏了。定位根因并修复，再把模型收录进配置。
+
+## 已完成变更
+- [x] 修根因：`workbuddy/workbuddy_zcode_sync.py` 的 `rate_of()` 只看原始
+      `credits`/`promo_credits` 字符串；免费 `-f` 模型网关 `credits` 为空串，
+      返回 `None` 被当成「无价格」排除。改为优先信任价格表已归一化的
+      `eff_rate`/`list_rate`（fetch 脚本已算好的 0.0），缺失才回退原始串解析。
+      模块 docstring 本就写 `wb_pricing.json` 是分档唯一价格输入。
+- [x] 重跑同步：`workbuddy_fetch_pricing.py` → `workbuddy_probe_zcode.py --max-rate 0.3 --sleep 20`
+      → `workbuddy_zcode_sync.py --max-rate 0.3 --apply`
+- [x] 新收录进 `opencode-go-chat-free`（免代）：`cn:hy4-preview-f`、`global:hy4-preview-f`
+      两个模型规则已建（contextWindow 1M、supportsImage、supportsToolCall、maxOutput 64k）
+
+## 验收
+- 同步 selected 18 → 20；免代档 5 → 7，仅新增上面两个 `-f`，其余档零位移
+- config diff 确认：除两个 `-f` 加入免代外，main/low/high/backup 档成员与顺序均未变
+- 备份：`provider_config.json.bak-wbproxy-20261023-141008`
+
+## 待解决 / 注意事项
+- `-f` 模型 probe 的 `rate` 字段为 null（价格表无原始倍率串可比对），但归一化
+  `eff_rate=0.0` 已正确归免代，不依赖 null 字段
+- `cn:hy4-preview`（付费 0.29x）仍归高代；如夜间促销把它的 `credits` 也清成 0，
+  下轮 fetch 会把 `eff_rate` 变成 0.0 而移入免代，属预期行为
+
+## 状态: 已完成
+
+---
+
+# 2026-10-23 第 N+2 轮：mimo/longcat 400/402 排查 + 落地「跑不通即清」永久策略
+
+## 任务目标
+用户后台看到 mimo 系列 + longcat 系列请求全 400/402。排查根因，并落实
+「跑不通就清掉，复通了下次同步再加回」的永久策略。
+
+## 排查结论（根因）
+- 400/402 是上游(OpenCode Go / WorkBuddy 网关)已停服/临时故障，非脚本或配置 bug。
+  - 历史证据：`longcat-2.0`/`longcat-2.5-preview-free` 上游 402 `Endpoint is unavailable`；
+    `mimo-v2.5-pro` 上游 400 `Unsupported model`；本轮 13:50 的 Go 同步还抓到
+    `mimo-v2.6-flash` 探测 HTTP 500。
+  - 实时核对(2026-10-23 14:36)：4 个 mimo 模型当前全部 HTTP 200 可达 ——
+    用户看到的 400/402 是**瞬时上游抖动**，模型现在并没死。
+- 残留 4 个 mimo 仍在配置里（mimo-v2.5 / mimo-v2.6-flash / mimo-v2.6-pro 直连 Go，
+  cn:mimo-v2.6-pro 走网关）。因当前均复通，未做删除（删了下一轮 Go 同步又会从
+  实时清单加回，徒劳）。
+
+## 永久策略落地（改脚本）
+- [x] `opencode-go/ops/go_model_sync.py` 的 `stale_reason()` 收紧移除口径：
+      `error` 类里只豁免 **401(授权)** 与 **429(限频冷却)**（环境/用量问题，脚本无解、会自恢复），
+      其余 400/402/404/410 与 5xx 一律判「跑不通」并移除；复通后由新模型评估自动加回。
+      （此前 400/402/404 仅当上游报 unavailable 标记且不在清单才删，其他 error 只打 ⚠ 不删。）
+- WorkBuddy 侧 `workbuddy_zcode_sync.py` 本就按 probe 的 blocked/unavailable 移除
+  `cn:/global:` 模型、且 live 列表缺员即判 stale —— 已符合策略，未改。
+
+## 验收
+- 本次 `go_model_sync.py --apply`：4 个 mimo 实测 HTTP 200，按新策略正确「保留」，
+  配置未改动（与现状一致）；`longcat`/`mimo-v2.5-pro` 等确死的仍正常判不收录。
+- 策略生效验证：下次若这些模型再 400/402/5xx，Go 同步 `--apply` 会直接 prune_model，
+  不再只打 ⚠。
+- 备份：`provider_config.json.bak-gosync-20261023-143619`（未触发，因无移除）
+
+## 待解决 / 注意事项
+- 若要让当前这 4 个 mimo「立刻清掉再等复通加回」无意义（会立刻被加回）；
+  真正需要清理的是永久下线的模型，由策略自动处理，无需手改。
+- 建议把 Go / WorkBuddy 两套同步接进同一定时任务（cron），保证「跑不通即清」
+  策略按日自动执行；本次未创建定时任务（用户此前要求不擅建）。
+
+## 状态: 已完成

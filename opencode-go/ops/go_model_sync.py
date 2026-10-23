@@ -353,13 +353,16 @@ def stale_reason(model, st, kind, raw, deprecated_dates, live, hint):
         return "已过官方弃用日 %s" % deprecated_dates[model]
     if kind == "deprecated":
         return "上游已弃用：HTTP %s %s" % (st, upstream_message(raw))
-    if kind == "error" and st in (400, 402, 404):
-        low = (raw or "").lower()
-        if any(x in low for x in UNAVAILABLE_MARKERS):
-            where = "仍在清单但上游不可用" if (model in live or model in hint) else "已不在任何清单"
-            return "%s：HTTP %s %s" % (where, st, upstream_message(raw))
-        if model not in live and model not in hint:
-            return "已不在实时/文档模型清单：HTTP %s %s" % (st, upstream_message(raw))
+    if kind == "error":
+        # 401=凭据/隐私授权问题、429=限频冷却，二者都属环境/用量问题而非模型已死，
+        # 只告警不移除（脚本也解决不了授权，限频会自己恢复）。
+        # 其余（400/402/404/410 不支持或已下架，5xx 端点故障）一律视为「跑不通」：
+        # 按用户要求——上游不可达即清除，待下次探测复通后再由新模型评估自动加回。
+        if st in (401, 429):
+            return None
+        still_listed = (model in live or model in hint)
+        where = "仍在清单但上游不可用" if still_listed else "已不在任何清单"
+        return "%s：HTTP %s %s" % (where, st, upstream_message(raw))
     if kind == "protocol_unsupported" and model not in live and model not in hint:
         return "已不在实时/文档模型清单，且拒绝当前协议"
     return None
