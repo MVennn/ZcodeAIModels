@@ -24,7 +24,7 @@
 
 | 脚本 | 作用 | 输出产物 | 长期 |
 |---|---|---|---|
-| `opencode-go/ops/go_model_sync.py` | 四源并集检测 Go 套餐新模型 → 三协议探测 → 按成本档 + 备用档分组 → 写 `provider_config.json`（`--reclassify-only` 只搬备用档；统一模式下五个 chat 组指向统一路由）。已配置模型**跑不通即清**（400/402/404/410/5xx 移除，仅豁免 401/429），复通后自动加回 | 报告 `go-model-sync-<时间戳>.md`；备份 `provider_config.json.bak-gosync-<时间戳>` | ✅ 长期 |
+| `opencode-go/ops/go_model_sync.py` | 四源并集检测 Go 套餐新模型 → 三协议探测 → 按成本档 + 备用档分组 → 写 `provider_config.json`（`--reclassify-only` 只搬备用档；统一模式下五个 chat 组指向统一路由）。已配置模型**跑不通即清**（400/402/404/410/5xx 移除，仅豁免 401/429），复通后自动加回。已配置的 `W/…`、`O/…`、`Q/…` 显示名会先按 `model-alias-map.json` 还原成上游裸 id 再体检，WorkBuddy/Qoder 渠道跳过，不会拿显示名去 Go 上游探测 | 报告 `go-model-sync-<时间戳>.md`；备份 `provider_config.json.bak-gosync-<时间戳>` | ✅ 长期 |
 | `opencode-go/ops/opencode-header-proxy.js` | 给不支持自定义头的客户端（ChatBox / Open WebUI 等）补 `x-opencode-session` | 常驻 HTTP 代理，默认 `127.0.0.1:8787` | ✅ 长期 |
 | `tools/unified-router.js` | **统一路由**：优先读 `model-alias-map.json`，按显示名把请求还原到 WB/OC/QD 上游；无 map 时回退旧前缀（`cn:`/`global:`/`qoder:`）。messages/responses 模型交给 `protocol_bridge.js`。`GET /health` 含三家 key 与 alias 条数 | 监听 `127.0.0.1:7871`；日志由守护器写 `router.stdout.log` / `router.stderr.log` | ✅ 长期（随 ZCode 起停） |
 | `tools/model_alias.py` | **最终写入者**：把当前配置里的模型按渠道/地区/系列重命名为 `渠道/积分/型号`，按积分分到四组，生成 alias map；`--probe-file` 只保留 ok（或曾 ok 的瞬时限流）；`--arena-main` 读榜单候选扩充主力，`--no-arena` 回到纯人工 | `provider_config.json.bak-alias-<时间戳>`；`~/.zcode/v2/model-alias-map.json` | ✅ 长期 |
@@ -39,7 +39,7 @@
 | `workbuddy/zcode_gateway_watch.vbs` | 无窗口启动上面的 `.ps1`（`-Install` 注册到启动文件夹的就是它） | — | ✅ 长期 |
 | `workbuddy/gateway/` | 上游 WorkBuddy2API Panel 的**独立 clone** + 运行时（`config.json` / `auths/` / `data/` / `wb2api.exe`）；整目录被 `.gitignore` 排除 | 网关自身的 `data/` 与日志 | ✅ 长期（更新：`git -C workbuddy/gateway pull --ff-only`） |
 | `qoder/gateway/` | 上游 qoder2api-hub 的**独立 clone** + 运行时（`accounts/` / `usage/` / `umid/`）；整目录被 `.gitignore` 排除。默认 `127.0.0.1:8790`，`start-qoder-proxy.bat` / `stop-qoder-proxy.bat` 管理 | 网关自身的 `accounts/scheduler/state.json`、`qoder-proxy.log` / `.err.log` | ✅ 长期（更新：`git -C qoder/gateway pull --ff-only`） |
-| `qoder/qoder_zcode_sync.py` | **默认合并**：拉 qoder2api-hub `/v1/models` → 排除 `Auto`/`Fast` 别名 → 按 `price_factor` 把 `qoder:` 前缀模型并入免费/低耗/高耗三个 chat 组；`--separate` 才写独立的 `qoder` provider；`--probe-file` 只保留探测 `ok`（或曾 ok 的瞬时限流），默认 `--max-price 0.8` | 备份 `provider_config.json.bak-qoder-merge-<时间戳>`（separate 模式 `.bak-qoder-<时间戳>`）；dry run 打印落组 | ✅ 长期 |
+| `qoder/qoder_zcode_sync.py` | **默认合并**：拉 qoder2api-hub `/v1/models` → 排除 `Auto`/`Fast` 别名 → 按 `price_factor` 把 `qoder:` 前缀模型并入免费/低耗/高耗三个 chat 组；`--separate` 才写独立的 `qoder` provider；`--probe-file` 只保留探测 `ok`（或曾 ok 的瞬时限流），默认 `--max-price 0.8`。每天 12:00 定时任务里与 `qoder_probe_zcode.py` 成对执行（见 [MAINTENANCE.md](MAINTENANCE.md) §6） | 备份 `provider_config.json.bak-qoder-merge-<时间戳>`（separate 模式 `.bak-qoder-<时间戳>`）；dry run 打印落组 | ✅ 长期 |
 | `qoder/qoder_probe_zcode.py` | 用 **ZCode 真实 body**（复算 `zcode_effective_body.js`）探测 Qoder 模型；默认经 7871 + `qoder:` 前缀（与 ZCode 实际路径一致），`--direct` 直连 8790；候选从 8790 `/v1/models` 取；状态 ok / fallback / queued / rate_limited / blocked / unavailable / timeout / error；结果带 `ever_ok`，瞬时限流不误杀曾 ok 的模型 | `qoder/qoder_probe.json`（`.gitignore` 排除） | ✅ 长期 |
 | `opencode-go/probe/probe_models.py` | 34 个模型最小 token 连通性 + 首字节延迟 | `probe_results.json`（**写到当前工作目录**，需手动归档到 `results/<日期>/`） | ❌ 一次性 |
 | `opencode-go/probe/probe_protocols.py` | 判定每个模型走哪种协议 | 只打印，不落盘 | ❌ 一次性 |

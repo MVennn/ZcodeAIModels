@@ -42,11 +42,11 @@ alias map **不含凭据**；上游 key 仍由路由按渠道从 `provider_confi
 | `minimax-m3.1-flash` | `MiniMax-M31-Fs` |
 | `mimo-v2.6-pro` | `MiMo-26-Pro` |
 | `claude-haiku-5-5` | `Claude-Haiku-55` |
-| `kimi-k2.8-preview` | `Kimi-K28-Preview` |
+| `kimi-k2.8-preview` | `Kimi-K28-Pre` |
 
 系列前缀保持可读：`DeepSeek`、`Qwen`、`GLM`、`MiniMax`、`Kimi`、`HY`、`MiMo`、
 `LongCat`、`Beam`、`Claude`、`GPT`、`Muse`、`Step`、`Space`。
-变体只保留模型本身有意义的：`Fs`=Flash、`Pro`、`Max`、`Plus`、`Preview`、`Vision`。
+变体只保留模型本身有意义的：`Fs`=Flash、`Pre`=Preview、`Pro`、`Max`、`Plus`、`Vision`。
 **不再编码 `-f` / `-sg` / `-free`**：免费或促销只看积分。
 价格两位小数，免费 = `0.00`；三段用 `/` 分隔，不再有空格。
 

@@ -87,11 +87,12 @@ API Key 与面板密码已持久化到 `accounts/settings.json`，所以 `.bat` 
 
 `--separate` 才写独立的 `qoder` provider（旧模式，bare model id）。
 
-当前收录 7 个模型（按 `price_factor` 从免费到贵排序）：
+当前收录 8 个模型（按 `price_factor` 从免费到贵排序）：
 
 | 模型（旧 `qoder:` / 现 `Q/积分/型号`） | price_factor | 落到 | 思考档位 | 备注 |
 |---|---:|---|---|---|
-| `DeepSeek-Flash` | 0.0 | 免费 | low/high/max | 免费；平时 1.1s，排队时 64s 后 200，也可能 90s+ 后 502（10605） |
+| `DeepSeek-Flash` | 0.0 | 免费（谷价）/ 低耗（峰价） | low/high/max | 免费；平时 1.1s，排队时 64s 后 200，也可能 90s+ 后 502（10605） |
+| `Qwen3.8-Flash` | 0.0 | 免费（谷价）/ 低耗（峰价） | low/high/max | 2026-10-23 19:24 复通（HTTP 200）后自动加回；谷价 0 积分、峰价 0.09 |
 | `GLM-5.3-Flash` | 0.1 | 低耗 | high/max | |
 | `MiniMax-M3.1-Flash` | 0.1 | 低耗 | — | |
 | `DeepSeek-V4-Pro` | 0.5 | 高耗 | high/max | |
@@ -103,17 +104,17 @@ API Key 与面板密码已持久化到 `accounts/settings.json`，所以 `.bat` 
 
 - `Auto` / `Fast`：Qoder 的路由别名，没有自身价格（同 WorkBuddy 的 `cn:auto` 规则）。
 - `Kimi-K3`：price_factor 1.4，超过同步脚本默认上限 0.8。
-- `Qwen3.8-Flash`：免费，但 2026-10-23 探测时上游 **10605 排队**
-  （queueCount ≈ 19k，p3），75s 超时，按「跑不通即清」暂时移出。等它复通后，
-  重新探测 + 同步会自动加回。
+- `Qwen3.8-Flash`：2026-10-23 白天探测时曾因上游 **10605 排队**（queueCount ≈ 19k，
+  p3）75s 超时被挡在配置外；当天 19:24 复跑探测返回 200，已自动收录。
+  说明「跑不通即清」是可恢复的，不需要人工加白名单。
 
 **排队/超时不误杀已跑通的模型**：探测结果带 `ever_ok`。一个曾经返回 200 的模型
 遇到 `queued` / `timeout` / `rate_limited` 时，`--probe-file` 仍保留它；只有
-**从未成功过**的模型（如当前的 Qwen3.8-Flash）才会因为排队被挡在配置外。免费
+**从未成功过**的模型才会因为排队被挡在配置外。免费
 `DeepSeek-Flash` 也会排队（实测 64s 后 200，也可能 90s+ 后 502），交互场景可以先用
 付费的低价档（`GLM-5.3-Flash` / `MiniMax-M3.1-Flash`，1–2s）。
 
-**思考参数**：7 个模型用 ZCode 原生四件套（`thinking` + `enable_thinking` +
+**思考参数**：8 个模型用 ZCode 原生四件套（`thinking` + `enable_thinking` +
 `reasoning_effort` + `reasoning`）探测全部 HTTP 200，因此**没有配任何
 `optionSpecs.reasoningLevel.map` 覆写**。思考字段矩阵见
 [MODEL-PROVIDERS.md](MODEL-PROVIDERS.md) §4.9、§5.2。
@@ -124,6 +125,13 @@ API Key 与面板密码已持久化到 `accounts/settings.json`，所以 `.bat` 
 
 > 统一四组的日常维护是 `tools/model_probe.py` → `tools/model_alias.py --probe-file … --apply`
 > （见 [MODEL-ALIAS.md](MODEL-ALIAS.md) §6）。下面的 Qoder 专用命令只用于采集/兼容。
+
+**每天 12:00 的定时任务已包含 Qoder**（`automation-3e2f8a53-b408-4bf8-90ff-4a331a721f5c`）：
+先跑 `qoder/qoder_probe_zcode.py --timeout 90 --sleep 3` 拉实时目录并逐个探测，再用
+`qoder/qoder_zcode_sync.py --probe-file qoder/qoder_probe.json --apply` 并入 chat 组，
+最后由 `tools/model_alias.py --slot auto --apply` 归一化成 `Q/积分/型号` 并分到四组。
+探测默认经 7871；路由不可用时定时任务会改用 `--direct` 直连 8790 重探。
+完整四段顺序见 [MAINTENANCE.md](MAINTENANCE.md) §6。
 
 ```bash
 # 1. 看当前目录与价格（dry run，不写）

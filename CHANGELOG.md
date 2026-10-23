@@ -17,6 +17,28 @@
 
 ## [未发布]
 
+### 显示名 `Preview` 缩为 `Pre`（2026-10-23）
+
+- `model_alias.py` 的 `ABBR` 与后缀兜底规则把 `Preview` 缩成 `Pre`：
+  `Kimi-K28-Pre`、`HY4-Pre`、`Step-5-Pre`、`LongCat-25-Pre`。
+- 重新生成四组与 alias map：37 个模型，旧显示名进 `legacy`，老会话仍可路由；
+  `W/0.00/HY4-Pre` 经 7871 实测 200。
+- 备份：`provider_config.json.bak-alias-20261023-192910-362000`。
+
+### 每日自动化加入 Qoder 模型查询（2026-10-23）
+
+- 定时任务 `automation-3e2f8a53-b408-4bf8-90ff-4a331a721f5c` 从「Go + WorkBuddy」
+  扩为四段：Go → WorkBuddy → **Qoder（实时目录 + 真实 body 探测 + 并入）** →
+  `model_alias.py` 统一归一化；标题改为「每天 12:00 自动收录 Go 套餐、WorkBuddy 与
+  Qoder 新模型」。Qoder 探测全部超时时会检查 7871，必要时改 `--direct` 直连 8790 重探。
+- 修 `go_model_sync.py` 的显示名误判：配置被 `model_alias.py` 重写成
+  `W/0.03/…`、`O/0.11/…`、`Q/0.09/…` 后，脚本会把这些显示名直接发给 Go 上游探测，
+  404 后按「跑不通即清」误删。现在先按 `model-alias-map.json` 还原上游裸 id 再体检，
+  WorkBuddy / Qoder 渠道直接跳过。
+- 首跑结果：Qoder 探测 8 个模型（`Qwen3.8-Flash` 复通 HTTP 200 并自动收录），
+  四组共 37 个模型（主力 7 / 免费 5 / 低耗 14 / 高耗 11），其中 Qoder 8 个；
+  `Q/0.09/Qwen-38-Fs` 经 7871 实测 200。
+
 ### 显示名压缩为 `W/0.03/DeepSeek-41-Fs`（2026-10-23）
 
 - 模型 ID 从 `渠道 : 型号 : 积分` 改为 `单字母/积分/紧凑型号`：`W` WorkBuddy、

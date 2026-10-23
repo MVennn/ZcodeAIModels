@@ -1020,3 +1020,74 @@ provider 列表；Qoder hub 与 WorkBuddy/OpenCode 的现有链路保持不变�
 - 榜单候选文件里的 `display` 会随 alias map 重新生成；`channel/upstream` 不受影响
 
 ## 状态: 已完成
+
+---
+
+# 2026-10-23 第 N+11 轮：每日自动化加入 Qoder 模型查询
+
+## 任务目标
+每天 12:00 的定时任务只收录 Go 套餐与 WorkBuddy 新模型，Qoder 的实时目录变化
+（新模型、复通、下架）没有自动查询。把 Qoder 的「拉目录 → 真实 body 探测 →
+并入 chat 组」接进同一个定时任务，并保证最终仍由 `model_alias.py` 归一化四组。
+
+## 已完成变更
+- [x] 定时任务 `automation-3e2f8a53-b408-4bf8-90ff-4a331a721f5c` 扩为四段：
+      Go → WorkBuddy → Qoder → `model_alias.py --slot auto --apply`；标题改为
+      「每天 12:00 自动收录 Go 套餐、WorkBuddy 与 Qoder 新模型」
+- [x] Qoder 段：`qoder_probe_zcode.py --timeout 90 --sleep 3` →
+      `qoder_zcode_sync.py --probe-file qoder/qoder_probe.json --apply`；
+      全部超时时检查 7871，必要时 `--direct` 直连 8790 重探
+- [x] 修 `go_model_sync.py`：新增 `display_alias()` / `probe_targets()`，已配置的
+      `W/…`/`O/…`/`Q/…` 显示名按 alias map 还原上游裸 id 再体检；WB/QD 渠道跳过。
+      不修的话，明天 12:00 会把显示名当 Go 模型探测，404 后误删
+- [x] 文档：`MAINTENANCE.md` §6、`TOOLS.md`、`QODER.md` §4/§5、`CHANGELOG.md`
+
+## 验收
+- `go_model_sync.py` dry run：36 个配置识别为 Go 16 / 非 Go 跳过 20，无一条被误判
+- Qoder 探测 8 个：7 个 200，`DeepSeek-Flash` 排队超时但 `ever_ok` 保留；
+  `Qwen3.8-Flash` 复通 200
+- `qoder_zcode_sync.py --probe-file … --apply`：备份 `provider_config.json.bak-qoder-merge-20261023-192423`
+- `model_alias.py --slot auto --apply`：备份 `provider_config.json.bak-alias-20261023-192436-451700`
+- 最终四组 37 个模型（主力 7 / 免费 5 / 低耗 14 / 高耗 11），Qoder 8 个
+  （低耗 `Q/0.09/DeepSeek-4-Fs`、`Q/0.09/Qwen-38-Fs`、`Q/0.09/GLM-53-Fs`、
+  `Q/0.09/MiniMax-M31-Fs`；高耗 4 个）；无未归一化 id
+- `GET 7871/health` alias.models=37；`Q/0.09/Qwen-38-Fs` 经 7871 实测 200
+
+## 待解决 / 注意事项
+- Qoder 免费模型峰谷价不同：`DeepSeek-Flash` / `Qwen3.8-Flash` 谷价 0 积分进免费组、
+  峰价 0.09 进低耗，12:00 定时任务取的是峰价
+- 定时任务整轮耗时可能 20–30 分钟（WorkBuddy `--sleep 20` + Qoder 最长 90s/模型）
+- 若 8790 网关没起，Qoder 段会全 timeout；`--direct` 也救不了，需要先
+  `start-qoder-proxy.bat`
+
+## 状态: 已完成
+
+---
+
+# 2026-10-23 第 N+12 轮：显示名 `Preview` 缩为 `Pre`
+
+## 任务目标
+用户要求把模型显示名里的 `Preview` 统一缩成 `Pre`，继续压缩名字长度。
+
+## 已完成变更
+- [x] `tools/model_alias.py`：`ABBR` 改为 `Kimi-K28-Pre` / `HY4-Pre` /
+      `Step-5-Pre` / `LongCat-25-Pre`；`abbreviate()` 兜底新增
+      `preview\b -> Pre`（未列入 `ABBR` 的新模型也生效）
+- [x] 重跑 `model_alias.py --slot auto --apply`，四组与 alias map 重新生成
+- [x] 文档：`MODEL-ALIAS.md` 的名字映射表与变体说明、`BENCHMARKS.md` 的
+      `HY4-Pre`、`CHANGELOG.md`
+
+## 验收
+- 配置里新显示名：免费 `W/0.00/HY4-Pre`、`W/0.00/Step-5-Pre`；
+  高耗 `W/0.29/HY4-Pre`、`Q/0.69/Kimi-K28-Pre`
+- `W/0.00/HY4-Pre` 经 7871 实测 200（上游回 `model: hy4`）
+- 四组仍为 37 个模型（主力 7 / 免费 5 / 低耗 14 / 高耗 11）
+- 备份：`provider_config.json.bak-alias-20261023-192910-362000`
+
+## 待解决 / 注意事项
+- 旧显示名（含 `Preview`）已进 alias map 的 `legacy`，老会话仍可路由；
+  等会话都切换后可自然淘汰
+- `Kimi-K2.8-Preview` 带点的是 Qoder 上游模型 id，不能改；显示名只去掉点并缩为
+  `Kimi-K28-Pre`
+
+## 状态: 已完成

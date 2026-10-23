@@ -58,6 +58,8 @@ CATALOG_DOCS = "https://opencode.ai/v2/docs/console/models"
 DEFAULT_CONFIG = os.path.join(
     os.path.expanduser("~"), ".zcode", "v2", "provider_config.json"
 )
+# model_alias.py 写的显示名映射（`W/0.03/…` -> `global:…`）
+ALIAS_MAP = os.path.join(os.path.dirname(DEFAULT_CONFIG), "model-alias-map.json")
 # 报告默认写进本仓的 evidence/（可用环境变量覆盖）
 REPORT_DIR = os.environ.get(
     "GO_SYNC_REPORT_DIR",
@@ -418,6 +420,35 @@ def configured_models(cfg):
     return out
 
 
+def display_alias():
+    """显示名 -> alias map 条目；读不到就当没有映射。"""
+    try:
+        with open(ALIAS_MAP, encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return {}
+    models = data.get("models")
+    return models if isinstance(models, dict) else {}
+
+
+def probe_targets(conf, alias):
+    """把已配置模型映射成 (上游裸 id -> (显示名, providerId))。
+
+    `model_alias.py` 会把配置重写成 `W/O/Q/积分/型号` 显示名，Go 上游不认识
+    这些 id，直接拿显示名探测会 404 后被误判成「已下架」。这里按 alias map
+    还原上游名，非 Go 渠道（WB / QD）跳过；没有映射的裸 id 原样处理。
+    """
+    targets, skipped = {}, 0
+    for display, pid in conf.items():
+        entry = alias.get(display) or {}
+        channel = str(entry.get("channel") or "")
+        if channel in ("WB", "QD") or is_non_go_id(display):
+            skipped += 1
+            continue
+        targets[str(entry.get("upstream") or display)] = (display, pid)
+    return targets, skipped
+
+
 def api_key(cfg):
     for r in provider_rules(cfg):
         k = r["config"].get("access", {}).get("apiKey")
@@ -640,35 +671,33 @@ def main():
     log("- 全量目录价格: %d 个; 已过弃用日: %d 个" % (len(public_price), len(deprecated)))
 
     conf = configured_models(cfg)
+    probes, non_go = probe_targets(conf, display_alias())
     candidates = sorted(set(live) | set(hint.keys()))
-    new_models = [m for m in candidates if m not in conf]
-    log("- 已配置 %d 个; 待评估新模型 %d 个" % (len(conf), len(new_models)))
+    new_models = [m for m in candidates if m not in probes]
+    log("- 已配置 %d 个（Go %d / 非 Go 跳过 %d）; 待评估新模型 %d 个"
+        % (len(conf), len(probes), non_go, len(new_models)))
 
     # ---- 已配置模型体检（弃用 / 协议漂移 / 上游已下架）
     removed = []
     if not args.no_existing:
         log("\n## 已配置模型体检")
-        wb_skipped = 0
         verb = "移除" if (args.apply and not args.probe_only) else "将移除"
-        for m, pid in sorted(conf.items()):
-            if is_non_go_id(m):
-                wb_skipped += 1
-                continue
+        for m, (display, pid) in sorted(probes.items()):
             proto = ("responses" if "responses" in pid else
                      "messages" if "messages" in pid else "chat/completions")
             st, kind, raw = probe_detail(m, proto, thinking=False)
             why = stale_reason(m, st, kind, raw, deprecated, live, hint)
             if why:
-                removed.append((m, why))
-                log("  - %s %s：%s" % (verb, m, why))
+                removed.append((display, why))
+                log("  - %s %s：%s" % (verb, display, why))
             elif kind == "protocol_unsupported":
-                log("  ✗ %s 现在拒绝 %s 协议，协议归属可能变了" % (m, proto))
+                log("  ✗ %s 现在拒绝 %s 协议，协议归属可能变了" % (display, proto))
             elif kind == "unauthorized":
-                log("  ⚠ %s 返回 401（凭据/隐私授权问题）" % m)
+                log("  ⚠ %s 返回 401（凭据/隐私授权问题）" % display)
             elif kind != "ok":
-                log("  ⚠ %s 探测异常: %s (HTTP %s)" % (m, kind, st))
-        if wb_skipped:
-            log("  · 跳过 %d 个 cn:/global:/qoder: 开头的非 Go 模型（由统一路由处理，不属于 Go 套餐）" % wb_skipped)
+                log("  ⚠ %s 探测异常: %s (HTTP %s)" % (display, kind, st))
+        if non_go:
+            log("  · 跳过 %d 个 WorkBuddy/Qoder 模型（W/Q 显示名与 cn:/global:/qoder: 前缀，由统一路由处理）" % non_go)
         if not removed:
             log("  无需移除")
         removed_ids = {m for m, _ in removed}

@@ -154,22 +154,22 @@ ABBR = {
     "minimax-m3.1-flash": "MiniMax-M31-Fs",
     "minimax-m3": "MiniMax-M3",
     "minimax-m2.7": "MiniMax-M27",
-    "kimi-k2.8-preview": "Kimi-K28-Preview",
+    "kimi-k2.8-preview": "Kimi-K28-Pre",
     "kimi-k3": "Kimi-K3",
     "kimi-k2.6": "Kimi-K26",
     "kimi-k2.5": "Kimi-K25",
     "hy3": "HY3",
     "hy3-x": "HY3-X",
-    "hy4-preview": "HY4-Preview",
-    "hy4-preview-f": "HY4-Preview",
-    "step-5-preview": "Step-5-Preview",
+    "hy4-preview": "HY4-Pre",
+    "hy4-preview-f": "HY4-Pre",
+    "step-5-preview": "Step-5-Pre",
     "space-bunny": "Space-Bunny",
     "mimo-v2.6-pro": "MiMo-26-Pro",
     "mimo-v2.6-flash": "MiMo-26-Fs",
     "mimo-v2.5": "MiMo-25",
     "mimo-v2.5-pro": "MiMo-25-Pro",
     "longcat-2.0": "LongCat-20",
-    "longcat-2.5-preview-free": "LongCat-25-Preview",
+    "longcat-2.5-preview-free": "LongCat-25-Pre",
     "beam-free": "Beam",
     "claude-haiku-5-5": "Claude-Haiku-55",
     "gpt-6-luna": "GPT-6-Luna",
@@ -372,6 +372,7 @@ def abbreviate(model: str) -> str:
     text = re.sub(r"(?<=\d)\.(?=\d)", "", model)
     text = re.sub(r"^[Vv](?=\d)", "", text)
     text = re.sub(r"(?i)flash\b", "Fs", text)
+    text = re.sub(r"(?i)preview\b", "Pre", text)
     text = re.sub(r"[^A-Za-z0-9.-]+", "-", text).strip("-")
     return text or "MODEL"
 
