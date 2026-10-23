@@ -33,18 +33,18 @@ credentials.json
 # 注意：wb_pricing.json（网关倍率快照）与 wb_zcode_probe.json（账号池探测结果）
 #       都不随仓库分发。克隆后要重跑探测，需先按 docs/MAINTENANCE.md §1
 #       手工重建 wb_pricing.json。
-/workbuddy/cache/*.json
-/workbuddy/logs/
-/workbuddy/cache/*.log
+/providers/workbuddy/cache/*.json
+/providers/workbuddy/logs/
+/providers/workbuddy/cache/*.log
 
 # ---- WorkBuddy2API 网关（上游独立 clone）----
 # 整目录不随仓库分发：含 auths/ 账号凭据、config.json（api_key）、
 # data/ 运行时状态与 wb2api.exe 二进制。更新用
-#   git -C workbuddy/gateway pull --ff-only
-/workbuddy/gateway/
+#   git -C gateways/upstream/workbuddy pull --ff-only
+/gateways/upstream/workbuddy/
 
 # ---- OpenCode-Go 探测原始结果（体积大、可重跑再生，本地留存）----
-/opencode-go/probe/results/
+/providers/opencode-go/probe/results/
 
 # ---- Python 字节码 ----
 __pycache__/
@@ -80,7 +80,11 @@ desktop.ini
 .opencode-key
 
 # qoder2api-hub clone (own .git, credentials live inside)
-/qoder/gateway/
+/gateways/upstream/qoder/
 
 # ---- Qoder 活数据（探测结果，可重跑再生）----
-/qoder/qoder_probe.json
+/providers/qoder/qoder_probe.json
+
+# ---- zgate 产物 ----
+/gateways/zgate/*.exe
+/gateways/zgate/zgate.dev.json

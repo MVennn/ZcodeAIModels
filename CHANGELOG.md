@@ -15,7 +15,173 @@
 
 ---
 
-## [未发布]
+## [0.3.0] — 2026-10-23
+
+### 运行架构整合：三个反代并成一个 Go 入口（破坏性：目录与启动方式变了）
+
+- **新增 `gateways/zgate`（Go）**：一个二进制顶掉原来的 Node 路由（`tools/unified-router.js`）
+  与 PowerShell 守护器（`workbuddy/zcode_gateway_watch.ps1`）。监听 `127.0.0.1:7871`，
+  做 alias 分流、chat ↔ messages/responses 协议桥、以及两个上游子进程的起停。
+- **子进程策略**：WorkBuddy `ondemand`（首个 WB 请求拉起，空闲 900 秒回收）；
+  Qoder `always`（签到不能停）。子进程装在 Windows Job Object 里，zgate 挂了不会留下孤儿。
+- **内存实测**：改造前 4 个进程 293.4 MB（PowerShell 守护器 124.2 + Node 路由 71.5 +
+  Qoder 70.1 + wb2api 27.6）；改造后 3 个进程 **99.3 MB**（zgate 18.5 + Qoder 57.2 + wb2api 23.2）；
+  WB 空闲回收后 76.1 MB；只留 zgate 时 18.5 MB。
+- **等价性**：新入口在 7971 与旧路由并行跑了 9 个用例（OC/WB/QD chat、messages 桥、
+  responses 桥、三种流式、未知模型），状态码/响应形态/SSE 事件序列 9/9 一致，之后才切到 7871。
+  `gateways/zgate/smoke_test.py` 保留为常设冒烟（6 项）。
+- **目录重构（破坏性）**：`workbuddy/gateway` → `gateways/upstream/workbuddy`；
+  `qoder/gateway` → `gateways/upstream/qoder`；三家采集脚本 → `providers/<vendor>/`；
+  旧 JS 路由 → `gateways/legacy-router/`（回退用，保留一个版本）。
+  `.gitignore`、4 个脚本的硬编码路径、19 篇文档与模板的路径已同步；
+  `zcode_gateway_watch.ps1/.vbs` 已删除，`.gitignore` 里两份过期备份也已清理。
+- **启动方式（破坏性）**：`zgate install` 写登录自启快捷方式（`schtasks ONLOGON` 在普通权限下
+  被拒绝）；`zgate status` 一次看全服务、子进程、端口与凭据有无；配置在
+  `gateways/zgate/zgate.json`。
+- **偏差说明**：没有实现「跟随 ZCode 主进程」——在 Go 里判主进程要读 PEB 命令行，代价高且脆；
+  改成 zgate 常驻（19 MB），顺带可以用 `always` 策略让 WorkBuddy 的定时任务在 ZCode 关闭时也跑。
+- **验证**：`go test ./...`（bridge/alias/router/supervisor 共 12 个用例）+ `go vet` + `gofmt`
+  全绿；四条通道真实请求 200；WB 冷启动 1.6 秒；CI 增加 Go 格式/构建/测试步骤。
+- **回退**：`zgate uninstall` → `node gateways/legacy-router/unified-router.js` 并手动起
+  `gateways/upstream/workbuddy/run.bat`；或 `git revert` 本次提交。
+
+### 追加：两个网关全部改按需 + 签到窗口 + 热加载（2026-10-23 晚）
+
+- **不再常驻任何上游**：Qoder 从 `always` 改成 `ondemand`；两个子进程都空闲 300 秒回收。
+  ZCode 启动后 7863 / 8790 都是空的，只有请求打到才拉起（WB 冷启动约 1.6 秒）。
+- **新增 `children.*.windows`**：本地时间 `HH:MM-HH:MM`，支持跨午夜；窗内按 `always` 处理。
+  默认 WB 四档（9 / 10 / 21 / 22 点前后）、Qoder 三档（9 / 21 / 22 点），保住签到与保活。
+- **新增 `zgate reload` / `POST /admin/reload`**：策略、空闲阈值、窗口可热加载；
+  新增 child、监听地址与上游 base 仍需重启。
+- **修复**：协议桥补 120s 超时；`Process.Release` 改 `sync.Once`（double CloseHandle）；
+  `external` 接管实例纳入 5 秒健康轮询；重启退避改成 1s→2s→…→60s；日志运行期按 5 MB 轮转；
+  `zgate status` 不再打开写句柄；`qoder:` 前缀大小写不敏感；删除 `WaitExit` / `Missing` /
+  `Redacted` 等死代码。
+- **修复 回退链**：WorkBuddy 把上游 6004 模型限流转成 `400 {"code":"model_unavailable"}`，
+  旧逻辑只在 429/502/503/504 上重试，导致 `global:` → `cn:` 的回退从未生效。现在这种 400
+  按「池故障」触发回退，普通 400（参数错误）仍然直通不重试。
+- **配置解析修正**：`args` 里以 `/` 开头的参数（如 `cmd /c`）不再被当成路径解析。
+- **验证**：旁路实例实测「启动不起、窗内起、reload 后回收」；`go test ./...` 24 个用例全绿。
+
+### 显示名 `Flash`/`-Free` + 按消耗排序 + 自动化同步报告（2026-10-23 晚）
+
+- **命名**：`Fs` 改回 `Flash`（`DeepSeek-4.1-Flash`、`GLM-5.3-Flash`、`MiMo-2.6-Flash`）；
+  免费重复条目的后缀 `-F` 改为 `-Free`（`HY3-Free`、`HY4-Pre-Free`、`DeepSeek-4-Flash-Free`）。
+- **排序**：组内按积分消耗从低到高；**同厂商粘成一块**，整块的位置按该厂商最便宜的那条排，
+  块内再按价格升序。名字里仍然不显示积分。
+- **自动化**：新增 `tools/sync_report.py` —— 对比上一轮快照
+  （`~/.zcode/v2/model-sync-state.json`），生成 `docs/reports/MODEL-SYNC-<时间>.md`
+  （新增 / 移除 / 分组变化 / 链路变化 + 当前清单），自动更新 `docs/reports/README.md` 索引；
+  `--write --push` 会再 `git add/commit/push`。日常自动化的最后一步加它。
+- 结果：28 个模型（主力 6 / 免费 5 / 低耗 8 / 高耗 9），排序与命名已线上生效。
+
+### 显示名只留型号 + 跨渠道合并链路（2026-10-23 晚，破坏性）
+
+- **命名**：显示名去掉渠道与积分，只剩型号 —— `W/0.03/DeepSeek-4.1-Fs` →
+  `DeepSeek-4.1-Fs`。版本号保留点号。
+- **跨渠道合并**：同型号同协议的所有渠道合成一条 `chain`，按价格升序尝试，
+  每一跳自带 `base` / `channel` / `upstream`。例：`DeepSeek-4.1-Fs` =
+  WB 免费 → WB sg → WB cn → OC。
+- **分组**：免费 = 链路最低价 0；低耗 = 0 < 最低价 ≤ **0.11**（DeepSeek OC 基准价）；
+  高耗 = > 0.11；主力仍由 `MAIN_IDS` + 榜单决定并优先于价格。
+- **免费重复**：同型号既有免费又有付费时，免费那条单独成条并加 `-F`
+  （`HY3-F`、`HY4-Pre-F`、`DeepSeek-4-Fs-F`）；`deepseek-v4.1-flash` 例外，
+  免费档并入付费条目并置顶（`MERGE_FREE_GB`）。
+- **router**：`alias.Target` 新增 `chain`，`routeChain` / `attemptBridge` 按跳切换
+  base、渠道与 key；旧的 `base` + `fallbacks` 仍兼容。
+- **生成器**：`family_entries()` 取代旧的按渠道命名 + `merge_inventory`；
+  链路写回 alias map 并可从 `chain` 还原，重复运行幂等；`legacy` 支持改名链传递。
+- 结果：28 个模型（主力 6 / 免费 5 / 低耗 8 / 高耗 9）。
+- 上线：新二进制 + 新配置 + 新 alias map 由一次性计划任务在 21:41 一起替换并重启。
+
+### 显示名恢复版本点号 + 免费 DeepSeek 进主力置顶（2026-10-23 晚）
+
+- **命名**：`model_alias.py` 的 `ABBR` 与兜底规则不再删版本点号 ——
+  `DeepSeek-41-Fs` → `DeepSeek-4.1-Fs`、`Qwen-38-Fs` → `Qwen-3.8-Fs`、
+  `MiMo-26-Fs` → `MiMo-2.6-Fs`、`GLM-53-Fs` → `GLM-5.3-Fs`、
+  `MiniMax-M31-Fs` → `MiniMax-M3.1-Fs`、`Claude-Haiku-55` → `Claude-Haiku-5.5`、
+  `Kimi-K28-Pre` → `Kimi-K2.8-Pre`、`GPT-56-Luna` → `GPT-5.6-Luna`、
+  `Muse-Spark12/13` → `Muse-Spark1.2/1.3`、`LongCat-20` → `LongCat-2.0`。
+  旧名全部进 alias map 的 `legacy`，老会话继续可路由。
+- **主力**：`W/0.03/DeepSeek-4.1-Fs` 固定在主力组**第一位**（`MAIN_FIRST`）。
+- **免费档并入付费条目**（`MERGE_FREE_GB`）：`deepseek-v4.1-flash` 的免费 GB 档不再单独成条，
+  折进 `W/0.03/DeepSeek-4.1-Fs`，条目内链路为
+  `global:deepseek-v4.1-flash`（免费）→ `global:deepseek-v4.1-flash-sg`（0.03）→
+  `cn:deepseek-v4.1-flash`，**免费优先**；显示价保留 0.03。
+- 合并时的价格档位**从 `wb_pricing.json` 重建**，不依赖上一次写进配置的条目，
+  因此重复跑 `--apply` 不会再退回 `W/0.00`（已实测两次幂等）。
+- 重新生成：35 个模型（主力 7 / 免费 4 / 低耗 13 / 高耗 11），
+  备份 `provider_config.json.bak-alias-20261023-212838-434500`。
+
+### 显示名 `Preview` 缩为 `Pre`（2026-10-23）
+
+### 追加：两个网关全部改按需 + 签到窗口 + 热加载（2026-10-23 晚）
+
+- **不再常驻任何上游**：Qoder 从 `always` 改成 `ondemand`；两个子进程都空闲 300 秒回收。
+  ZCode 启动后 7863 / 8790 都是空的，只有请求打到才拉起（WB 冷启动约 1.6 秒）。
+- **新增 `children.*.windows`**：本地时间 `HH:MM-HH:MM`，支持跨午夜；窗内按 `always` 处理。
+  默认 WB 四档（9 / 10 / 21 / 22 点前后）、Qoder 三档（9 / 21 / 22 点），保住签到与保活。
+- **新增 `zgate reload` / `POST /admin/reload`**：策略、空闲阈值、窗口可热加载；
+  新增 child、监听地址与上游 base 仍需重启。
+- **修复**：协议桥补 120s 超时；`Process.Release` 改 `sync.Once`（double CloseHandle）；
+  `external` 接管实例纳入 5 秒健康轮询；重启退避改成 1s→2s→…→60s；日志运行期按 5 MB 轮转；
+  `zgate status` 不再打开写句柄；`qoder:` 前缀大小写不敏感；删除 `WaitExit` / `Missing` /
+  `Redacted` 等死代码。
+- **修复 回退链**：WorkBuddy 把上游 6004 模型限流转成 `400 {"code":"model_unavailable"}`，
+  旧逻辑只在 429/502/503/504 上重试，导致 `global:` → `cn:` 的回退从未生效。现在这种 400
+  按「池故障」触发回退，普通 400（参数错误）仍然直通不重试。
+- **配置解析修正**：`args` 里以 `/` 开头的参数（如 `cmd /c`）不再被当成路径解析。
+- **验证**：旁路实例实测「启动不起、窗内起、reload 后回收」；`go test ./...` 24 个用例全绿。
+
+### 显示名 `Flash`/`-Free` + 按消耗排序 + 自动化同步报告（2026-10-23 晚）
+
+- **命名**：`Fs` 改回 `Flash`（`DeepSeek-4.1-Flash`、`GLM-5.3-Flash`、`MiMo-2.6-Flash`）；
+  免费重复条目的后缀 `-F` 改为 `-Free`（`HY3-Free`、`HY4-Pre-Free`、`DeepSeek-4-Flash-Free`）。
+- **排序**：组内按积分消耗从低到高；**同厂商粘成一块**，整块的位置按该厂商最便宜的那条排，
+  块内再按价格升序。名字里仍然不显示积分。
+- **自动化**：新增 `tools/sync_report.py` —— 对比上一轮快照
+  （`~/.zcode/v2/model-sync-state.json`），生成 `docs/reports/MODEL-SYNC-<时间>.md`
+  （新增 / 移除 / 分组变化 / 链路变化 + 当前清单），自动更新 `docs/reports/README.md` 索引；
+  `--write --push` 会再 `git add/commit/push`。日常自动化的最后一步加它。
+- 结果：28 个模型（主力 6 / 免费 5 / 低耗 8 / 高耗 9），排序与命名已线上生效。
+
+### 显示名只留型号 + 跨渠道合并链路（2026-10-23 晚，破坏性）
+
+- **命名**：显示名去掉渠道与积分，只剩型号 —— `W/0.03/DeepSeek-4.1-Fs` →
+  `DeepSeek-4.1-Fs`。版本号保留点号。
+- **跨渠道合并**：同型号同协议的所有渠道合成一条 `chain`，按价格升序尝试，
+  每一跳自带 `base` / `channel` / `upstream`。例：`DeepSeek-4.1-Fs` =
+  WB 免费 → WB sg → WB cn → OC。
+- **分组**：免费 = 链路最低价 0；低耗 = 0 < 最低价 ≤ **0.11**（DeepSeek OC 基准价）；
+  高耗 = > 0.11；主力仍由 `MAIN_IDS` + 榜单决定并优先于价格。
+- **免费重复**：同型号既有免费又有付费时，免费那条单独成条并加 `-F`
+  （`HY3-F`、`HY4-Pre-F`、`DeepSeek-4-Fs-F`）；`deepseek-v4.1-flash` 例外，
+  免费档并入付费条目并置顶（`MERGE_FREE_GB`）。
+- **router**：`alias.Target` 新增 `chain`，`routeChain` / `attemptBridge` 按跳切换
+  base、渠道与 key；旧的 `base` + `fallbacks` 仍兼容。
+- **生成器**：`family_entries()` 取代旧的按渠道命名 + `merge_inventory`；
+  链路写回 alias map 并可从 `chain` 还原，重复运行幂等；`legacy` 支持改名链传递。
+- 结果：28 个模型（主力 6 / 免费 5 / 低耗 8 / 高耗 9）。
+- 上线：新二进制 + 新配置 + 新 alias map 由一次性计划任务在 21:41 一起替换并重启。
+
+### 显示名恢复版本点号 + 免费 DeepSeek 进主力置顶（2026-10-23 晚）
+
+- **命名**：`model_alias.py` 的 `ABBR` 与兜底规则不再删版本点号 ——
+  `DeepSeek-41-Fs` → `DeepSeek-4.1-Fs`、`Qwen-38-Fs` → `Qwen-3.8-Fs`、
+  `MiMo-26-Fs` → `MiMo-2.6-Fs`、`GLM-53-Fs` → `GLM-5.3-Fs`、
+  `MiniMax-M31-Fs` → `MiniMax-M3.1-Fs`、`Claude-Haiku-55` → `Claude-Haiku-5.5`、
+  `Kimi-K28-Pre` → `Kimi-K2.8-Pre`、`GPT-56-Luna` → `GPT-5.6-Luna`、
+  `Muse-Spark12/13` → `Muse-Spark1.2/1.3`、`LongCat-20` → `LongCat-2.0`。
+  旧名全部进 alias map 的 `legacy`，老会话继续可路由。
+- **主力**：`W/0.03/DeepSeek-4.1-Fs` 固定在主力组**第一位**（`MAIN_FIRST`）。
+- **免费档并入付费条目**（`MERGE_FREE_GB`）：`deepseek-v4.1-flash` 的免费 GB 档不再单独成条，
+  折进 `W/0.03/DeepSeek-4.1-Fs`，条目内链路为
+  `global:deepseek-v4.1-flash`（免费）→ `global:deepseek-v4.1-flash-sg`（0.03）→
+  `cn:deepseek-v4.1-flash`，**免费优先**；显示价保留 0.03。
+- 合并时的价格档位**从 `wb_pricing.json` 重建**，不依赖上一次写进配置的条目，
+  因此重复跑 `--apply` 不会再退回 `W/0.00`（已实测两次幂等）。
+- 重新生成：35 个模型（主力 7 / 免费 4 / 低耗 13 / 高耗 11），
+  备份 `provider_config.json.bak-alias-20261023-212838-434500`。
 
 ### 显示名 `Preview` 缩为 `Pre`（2026-10-23）
 

@@ -11,7 +11,7 @@ repository root for the full text.
 The OpenCode-Go API key used by the probe scripts is **not** stored in this
 repository: it is read from the `OPENCODE_GO_KEY` environment variable, the
 WorkBuddy gateway key from `WB_GATEWAY_KEY`, and the Qoder gateway key from
-`QD_API_KEY` (or the git-ignored qoder/.env.local). Where each credential comes
+`QD_API_KEY` (or the git-ignored providers/qoder/.env.local). Where each credential comes
 from is documented in docs/SECRETS.md (locations only, never values).
 
 ==============================================================================
@@ -31,7 +31,7 @@ repository.
   WorkBuddy models be used from the ZCode client. This repository only
   sends HTTP requests to it; the gateway binary and its source are NOT
   distributed with this repository. A local working clone may live at
-  workbuddy/gateway/ (with its own .git), but that directory is git-ignored
+  gateways/upstream/workbuddy/ (with its own .git), but that directory is git-ignored
   and is not part of the published tree. The MIT license text of the
   upstream project is reproduced below for reference.
 
@@ -42,7 +42,7 @@ repository.
   OpenAI-compatible HTTP endpoint on 127.0.0.1:8790, which lets the Qoder
   models be used from the ZCode client. This repository only sends HTTP
   requests to it and ships the sync/probe scripts; the gateway source is NOT
-  redistributed. A local working clone may live at qoder/gateway/ (with its
+  redistributed. A local working clone may live at gateways/upstream/qoder/ (with its
   own .git), but that directory is git-ignored and is not part of the
   published tree. See the upstream repository for the MIT license text.
 

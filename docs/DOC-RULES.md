@@ -55,6 +55,7 @@ docs/ 分四类（索引见 [README.md](README.md)）：
 | Release 说明格式（含动词四选一、覆盖率红线） | [release-notes/README.md](release-notes/README.md) |
 | **版本晋升规则**（有功能更新 +0.1.0，没有 +0.0.1） | [VERSIONING.md](VERSIONING.md) §1–§2 |
 | **交付 / 发版规则**（版本号在哪维护 / 什么时候不动版本号 / 打 tag） | [VERSIONING.md](VERSIONING.md) §3、§5 + [release-notes/README.md](release-notes/README.md) |
+| 运行架构（进程 / 端口 / 目录两轴）与改造记录 | [ARCHITECTURE.md](ARCHITECTURE.md) |
 | 脚本清单、产物与去留标记、运行环境 | [TOOLS.md](TOOLS.md) |
 | 凭据存放位置与取值方法 | [SECRETS.md](SECRETS.md) |
 | 许可证 | 仓库根 [LICENSE](../LICENSE)（MIT 全文） |

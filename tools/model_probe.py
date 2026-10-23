@@ -3,7 +3,7 @@
 
 Every model is sent through the unified router (127.0.0.1:7871) using its
 display id (`WB:...` / `OC:...` / `QD:...`). The effective body is computed by
-`workbuddy/zcode_effective_body.js` with the model's provider id, so
+`providers/workbuddy/zcode_effective_body.js` with the model's provider id, so
 provider-specific `optionSpecs.reasoningLevel.map` overrides (e.g. the empty
 map for minimax-m3 / beam-free / bridged models) are applied.
 
@@ -36,7 +36,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent
-EFFECTIVE = REPO / "workbuddy" / "zcode_effective_body.js"
+EFFECTIVE = REPO / "providers" / "workbuddy" / "zcode_effective_body.js"
 DEFAULT_OUT = Path.home() / ".zcode" / "v2" / "model_probe.json"
 ALIAS = Path.home() / ".zcode" / "v2" / "model-alias-map.json"
 PROVIDERS = ("opencode-go-chat", "opencode-go-chat-free",

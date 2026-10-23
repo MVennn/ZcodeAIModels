@@ -20,8 +20,8 @@
  *
  * 用法
  * ----
- *   node tools/unified-router.js
- *   UNIFIED_ROUTER_PORT=7871 node tools/unified-router.js
+ *   node gateways/legacy-router/unified-router.js
+ *   UNIFIED_ROUTER_PORT=7871 node gateways/legacy-router/unified-router.js
  *
  * 环境变量
  * --------
@@ -31,7 +31,7 @@
  *   QD_GATEWAY_BASE                             默认 http://127.0.0.1:8790
  *   OPENCODE_GO_KEY / WB_GATEWAY_KEY / QD_API_KEY
  *                                               缺省时从 provider_config.json /
- *                                               workbuddy/gateway/config.json /
+ *                                               gateways/upstream/workbuddy/config.json /
  *                                               qoder/.env.local 读
  *   OPENCODE_SESSION                            OpenCode 会话头，默认 unified-router
  *
@@ -116,11 +116,11 @@ function loadKeys() {
       /127\.0\.0\.1:7863|localhost:7863/i.test(base) || /^workbuddy-/.test(rule.providerId || ''));
   }
   if (!workbuddy) {
-    const gateway = readJson(path.join(__dirname, '..', 'workbuddy', 'gateway', 'config.json'));
+    const gateway = readJson(path.join(__dirname, '..', 'upstream', 'workbuddy', 'config.json'));
     if (gateway && gateway.api_key) workbuddy = String(gateway.api_key);
   }
   if (!qoder) {
-    const env = readEnvFile(path.join(__dirname, '..', 'qoder', '.env.local'));
+    const env = readEnvFile(path.join(__dirname, '..', '..', 'providers', 'qoder', '.env.local'));
     if (env.QD_API_KEY) qoder = String(env.QD_API_KEY);
   }
   if (!qoder) {
@@ -135,10 +135,10 @@ if (!KEYS.opencode) {
   console.warn('[router] 缺少 OpenCode-Go key：设置 OPENCODE_GO_KEY 或检查 provider_config.json');
 }
 if (!KEYS.workbuddy) {
-  console.warn('[router] 缺少 WorkBuddy key：设置 WB_GATEWAY_KEY 或检查 workbuddy/gateway/config.json');
+  console.warn('[router] 缺少 WorkBuddy key：设置 WB_GATEWAY_KEY 或检查 gateways/upstream/workbuddy/config.json');
 }
 if (!KEYS.qoder) {
-  console.warn('[router] 缺少 Qoder key：设置 QD_API_KEY 或检查 qoder/.env.local');
+  console.warn('[router] 缺少 Qoder key：设置 QD_API_KEY 或检查 providers/qoder/.env.local');
 }
 
 function normalizePath(rawUrl) {

@@ -134,7 +134,7 @@ ZCode 的写入路径是 `~/.zcode/v2/config.json`（legacy）+ `~/.zcode/cli/co
 
 **与本仓的关系**：**上游完全一样**（opencode.ai），但**解法不同**：
 本仓是「用合法 API key 直接写进 ZCode 配置」；zen-proxy 是「伪造成 OpenCode CLI 的请求」。
-本仓的 `opencode-go/ops/opencode-header-proxy.js` 和它是同一类东西。
+本仓的 `providers/opencode-go/ops/opencode-header-proxy.js` 和它是同一类东西。
 
 **供应商接入方式**：不是配置文件 —— 它**根本不配供应商**，只有一个上游地址
 （`OPENCODE` → `https://opencode.ai/inference/v1`），模型清单来自上游 `/models`。
@@ -236,7 +236,7 @@ key 的**变量名**写在表里，值从环境变量读 —— 这跟本仓 AGE
 **解决什么**：给 ZCode 一条「可审计、可自己编译」的路。
 
 **与本仓的关系**：**本仓只读它的源码，不碰它的代码**。
-本仓的 `workbuddy/zcode_effective_body.js` 是**复刻** ZCode 引擎的规则解析顺序，
+本仓的 `providers/workbuddy/zcode_effective_body.js` 是**复刻** ZCode 引擎的规则解析顺序，
 用来算出「某个 modelId 在 ZCode 里实际会发什么请求体」。而 ZCodium 仓库里
 **就有那份规则的原文**：`config/provider/zcode-builtin.json`。
 
@@ -296,7 +296,7 @@ Android 模拟器插件、几十个 package）。本仓只需要那份 2.5 KB �
 「支不支持推理」「支持哪些 effort 档」「默认档位是什么」，再据此决定发什么。
 
 > **和本仓的关系**：本仓的「哪些模型支持思考、支持哪几档」目前来自
-> **WorkBuddy 网关的 `supportedEfforts`**（`workbuddy/cache/wb_pricing.json`）。
+> **WorkBuddy 网关的 `supportedEfforts`**（`providers/workbuddy/cache/wb_pricing.json`）。
 > CCR 的做法是**从上游目录读**，而不是从网关面板读 —— 值得对照，但本仓的网关侧没有目录接口，
 > 暂时改不了。
 

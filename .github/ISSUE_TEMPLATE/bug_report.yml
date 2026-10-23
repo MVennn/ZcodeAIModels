@@ -29,7 +29,7 @@ body:
         现象 + 复现步骤：跑了哪个脚本、卡在哪一步、预期结果与实际结果分别是什么。
       placeholder: |
         例：
-        1. 执行 python opencode-go/ops/go_model_sync.py --apply
+        1. 执行 python providers/opencode-go/ops/go_model_sync.py --apply
         2. 同步报告显示模型已写入，但 ZCode 模型列表里没有
         3. 预期：列表出现新分组；实际：只有旧分组
     validations:
@@ -58,12 +58,12 @@ body:
     attributes:
       label: 出问题的是哪个脚本
       options:
-        - opencode-go/ops/go_model_sync.py
-        - opencode-go/probe/probe_models.py
-        - opencode-go/ops/opencode-header-proxy.js
-        - workbuddy/workbuddy_probe_zcode.py
-        - workbuddy/workbuddy_zcode_sync.py
-        - workbuddy/workbuddy_fetch_pricing.py
+        - providers/opencode-go/ops/go_model_sync.py
+        - providers/opencode-go/probe/probe_models.py
+        - providers/opencode-go/ops/opencode-header-proxy.js
+        - providers/workbuddy/workbuddy_probe_zcode.py
+        - providers/workbuddy/workbuddy_zcode_sync.py
+        - providers/workbuddy/workbuddy_fetch_pricing.py
         - 文档或其它
     validations:
       required: true
@@ -73,7 +73,7 @@ body:
     attributes:
       label: 执行的完整命令
       description: 带上参数；环境变量只写名字
-      placeholder: "例：python opencode-go/ops/go_model_sync.py --apply"
+      placeholder: "例：python providers/opencode-go/ops/go_model_sync.py --apply"
     validations:
       required: true
 

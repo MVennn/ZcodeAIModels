@@ -106,7 +106,7 @@ python -c "import json,os; c=json.load(open(os.path.expanduser('~/.zcode/v2/prov
 curl -s http://127.0.0.1:7863/status | python -m json.tool | head -60
 
 # 2) 看被拒的模型在不在探测缓存里，状态是什么
-python -c "import json; d=json.load(open('workbuddy/cache/wb_zcode_probe.json',encoding='utf-8')); [print(k,v.get('status'),v.get('detail')) for k,v in d.items() if v.get('status')!='ok']"
+python -c "import json; d=json.load(open('providers/workbuddy/cache/wb_zcode_probe.json',encoding='utf-8')); [print(k,v.get('status'),v.get('detail')) for k,v in d.items() if v.get('status')!='ok']"
 ```
 
 **原因 / 解法**（均为**【实例 B】**）
@@ -134,10 +134,10 @@ python -c "import json; d=json.load(open('workbuddy/cache/wb_zcode_probe.json',e
 
 ```bash
 # 1) 看探测结果原始数据
-python -c "import json; d=json.load(open('opencode-go/probe/results/20261019/probe_results.json',encoding='utf-8')); [print(k, v.get('status'), (v.get('err') or '')[:80]) for k,v in d.items() if v.get('status')!=200]"
+python -c "import json; d=json.load(open('providers/opencode-go/probe/results/20261019/probe_results.json',encoding='utf-8')); [print(k, v.get('status'), (v.get('err') or '')[:80]) for k,v in d.items() if v.get('status')!=200]"
 
 # 2) WorkBuddy 侧：看探测缓存的状态分布
-python -c "import json,collections; d=json.load(open('workbuddy/cache/wb_zcode_probe.json',encoding='utf-8')); print(collections.Counter(v.get('status') for v in d.values()))"
+python -c "import json,collections; d=json.load(open('providers/workbuddy/cache/wb_zcode_probe.json',encoding='utf-8')); print(collections.Counter(v.get('status') for v in d.values()))"
 ```
 
 **原因 / 解法**
@@ -149,6 +149,7 @@ python -c "import json,collections; d=json.load(open('workbuddy/cache/wb_zcode_p
 | 429 | **【通用】** | 日配额耗尽，见第 8 条 |
 | `no_healthy_account` | **【实例 B】** | **探测间隔太短，把账号池打爆了** —— 用 `--sleep 20` 重跑（脚本支持断点续跑） |
 | 429 / `no_healthy_account` 伴随**网关进程消失** | **【实例 B】** | 网关被打崩了，重启 `wb2api` 后再跑；**先确认 `/status` 可达** |
+| `400 model_unavailable` + `upstream: 6004 model rate limit` | **【实例 B】** | 该模型的**全部账号**在冷却（模型级限流，不是账号池被打爆）。带 `fallbacks` 的显示名会自动改走备用区域（如 `global:` → `cn:`）；没有 fallback 的模型只能等，`gateway_hint` 里有最早解封时间 |
 
 ---
 
@@ -167,7 +168,7 @@ python -c "import json,collections; d=json.load(open('workbuddy/cache/wb_zcode_p
 
 ```bash
 # 1) 看当前价格表里各模型的生效倍率
-python -c "import json; d=json.load(open('workbuddy/cache/wb_pricing.json',encoding='utf-8')); [print('%-32s list=%-6s eff=%s' % (m['id'], m.get('list_rate'), m.get('eff_rate'))) for m in sorted(d, key=lambda x: x.get('eff_rate') if x.get('eff_rate') is not None else 999)]"
+python -c "import json; d=json.load(open('providers/workbuddy/cache/wb_pricing.json',encoding='utf-8')); [print('%-32s list=%-6s eff=%s' % (m['id'], m.get('list_rate'), m.get('eff_rate'))) for m in sorted(d, key=lambda x: x.get('eff_rate') if x.get('eff_rate') is not None else 999)]"
 
 # 2) 对比网关当前返回的倍率
 curl -s http://127.0.0.1:7863/panel/api/models -H "Authorization: Bearer $WB_GATEWAY_KEY" | python -m json.tool | head -40
@@ -177,7 +178,7 @@ curl -s http://127.0.0.1:7863/panel/api/models -H "Authorization: Bearer $WB_GAT
 
 | 原因 | 解法 |
 |---|---|
-| 价格表**忘了刷新** | 跑 `workbuddy/workbuddy_fetch_pricing.py`（`--dry-run` 先看差异）；别的供应商照 [MAINTENANCE.md](MAINTENANCE.md) §1.1 的通用做法用自己的取数脚本 |
+| 价格表**忘了刷新** | 跑 `providers/workbuddy/workbuddy_fetch_pricing.py`（`--dry-run` 先看差异）；别的供应商照 [MAINTENANCE.md](MAINTENANCE.md) §1.1 的通用做法用自己的取数脚本 |
 | 限时免费到期（网关日志：`free tier ended, now 0.227 credits/1k`） | 统一模式重跑 `workbuddy_zcode_sync.py --apply`；分离模式重排四档 |
 | 网关未重启时 `/panel/api/models` 只返回 34 个 global 模型 | 重启网关再取 |
 
@@ -296,7 +297,7 @@ curl -si -X POST http://127.0.0.1:7863/v1/chat/completions \
 
 | 原因 | 解法 |
 |---|---|
-| 文件不存在 —— `.gitignore` 排除了 `/workbuddy/cache/*.json`，**克隆后不会带过来** | 按网关面板手工重建（字段含义见 [MODEL-PROVIDERS.md](MODEL-PROVIDERS.md) §4），或用环境变量 `WB_PRICING_FILE` 指到别处 |
+| 文件不存在 —— `.gitignore` 排除了 `/providers/workbuddy/cache/*.json`，**克隆后不会带过来** | 按网关面板手工重建（字段含义见 [MODEL-PROVIDERS.md](MODEL-PROVIDERS.md) §4），或用环境变量 `WB_PRICING_FILE` 指到别处 |
 | 路径变了 | 检查 `WB_PRICING_FILE` / `WB_ZCODE_PROBE_FILE` 环境变量 |
 
 ---
@@ -323,19 +324,19 @@ curl -si -X POST http://127.0.0.1:7863/v1/chat/completions \
 
 <a id="gateway-lifecycle"></a>
 
-## 11. 网关 / 统一路由没跟着 ZCode 起停 【实例 B】
+## 11. 网关 / 统一入口没起来 【实例 B】
 
-**现象**：打开 ZCode 后 WorkBuddy 模型连不上 `127.0.0.1:7863`，或五个 chat 组
-连不上 `127.0.0.1:7871`；或者关了 ZCode 网关/路由进程还在；或者开机后守护器没生效。
+**现象**：WorkBuddy 模型连不上 `127.0.0.1:7863`，或四组模型都连不上 `127.0.0.1:7871`；
+开机后 zgate 没生效；或者 Qoder 上游没在跑。
 
 **排查**
 
 ```bash
-# 1) 一次看全：ZCode / 网关 / 统一路由 / 守护器 / 五个 chat 组指向
-powershell -NoProfile -ExecutionPolicy Bypass -File workbuddy/zcode_gateway_watch.ps1 -Status
+# 1) 一次看全：服务是否在跑 / 子进程状态 / 端口 / 凭据有无
+gateways/zgate/zgate.exe status
 
-# 2) 看守护器日志（每次状态迁移一行；文件是 UTF-8）
-python -c "import os; p=os.path.join(os.environ['LOCALAPPDATA'],'ZCodeGateway','watchdog.log'); print(open(p,encoding='utf-8').read()[-3000:])"
+# 2) 看 zgate 日志（每个请求一行、子进程起停、错误；UTF-8）
+python -c "import os; p=os.path.join(os.environ['LOCALAPPDATA'],'ZCodeGateway','zgate.log'); print(open(p,encoding='utf-8').read()[-3000:])"
 
 # 3) 看开机自启在不在
 ls "$APPDATA/Microsoft/Windows/Start Menu/Programs/Startup/" | grep -i zcode
@@ -345,29 +346,26 @@ ls "$APPDATA/Microsoft/Windows/Start Menu/Programs/Startup/" | grep -i zcode
 
 | 原因 | 解法 |
 |---|---|
-| 守护器没在跑（没装自启 / 被结束） | `-Install`：注册自启并立即启动 |
-| `WB_GATEWAY_DIR` 指错，找不到 `wb2api.exe` | 改环境变量，或确认仓库内默认目录 `workbuddy/gateway/` 存在（它整目录被 `.gitignore` 排除，**克隆后不会自带**；重建方法见 [MAINTENANCE.md](MAINTENANCE.md) §8） |
-| 网关启动后立刻退出 | 看 `%LOCALAPPDATA%\ZCodeGateway\gateway.stderr.log` |
-| 统一路由启动后立刻退出 | 看 `%LOCALAPPDATA%\ZCodeGateway\router.stderr.log`；常见是 PATH 里没有 `node`，或 7871 被占用 |
-| 关 ZCode 后网关/路由还在 | 先确认 ZCode 真的退出了：点窗口右上角 × 只是**最小化到托盘**（`closeToTrayOnWindows=true`），主进程还在，保持运行是预期；要从托盘菜单「退出」 |
-| 托盘退出后网关/路由还在 | 等 8 秒宽限 + 最多 5 秒排空（`-DrainTimeoutSeconds`）。日志里若出现「在 Ns 宽限期内重新出现」，说明 ZCode 退出后 8 秒内又被拉起（更新 / 重开），守护器按设计取消停止；若确认 ZCode 长时间不在，看日志有没有心跳、`-Status` 里守护器是否还活着，没有就 `-Install`，必要时 `stop-gateway.bat` + 手动结束 `unified-router.js` |
-| `-Status` 的 Provider 行显示「不匹配」或「key 缺失」 | 五个 chat 组没指向统一路由（或分离模式下 `workbuddy-*` 没指向网关）：重跑 `workbuddy_zcode_sync.py --apply`，或检查 `ZCODE_PERSONAL_PROVIDER_CONFIG_FILE` |
-| `-Status` 显示「有 N 个进程但未识别到主进程」 | ZCode 升级可能改了命令行判据。看 `watchdog.log`；确认新版主进程命令行后更新 `Get-ZCodeMainProcess` 的过滤条件 |
-| 自启快捷方式在，登录后却没起 | 目标应为 `wscript.exe "<仓库>\workbuddy\zcode_gateway_watch.vbs"`，用 `-Install` 重建 |
-| 想彻底回到手动 | `-Uninstall`，之后按网关目录的 `run.bat` / `stop-gateway.bat` 控制；统一路由手动 `node tools/unified-router.js` |
+| zgate 没在跑（没装自启 / 被杀） | `gateways/zgate/zgate.exe serve` 前台起一次看报错；再 `zgate.exe install` 重建自启 |
+| 7871 被别的进程占着 | `zgate.exe serve` 会明确报「监听失败」；用 `netstat -ano \| findstr 7871` 找出占用者 |
+| 配置路径不对（`gateways/zgate/zgate.json`） | `zgate.exe status` 第一段会打印实际读到的配置、alias map 与日志路径 |
+| WorkBuddy 冷启动失败 | 看 `%LOCALAPPDATA%\ZCodeGateway\workbuddy.stderr.log`；确认 `gateways/upstream/workbuddy/wb2api.exe` 与 `config.json` 存在（clone 整目录被 `.gitignore` 排除，**克隆后不会自带**，重建见 [MAINTENANCE.md](MAINTENANCE.md) §8.4） |
+| Qoder 冷启动失败 | 看 `%LOCALAPPDATA%\ZCodeGateway\qoder.stderr.log`；确认 `python` 在 PATH、`gateways/upstream/qoder/` 完整 |
+| 端口被占但健康检查不通 | zgate 会拒绝重复启动并报「端口被占用且健康检查不通」；先清掉占用进程 |
+| 子进程老是退出 | 默认 `ondemand` 模式下 WB 空闲 15 分钟会被回收，这是正常行为；不是「挂了」 |
+| `status` 的 Provider 段显示 key 缺失 | 四组没指向 7871，或 provider 里没有 apiKey：重跑 `python tools/model_alias.py --slot auto --apply`，或检查 `ZCODE_PERSONAL_PROVIDER_CONFIG_FILE` |
+| 想彻底回到手动 | `zgate.exe uninstall` 移除自启；网关仍可用 `gateways/upstream/workbuddy/run.bat`、Qoder 用 `start-qoder-proxy.bat` 单独起 |
 
-> 守护器现在做四件事：**主进程**出现时拉起网关 + 统一路由、主进程退出且连接排空后停止、
-> 运行期间任一进程挂了自动重启、启动时清掉没有 ZCode 的遗留网关 / 路由。
-> ZCode 只是最小化到托盘时主进程仍在，网关/路由也会保持运行 —— 这是预期行为。
-> 每次状态迁移都写 `watchdog.log`（含「宽限期内重新出现」和每 15 分钟一次的心跳），
-> 生命周期设计的取舍见 [MAINTENANCE.md](MAINTENANCE.md) §8。
+> zgate 常驻（约 19 MB），不跟随 ZCode 起停：它自己按策略管两个子进程
+> （WB `ondemand`、Qoder `always`）。ZCode 最小化到托盘不影响任何进程，
+> 这是预期行为。生命周期设计与配置项见 [MAINTENANCE.md](MAINTENANCE.md) §8。
 
 ---
 
 ## 12. 所有 chat 模型 502 / 连不上 127.0.0.1:7871 【实例 B】
 
 **现象**：ZCode 里主力 / 免费 / 低耗 / 高耗 / 备用的模型都报 502 或 connection refused；
-对话 / 响应正常（这两个组直连 OpenCode-Go，不经过统一路由）。
+对话 / 响应正常（这两个组直连 OpenCode-Go，不经过统一入口）。
 
 **排查**
 
@@ -375,21 +373,21 @@ ls "$APPDATA/Microsoft/Windows/Start Menu/Programs/Startup/" | grep -i zcode
 # 1) 路由健康检查（只返回 key 是否存在，不返回值）
 curl -sS http://127.0.0.1:7871/health
 
-# 2) 看守护器是否接管了路由
-powershell -NoProfile -ExecutionPolicy Bypass -File workbuddy/zcode_gateway_watch.ps1 -Status
+# 2) 看服务与子进程状态
+gateways/zgate/zgate.exe status
 
-# 3) 看路由日志
-python -c "import os; p=os.path.join(os.environ['LOCALAPPDATA'],'ZCodeGateway','router.stderr.log'); print(open(p,encoding='utf-8',errors='replace').read()[-3000:])"
+# 3) 看日志
+python -c "import os; p=os.path.join(os.environ['LOCALAPPDATA'],'ZCodeGateway','zgate.log'); print(open(p,encoding='utf-8',errors='replace').read()[-3000:])"
 ```
 
 **原因 / 解法**（均为**【实例 B】**）
 
 | 原因 | 解法 |
 |---|---|
-| 路由没起 | `node tools/unified-router.js`，或重启守护器 `-Install` |
-| 7871 被别的进程占用 | `Get-NetTCPConnection -LocalPort 7871`；换 `-RouterPort` 后同步改五个 chat 组的 `baseUrl` |
+| 入口没起 | `gateways/zgate/zgate.exe serve` 前台启动排错，或 `zgate.exe install` 重建自启 |
+| 7871 被别的进程占用 | `Get-NetTCPConnection -LocalPort 7871`；换 `ZGATE_LISTEN` 后同步改四组的 `baseUrl` |
 | 缺 OpenCode key | 设置 `OPENCODE_GO_KEY`，或检查 `provider_config.json` 里 OpenCode provider 的 `access.apiKey` |
-| 缺 WorkBuddy key | 设置 `WB_GATEWAY_KEY`，或检查 `workbuddy/gateway/config.json` 的 `api_key` |
+| 缺 WorkBuddy key | 设置 `WB_GATEWAY_KEY`，或检查 `gateways/upstream/workbuddy/config.json` 的 `api_key` |
 | 只有 WorkBuddy 模型 502 | 网关没起 / 没就绪；看 `gateway.stderr.log` |
 | 对话 / 响应正常，chat 全挂 | 就是路由问题；这两组不经过路由，所以能正常工作 |
 
@@ -444,15 +442,15 @@ python -c "import json,pathlib,urllib.request,urllib.error; ..."   # 复刻探�
 ```bash
 curl -s http://127.0.0.1:8790/ping
 curl -s http://127.0.0.1:8790/health        # accounts / api_key_required / risk.queue
-python qoder/qoder_zcode_sync.py            # dry run：模型清单与 provider 计划
+python providers/qoder/qoder_zcode_sync.py            # dry run：模型清单与 provider 计划
 ```
 
 | 现象 | 怎么查 | 原因 / 解法 |
 |---|---|---|
 | ZCode 里没有 `qoder:` 模型 | `ListModels`；看五个 chat 组里是否有 `qoder:` 前缀的 model id + model rule；`curl http://127.0.0.1:7871/health` 的 `qoder.key`；8790 `/v1/models` 是否可达 | 同步没写，或被 ZCode 界面整份写回覆盖。重跑 `qoder_zcode_sync.py --apply`，不要与界面同时保存 |
-| 请求 401 | `qoder/.env.local` 的 `QD_API_KEY` 与 `qoder/gateway/accounts/settings.json` 是否一致；`--separate` 模式再看 provider_config 里的 `qoder` apiKey | 合并模式 key 只在 `.env.local` / 7871 路由；三处不一致时轮换后一起改，再重启 hub 与路由 |
-| 7871 `/health` 里 `qoder.key=false` 或 `qoder:` 请求 502 `Qoder key not configured` | 路由启动时没读到 `QD_API_KEY` | 确认 `qoder/.env.local` 存在且可读，然后重启路由（守护器会自动拉起） |
-| 502 / `10605` / `isQueued` | `/health` 的 `risk.queue`；`qoder/qoder_probe.json` 的状态 | 上游排队，不是本地故障。免费 `Qwen3.8-Flash` 最容易中，`DeepSeek-Flash` 也会（64s 后 200，或 90s+ 后 502）。`--probe-file` 只看 `ever_ok`：曾 200 的模型遇排队仍保留，只有从未成功过的才会被排除 |
+| 请求 401 | `providers/qoder/.env.local` 的 `QD_API_KEY` 与 `gateways/upstream/qoder/accounts/settings.json` 是否一致；`--separate` 模式再看 provider_config 里的 `qoder` apiKey | 合并模式 key 只在 `.env.local` / 7871 路由；三处不一致时轮换后一起改，再重启 hub 与路由 |
+| 7871 `/health` 里 `qoder.key=false` 或 `qoder:` 请求 502 `Qoder key not configured` | 路由启动时没读到 `QD_API_KEY` | 确认 `providers/qoder/.env.local` 存在且可读，然后重启路由（zgate 会自动拉起） |
+| 502 / `10605` / `isQueued` | `/health` 的 `risk.queue`；`providers/qoder/qoder_probe.json` 的状态 | 上游排队，不是本地故障。免费 `Qwen3.8-Flash` 最容易中，`DeepSeek-Flash` 也会（64s 后 200，或 90s+ 后 502）。`--probe-file` 只看 `ever_ok`：曾 200 的模型遇排队仍保留，只有从未成功过的才会被排除 |
 | 400 `invalid JSON body` | 请求体是否由 GBK shell 拼接、含中文 | 本地编码问题，不是网关。用 Python/UTF-8 或 UTF-8 文件发请求 |
 | 8790 没监听 / 看板打不开 | `netstat -ano | findstr 8790`；`qoder-proxy.log` / `qoder-proxy.err.log` | `start-qoder-proxy.bat`；端口冲突则换端口并同步 `qoder` provider 的 `baseUrl` |
 | 签到没加积分 | `accounts/scheduler/state.json` 的日志；看板签到记录 | 已签到是幂等；CN 活动可能未下发；国际版按设备去重。本机 2026-10-23 CN 已 +100 |
@@ -467,7 +465,7 @@ python qoder/qoder_zcode_sync.py            # dry run：模型清单与 provider
 | 现象 | 怎么查 | 原因 / 解法 |
 |---|---|---|
 | 模型名变成 `WB:` / `OC:` / `QD:` | 四个 provider 的 `personalModelIds`；`~/.zcode/v2/model-alias-map.json` 的条数；`GET 7871/health` 的 `alias.models` | 正常；由 `tools/model_alias.py` 生成。名字不对就重跑它 |
-| `OC:MiniMax-M3` / `OC:Beam` 400 `thinking` | `node workbuddy/zcode_effective_body.js --provider-id <pid> <model>` 的 body 是否只剩 `max_completion_tokens` | 这两类模型需要空 map；`model_alias.py` 会从旧规则复制，丢了就重跑 |
+| `OC:MiniMax-M3` / `OC:Beam` 400 `thinking` | `node providers/workbuddy/zcode_effective_body.js --provider-id <pid> <model>` 的 body 是否只剩 `max_completion_tokens` | 这两类模型需要空 map；`model_alias.py` 会从旧规则复制，丢了就重跑 |
 | 桥接模型 502 `bridge upstream error` | 7871 日志；OC key；请求头是否有 `x-opencode-session` / 正常 UA | 桥接器已带 `opencode-cli/1.0` + `unified-bridge`；检查 OpenCode key |
 | 旧 ID（`cn:` / `qoder:` / bare OC）还能用 | alias map 的 `legacy` | 正常，老会话兼容；价格变化时旧显示名也会进 legacy |
 | WB GB 模型 503 `no_healthy_account` | `curl 127.0.0.1:7863/status` 的账号池 | 池冷却，按瞬时限流处理，不删模型 |
@@ -483,5 +481,5 @@ python qoder/qoder_zcode_sync.py            # dry run：模型清单与 provider
    实例 A：`curl https://opencode.ai/zen/go/v1/models`；
    实例 C：`curl http://127.0.0.1:8790/health`）。
 2. **再看配置写没写进去**（`provider_config.json` + `.bak-*` 备份链）。
-3. **再看 ZCode 真实发了什么**（`workbuddy/zcode_effective_body.js`）。
+3. **再看 ZCode 真实发了什么**（`providers/workbuddy/zcode_effective_body.js`）。
 4. **最后才怀疑上游** —— 大部分「上游坏了」其实是本地配置或请求体的问题。

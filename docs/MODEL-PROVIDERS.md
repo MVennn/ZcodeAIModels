@@ -12,7 +12,7 @@
 §4.9 Qoder 的模型与价格于 **2026-10-23** 实测）。
 
 > **2026-10-23 起 provider 结构统一为四组**（主力 / 免费 / 低耗 / 高耗），模型 ID 改为
-> `渠道/积分/型号`，跨协议由本地路由桥接。**当前分组与命名以
+> 型号名（如 `DeepSeek-4.1-Fs`），跨渠道与跨协议由本地入口桥接。**当前分组与命名以
 > [MODEL-ALIAS.md](MODEL-ALIAS.md) 为准**；本文 §2 / §4 的价格、协议与思考参数仍是
 > 数据来源，旧的七组 provider 口径保留作历史。
 价格 / 额度 / 倍率随服务商变动，改之前先看 [MAINTENANCE.md](MAINTENANCE.md) §1。
@@ -85,16 +85,16 @@
 
 | 脚本 | 默认行为 | 风险 |
 |---|---|---|
-| `opencode-go/ops/go_model_sync.py --apply` | 只**追加**模型 + 备用档重排（`BACKUP_MODEL_IDS`）+ 改一个 provider 显示名（"备用"→"响应"） | 低。已有模型的**组内顺序**可能被打乱（新模型追加到组尾） |
-| `workbuddy/workbuddy_zcode_sync.py --apply` | 默认**合并** WorkBuddy 模型到五个 OpenCode chat 组（不改 OpenCode 模型与顺序）；`--separate` 才整条替换四个 `workbuddy-*` provider | 低（统一）/ 中（分离）。统一模式只动 WorkBuddy 模型与五个 chat 组的 `baseUrl`；分离模式会冲掉 `workbuddy-*` 上手工加的模型 |
-| `qoder/qoder_zcode_sync.py --apply` | 默认**合并**：拉 `/v1/models`，按 `price_factor` 把 `qoder:` 前缀模型并入免费/低耗/高耗三个 chat 组；`--separate` 才写独立 `qoder` provider；默认 `--max-price 0.8`；`--probe-file` 只保留探测 `ok`（或曾 ok 的瞬时限流） | 低。只增删 `qoder:` 条目与（separate 模式的）`qoder` provider，不碰其它模型 |
+| `providers/opencode-go/ops/go_model_sync.py --apply` | 只**追加**模型 + 备用档重排（`BACKUP_MODEL_IDS`）+ 改一个 provider 显示名（"备用"→"响应"） | 低。已有模型的**组内顺序**可能被打乱（新模型追加到组尾） |
+| `providers/workbuddy/workbuddy_zcode_sync.py --apply` | 默认**合并** WorkBuddy 模型到五个 OpenCode chat 组（不改 OpenCode 模型与顺序）；`--separate` 才整条替换四个 `workbuddy-*` provider | 低（统一）/ 中（分离）。统一模式只动 WorkBuddy 模型与五个 chat 组的 `baseUrl`；分离模式会冲掉 `workbuddy-*` 上手工加的模型 |
+| `providers/qoder/qoder_zcode_sync.py --apply` | 默认**合并**：拉 `/v1/models`，按 `price_factor` 把 `qoder:` 前缀模型并入免费/低耗/高耗三个 chat 组；`--separate` 才写独立 `qoder` provider；默认 `--max-price 0.8`；`--probe-file` 只保留探测 `ok`（或曾 ok 的瞬时限流） | 低。只增删 `qoder:` 条目与（separate 模式的）`qoder` provider，不碰其它模型 |
 
 **正确姿势**：先不带 `--apply` 跑一遍，看清它要写什么，再决定。
 
 ```bash
-python opencode-go/ops/go_model_sync.py            # 只出报告
-python workbuddy/workbuddy_zcode_sync.py           # 只打印计划
-python qoder/qoder_zcode_sync.py                   # 只打印 Qoder 计划
+python providers/opencode-go/ops/go_model_sync.py            # 只出报告
+python providers/workbuddy/workbuddy_zcode_sync.py           # 只打印计划
+python providers/qoder/qoder_zcode_sync.py                   # 只打印 Qoder 计划
 ```
 
 三个脚本都**先备份再原子替换** `provider_config.json`（备份文件名与回退步骤见
@@ -121,7 +121,7 @@ python qoder/qoder_zcode_sync.py                   # 只打印 Qoder 计划
 | `opencode-go-responses` | 响应 | `openai-responses` | 4 | 协议归属 = responses |
 
 > **2026-10-21 起为统一模式**：五个 chat provider 的 `api.baseUrl` 指向
-> `tools/unified-router.js`（`http://127.0.0.1:7871/v1`），模型列表同时包含
+> `gateways/zgate`（`http://127.0.0.1:7871/v1`），模型列表同时包含
 > OpenCode-Go 与 WorkBuddy；路由按 model 前缀分流。`对话` / `响应` 仍直连 OpenCode。
 > 分离模式（`workbuddy_zcode_sync.py --separate`）见 §4.2。
 >
@@ -241,7 +241,7 @@ python qoder/qoder_zcode_sync.py                   # 只打印 Qoder 计划
 | User-Agent | Cloudflare 会拦默认的 Python / SDK UA（403 error 1010），必须像正常客户端 |
 | **鉴权头分协议** | `chat/completions` 与 `responses` 认 `Authorization: Bearer <apiKey>`；**`anthropic/messages` 只认 `x-api-key: <apiKey>`**（用 Bearer 会 401 `Go requires a credential`） |
 | 协议唯一性 | 把模型塞进错误协议的 provider 直接 400 `ModelProtocolUnsupported` —— 这是本仓最大的一个坑，见 [PITFALLS.md](PITFALLS.md) §1 |
-| 不支持自定义头的客户端 | 用 `opencode-go/ops/opencode-header-proxy.js`（默认 `127.0.0.1:8787`）补头 |
+| 不支持自定义头的客户端 | 用 `providers/opencode-go/ops/opencode-header-proxy.js`（默认 `127.0.0.1:8787`）补头 |
 
 ---
 
@@ -250,13 +250,13 @@ python qoder/qoder_zcode_sync.py                   # 只打印 Qoder 计划
 网关：`wb2api` 面板版（MIT），默认 `http://127.0.0.1:7863`，OpenAI 兼容。
 把腾讯 CodeBuddy 账号池变成 OpenAI 兼容 API。模型 id 形如 `cn:xxx` / `global:xxx`。
 
-网关生命周期默认由 `workbuddy/zcode_gateway_watch.ps1` 跟随 ZCode（ZCode 起 → 网关起，
+网关生命周期由 `gateways/zgate` 托管（WB 按需拉起、空闲回收；Qoder 常驻），
 全部退出 → 停），安装与副作用见 [MAINTENANCE.md](MAINTENANCE.md) §8。
 
 ### 4.0 统一模式（默认，2026-10-21 起）
 
 默认**不再创建** `workbuddy-*` 四个 provider。18 个 WorkBuddy 模型并入 §2 的五个
-chat 组，五个 chat 组的 `api.baseUrl` 指向本地路由 `tools/unified-router.js`
+chat 组，四个 chat 组的 `api.baseUrl` 指向本地入口 `gateways/zgate`
 （`http://127.0.0.1:7871/v1`）。路由按 model 分流：
 
 - `cn:` / `global:` → 网关 `http://127.0.0.1:7863/v1`
@@ -271,8 +271,8 @@ chat 组，五个 chat 组的 `api.baseUrl` 指向本地路由 `tools/unified-ro
 | 备用 | `opencode-go-chat-backup` | `cn:deepseek-v4-flash`、`cn:minimax-m3` |
 
 - `对话` / `响应` 仍直连 OpenCode-Go，不经过路由。
-- 路由随 ZCode 起停（`zcode_gateway_watch.ps1`）；手动启动
-  `node tools/unified-router.js`，健康检查 `GET http://127.0.0.1:7871/health`。
+- 入口由 `gateways/zgate` 常驻（登录自启）；手动启动
+  `gateways/zgate/zgate.exe serve`，健康检查 `GET http://127.0.0.1:7871/health`。
 - **分离模式**：`workbuddy_zcode_sync.py --separate --apply` 会重建 §4.2 的四个
   `workbuddy-*` provider；默认（不带 `--separate`）是统一模式。
 
@@ -323,7 +323,7 @@ chat 组，五个 chat 组的 `api.baseUrl` 指向本地路由 `tools/unified-ro
    小米 MiMo → 腾讯混元 → 阶跃星辰 → 匿名/其他；
 4. 同公司内按倍率升序，同倍率按 id 字典序。
 
-排序与分价规则的正本是 `workbuddy/workbuddy_zcode_sync.py` 的 `PINNED_MODEL_IDS`
+排序与分价规则的正本是 `providers/workbuddy/workbuddy_zcode_sync.py` 的 `PINNED_MODEL_IDS`
 / `VENDOR_ORDER` / `LOW_MAX` / `DEFAULT_MAX_RATE` / `BACKUP_MODEL_IDS`；改完用
 `--reorder-only --apply` 只重排、不动成员与档位，改分价阈值则重新 `--apply`；
 只搬备用档用 `--reclassify-only --apply`。
@@ -452,9 +452,9 @@ glm-5v-turbo 0.454、kimi-k3-1 0.901、gpt-5.3-codex 0.976。
 **脚本**：
 
 ```bash
-python qoder/qoder_zcode_sync.py                                  # dry run
-python qoder/qoder_probe_zcode.py                                 # 真实 body 探测
-python qoder/qoder_zcode_sync.py --probe-file qoder/qoder_probe.json --apply
+python providers/qoder/qoder_zcode_sync.py                                  # dry run
+python providers/qoder/qoder_probe_zcode.py                                 # 真实 body 探测
+python providers/qoder/qoder_zcode_sync.py --probe-file providers/qoder/qoder_probe.json --apply
 ```
 
 ---
@@ -512,7 +512,7 @@ ZCode 的内置规则 `resources/config/provider/zcode-builtin.json` 里：
   `thinking` + `enable_thinking` + `reasoning_effort` + `reasoning` **四个字段**，
   且**不看模型是否支持**。
 
-`workbuddy/zcode_effective_body.js` 就是复刻这套语义，用来算「ZCode 真实会发什么」。
+`providers/workbuddy/zcode_effective_body.js` 就是复刻这套语义，用来算「ZCode 真实会发什么」。
 **任何时候改了规则或换了模型 id，都要用它重算，不要手写规则表。**
 
 ---

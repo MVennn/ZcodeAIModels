@@ -68,7 +68,7 @@ WorkBuddy 网关更糟一层：它的出站逻辑**只**重写 `reasoning_effort
 **解法**：
 
 1. **探测必须用 ZCode 真实请求体**，不能拿裸 body 试 ——
-   `workbuddy/workbuddy_probe_zcode.py` 就是干这个的（先算真实 body，失败再退
+   `providers/workbuddy/workbuddy_probe_zcode.py` 就是干这个的（先算真实 body，失败再退
    slim variant）。
 2. 给模型配 `optionSpecs.reasoningLevel.map = "{}"` —— **发空 map 覆盖掉通用规则**，
    一个思考字段都不发。当前配了 5 个：
@@ -94,7 +94,7 @@ WorkBuddy 网关更糟一层：它的出站逻辑**只**重写 `reasoning_effort
 `.*deepseek-v4[.-]1-flash.*` 也能匹配上**（因为是 `.*` 包裹的模式）——
 但如果你自己写规则只写 `deepseek-v4.1-flash`，就**匹配不到** `cn:deepseek-v4.1-flash`。
 
-**解法**：写规则一律用 `.*` 头尾包；改完用 `workbuddy/zcode_effective_body.js`
+**解法**：写规则一律用 `.*` 头尾包；改完用 `providers/workbuddy/zcode_effective_body.js`
 验证命中的是哪一条。
 
 ---
@@ -191,7 +191,7 @@ WorkBuddy 网关更糟一层：它的出站逻辑**只**重写 `reasoning_effort
 
 **现象（未来）**：仓库上传到公开 GitHub，**API key 一起公开了**。
 
-**现状**：`opencode-go/probe/` 下的 `probe_models.py`、`probe_protocols.py`、
+**现状**：`providers/opencode-go/probe/` 下的 `probe_models.py`、`probe_protocols.py`、
 `bench_models.py`、`bench_clean.py`、`thinking-off-probe.js` **已改为从 `OPENCODE_GO_KEY` 环境变量读取**；
 `provider_config.json` 的 `.bak-*` 备份里也有 key。
 
@@ -212,7 +212,7 @@ WorkBuddy 网关更糟一层：它的出站逻辑**只**重写 `reasoning_effort
 **机制**：脚本里写死了某个绝对路径（尤其是**写死某个人的主目录**），
 换台机器就失效 —— 报告落到旧目录、配置读的是不存在的路径。
 
-**历史实例**：`opencode-go/ops/go_model_sync.py` 的 `REPORT_DIR` 原先指着拆仓前的旧仓库目录，
+**历史实例**：`providers/opencode-go/ops/go_model_sync.py` 的 `REPORT_DIR` 原先指着拆仓前的旧仓库目录，
 报告会落到旧仓库去；ZCode 配置路径原先写死成某个开发者的主目录路径。
 **拆仓时已修**：报告目录改为按脚本位置推导的本仓 `evidence/`（保留 `GO_SYNC_REPORT_DIR` 覆盖口）；
 配置路径默认值改为按**当前用户主目录**推导（仍可用 `--config` 覆盖）。
@@ -260,7 +260,7 @@ python workbuddy_fetch_pricing.py --dry-run  # 只看差异
 模型级 `modelConfigRules` 只有 `enabled` / `properties` / `optionSpecs`，**没有** `baseUrl`。
 一个 provider 下的所有模型共用同一个上游地址和 key，不能按模型换上游。
 
-**解法**：本仓用 `tools/unified-router.js` 做本地路由 —— 五个 chat provider 指向
+**解法**：本仓用 `gateways/zgate` 做本地入口 —— 四个 chat provider 指向
 `http://127.0.0.1:7871/v1`，路由按 model 前缀把 `cn:` / `global:` 转到 WorkBuddy 网关，
 其余转到 OpenCode-Go。代价是多一个常驻进程；它随 ZCode 起停（见
 [MAINTENANCE.md](MAINTENANCE.md) §8）。**不要把路由端口暴露到公网**，也不要把两个
@@ -275,14 +275,14 @@ python workbuddy_fetch_pricing.py --dry-run  # 只看差异
 
 **解法**：只豁免匹配片段本身（`m.group(0)`），示例 URL 仍按预期放行。
 
-## 14. `workbuddy/gateway/` 是上游独立 clone，改动只在本地
+## 14. `gateways/upstream/workbuddy/` 是上游独立 clone，改动只在本地
 
 **现象**：在网关里修了日志脱敏、示例配置、启动告警，`git status` 却什么都不显示，
 CHANGELOG 里写的条目在远端仓里找不到对应代码。
 
-**机制**：主仓 `.gitignore` 用 `/workbuddy/gateway/` **整目录**排除 —— 里面是
+**机制**：主仓 `.gitignore` 用 `/gateways/upstream/workbuddy/` **整目录**排除 —— 里面是
 `auths/` 账号凭据、`config.json`（api_key）、`data/` 运行时状态与 `wb2api.exe`。
-更新方式是 `git -C workbuddy/gateway pull --ff-only`，不是本仓管理。
+更新方式是 `git -C gateways/upstream/workbuddy pull --ff-only`，不是本仓管理。
 
 **怎么避**：改网关代码前先确认它在不在 `git ls-files` 里；本地改动单独记账，
 不要写进本仓 CHANGELOG（那里只记随仓分发的内容）。二进制重建后留 `.bak` 再替换。
@@ -301,7 +301,7 @@ CHANGELOG 里写的条目在远端仓里找不到对应代码。
 
 ## 16. 显示名不是上游模型 id，旧 sync 不能直接拿去探测
 
-**现象**：`model_alias.py` 把配置里的模型重命名成 `W/0.03/DeepSeek-41-Fs` 这类
+**现象**：`model_alias.py` 把配置里的模型重命名成 `DeepSeek-4.1-Fs` 这类
 显示名后，`go_model_sync.py` 的「跑不通即清」会把显示名当上游模型 id 发给
 `opencode.ai/zen/go/v1`。上游 404 → 判定「已不在任何清单」→ 下一次 `--apply` 全部
 prune。它同时也认不出这些模型已经配置过，会把整个 Go 目录当新模型重评估一遍。

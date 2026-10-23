@@ -22,10 +22,9 @@
 - **同步** —— 把探测结论整理成 provider 分组，按成本档 / 积分倍率写进 ZCode 的模型列表；
 - **记录** —— 把踩过的坑、协议归属、参数矩阵固化成文档，换套餐时不用重试一遍。
 
-仓里的 `opencode-go/`、`workbuddy/` 与 `qoder/` 是三个跑通的**完整示例**（OpenCode-Go 套餐、
+仓里的 `providers/opencode-go/`、`providers/workbuddy/` 与 `providers/qoder/` 是三个跑通的**完整示例**（OpenCode-Go 套餐、
 WorkBuddy2API 网关、qoder2api-hub 网关）；现在统一成**四组**（主力 / 免费 / 低耗 / 高耗），
-模型 ID 为 `渠道/积分/型号`，由 `tools/model_alias.py` 生成、`tools/unified-router.js`
-按 alias map 还原上游。方法本身与供应商无关，接一个新供应商要做的四步见
+模型 ID 只用型号名（如 `DeepSeek-4.1-Fs`），同型号跨渠道合并成一条按价格升序的链路，由 `tools/model_alias.py` 生成、`gateways/zgate`（Go，单进程）按 alias map 分流并托管两个本地网关。方法本身与供应商无关，接一个新供应商要做的四步见
 [docs/MODEL-PROVIDERS.md](https://github.com/MVennn/ZcodeAIModels/blob/main/docs/MODEL-PROVIDERS.md) §0。
 
 **边界**：本仓库**不含 ZCode 客户端**，只读写它的配置文件 `provider_config.json`，
@@ -37,20 +36,20 @@ WorkBuddy2API 网关、qoder2api-hub 网关）；现在统一成**四组**（主
 | 项 | 要求 |
 |---|---|
 | 客户端 | ZCode 桌面端（Windows） |
-| 运行时 | Python 3（只用标准库）、Node.js 18+（见 [docs/TOOLS.md](https://github.com/MVennn/ZcodeAIModels/blob/main/docs/TOOLS.md) §0） |
+| 运行时 | Python 3（只用标准库）、Node.js 18+（跑探测/旧版路由）；统一入口 `gateways/zgate` 是**单个 Go 二进制**，日常运行不需要 Go（只有自行构建时需要 Go 1.22+，见 [docs/TOOLS.md](https://github.com/MVennn/ZcodeAIModels/blob/main/docs/TOOLS.md) §0） |
 | 配置与凭据 | ZCode 的 `provider_config.json`（默认在 `~/.zcode/v2/`）；凭据只走环境变量，变量名与取值见 [docs/SECRETS.md](https://github.com/MVennn/ZcodeAIModels/blob/main/docs/SECRETS.md) |
-| 网络 | 能直连你的供应商；WorkBuddy 示例侧需要本地网关在 `127.0.0.1:7863` 运行，Qoder 示例侧需要 qoder2api-hub 在 `127.0.0.1:8790` 运行，合并模式还需要统一路由 `127.0.0.1:7871`（随 ZCode 起停） |
+| 网络 | 能直连你的供应商；四个 chat 组统一指向 `127.0.0.1:7871`（`zgate`），由它按需拉起 WorkBuddy 网关（`7863`）与 Qoder hub（`8790`）。生命周期与自启见 [docs/MAINTENANCE.md](https://github.com/MVennn/ZcodeAIModels/blob/main/docs/MAINTENANCE.md) §8 |
 
 ## 使用
 
 顺序不能乱：**先刷价格表 → 再探测 → 最后同步**。探测要慢 —— 一个模型间隔至少 20 秒，
 太密会把对方的账号池打爆；同步是秒级的。
 
-1. **准备环境变量** —— `OPENCODE_GO_KEY`（OpenCode-Go）、`WB_GATEWAY_KEY`（WorkBuddy 网关）、`QD_API_KEY`（Qoder 网关；也可用 git-ignored 的 `qoder/.env.local`）。
-2. **刷价格表** —— WorkBuddy 侧先跑 `workbuddy/workbuddy_fetch_pricing.py`；
+1. **准备环境变量** —— `OPENCODE_GO_KEY`（OpenCode-Go）、`WB_GATEWAY_KEY`（WorkBuddy 网关）、`QD_API_KEY`（Qoder 网关；也可用 git-ignored 的 `providers/qoder/.env.local`）。
+2. **刷价格表** —— WorkBuddy 侧先跑 `providers/workbuddy/workbuddy_fetch_pricing.py`；
    OpenCode-Go 侧不用刷，同步脚本每次现拉目录与价格；Qoder 侧也不用刷，`qoder_zcode_sync.py` 每次现拉 `/v1/models`。
-3. **探测** —— `workbuddy/workbuddy_probe_zcode.py --sleep 20`、`opencode-go/probe/probe_models.py`、
-   `qoder/qoder_probe_zcode.py`。必须用 ZCode 的真实请求体：裸 body 能通不代表 ZCode 能通。
+3. **探测** —— `providers/workbuddy/workbuddy_probe_zcode.py --sleep 20`、`providers/opencode-go/probe/probe_models.py`、
+   `providers/qoder/qoder_probe_zcode.py`。必须用 ZCode 的真实请求体：裸 body 能通不代表 ZCode 能通。
 4. **探测并归一化** —— 先更新主力候选（可选），再跑统一探测，最后由 `model_alias.py`
    生成四组 + alias map：
 
@@ -65,12 +64,12 @@ python tools/model_alias.py --slot auto --probe-file ~/.zcode/v2/model_probe.jso
 [docs/BENCHMARKS.md](https://github.com/MVennn/ZcodeAIModels/blob/main/docs/BENCHMARKS.md) §8。
 
 旧的 `go_model_sync.py` / `workbuddy_zcode_sync.py` / `qoder_zcode_sync.py` 现在只作
-**数据采集**；它们的旧 ID 会由 `model_alias.py` 归一化成 `渠道/积分/型号`。命名、
+**数据采集**；它们的旧 ID 会由 `model_alias.py` 归一化成统一的型号名。命名、
 积分换算与桥接规则见
 [docs/MODEL-ALIAS.md](https://github.com/MVennn/ZcodeAIModels/blob/main/docs/MODEL-ALIAS.md)。
 
 `model_alias.py` 会**先备份再原子替换** `provider_config.json`；ZCode 约 1 秒轮询该文件，
-写完一般不用重启客户端。统一路由、alias map、协议桥与各脚本产物见
+写完一般不用重启客户端。统一入口（`gateways/zgate`）、alias map、协议桥与各脚本产物见
 [docs/TOOLS.md](https://github.com/MVennn/ZcodeAIModels/blob/main/docs/TOOLS.md)，
 命名与积分规则见
 [docs/MODEL-ALIAS.md](https://github.com/MVennn/ZcodeAIModels/blob/main/docs/MODEL-ALIAS.md)，
@@ -87,7 +86,7 @@ python tools/model_alias.py --slot auto --probe-file ~/.zcode/v2/model_probe.jso
 - 跑的是哪个脚本、卡在哪一步、报错原文
 - 涉及的模型与 provider、ZCode 版本
 - 对应的环境变量是否已设置（**不要**把 key 贴出来）
-- 探测的输出文件（`workbuddy/cache/` 下那两份，发之前先扫一眼有没有凭据）
+- 探测的输出文件（`providers/workbuddy/cache/` 下那两份，发之前先扫一眼有没有凭据）
 
 ## 免责声明
 

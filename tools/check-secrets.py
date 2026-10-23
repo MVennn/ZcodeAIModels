@@ -27,7 +27,7 @@ SKIP_DIRS = {".git", ".work", "vault", "third-party", "node_modules", "dist", "_
              ".codegraph"}
 # 整目录被 .gitignore 排除的上游 clone：内含运行时凭据、二进制与上游作者的本机路径，
 # 不是本仓的源码/文档，--all 也不该扫（否则每次都会报上游自带的路径）。
-SKIP_REL_PREFIXES = ("workbuddy/gateway/", "qoder/gateway/")
+SKIP_REL_PREFIXES = ("gateways/upstream/",)
 SKIP_EXT = {".png", ".jpg", ".jpeg", ".gif", ".ico", ".pdf", ".gz", ".pyc", ".woff", ".woff2",
             ".zip", ".mrs"}
 

@@ -1,0 +1,38 @@
+{
+  "listen": "127.0.0.1:7871",
+  "aliasMap": "~/.zcode/v2/model-alias-map.json",
+  "providerConfig": "~/.zcode/v2/provider_config.json",
+  "wbGatewayConfig": "../upstream/workbuddy/config.json",
+  "qoderEnvFile": "../../providers/qoder/.env.local",
+  "session": "unified-router",
+  "log": { "dir": "%LOCALAPPDATA%/ZCodeGateway", "file": "zgate.log", "maxMB": 5 },
+  "upstreams": {
+    "OC": { "base": "https://opencode.ai/zen/go/v1" },
+    "WB": { "base": "http://127.0.0.1:7863/v1", "child": "workbuddy" },
+    "QD": { "base": "http://127.0.0.1:8790/v1", "child": "qoder" }
+  },
+  "children": {
+    "workbuddy": {
+      "policy": "ondemand",
+      "idleSeconds": 300,
+      "windows": ["08:58-09:15", "09:58-10:15", "20:58-21:15", "21:58-22:15"],
+      "exe": "../upstream/workbuddy/wb2api.exe",
+      "args": ["-config", "../upstream/workbuddy/config.json"],
+      "cwd": "../upstream/workbuddy",
+      "port": 7863,
+      "health": "http://127.0.0.1:7863/panel/",
+      "startTimeoutSeconds": 30
+    },
+    "qoder": {
+      "policy": "ondemand",
+      "idleSeconds": 300,
+      "windows": ["08:58-09:15", "20:58-21:15", "21:58-22:15"],
+      "exe": "python",
+      "args": ["../upstream/qoder/qoder_proxy.py", "--port", "8790", "--pid-file", "../upstream/qoder/qoder-proxy.pid"],
+      "cwd": "../upstream/qoder",
+      "port": 8790,
+      "health": "http://127.0.0.1:8790/ping",
+      "startTimeoutSeconds": 40
+    }
+  }
+}

@@ -14,7 +14,7 @@ Channel letters are W (WorkBuddy), O (OpenCode-Go), Q (Qoder). Model names
 drop the `V` and version dots (`DeepSeek-V4.1-FS` -> `DeepSeek-41-Fs`).
 
 The four providers are 主力 / 免费 / 低耗 / 高耗. 备用 is dissolved into
-高耗 by price. `tools/unified-router.js` reads the generated alias map and
+高耗 by price. `gateways/zgate` reads the generated alias map and
 forwards each display id to its original upstream model, so the display name
 never has to be parseable.
 
@@ -57,8 +57,8 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent
-WB_PRICING = REPO / "workbuddy" / "cache" / "wb_pricing.json"
-QD_ENV = REPO / "qoder" / ".env.local"
+WB_PRICING = REPO / "providers" / "workbuddy" / "cache" / "wb_pricing.json"
+QD_ENV = REPO / "providers" / "qoder" / ".env.local"
 DEFAULT_ARENA = Path.home() / ".zcode" / "v2" / "arena-main.json"
 
 PROVIDER_MAIN = "opencode-go-chat"
@@ -87,15 +87,22 @@ OC_BASE = "https://opencode.ai/zen/go/v1"
 # tools/arena_leaderboard.py); `--no-arena` restores this list only.
 MAIN_IDS = {
     "cn:deepseek-v4.1-flash",
-    "global:deepseek-v4.1-flash-sg",
+    "global:deepseek-v4.1-flash-sg",  # 合并了免费档，见 MERGE_FREE_GB
     "deepseek-v4.1-flash",
     "mimo-v2.6-pro",
     # 2026-10-23: benchmark #4 (372.95) at 0.09 credits, vs DeepSeek V4.1
     # Flash #11 (342.40) at 0.11; higher intelligence and cheaper.
     "qwen3.8-flash",
 }
+# Sorted first inside 主力 regardless of channel/region.
+MAIN_FIRST = {"global:deepseek-v4.1-flash-sg"}
+
+# Base models whose free GB tier is folded into the paid entry instead of being
+# listed separately: the paid entry tries the free upstream first, then the paid
+# one, then CN. Display name keeps the paid price.
+MERGE_FREE_GB = {"deepseek-v4.1-flash"}
 FREE_MAX = 0.0
-LOW_MAX = 0.16
+LOW_MAX = 0.11
 QD_FACTOR = 0.86
 
 # OpenCode-Go prices from docs/MODEL-PROVIDERS.md §2, converted with the
@@ -137,47 +144,46 @@ QD_PRICES = {
 }
 
 ABBR = {
-    "deepseek-v4.1-flash": "DeepSeek-41-Fs",
-    "deepseek-v4.1-flash-sg": "DeepSeek-41-Fs",
-    "deepseek-v4-flash": "DeepSeek-4-Fs",
-    "deepseek-v4-flash-vision-exp": "DeepSeek-4-Fs-Vision",
+    "deepseek-v4.1-flash": "DeepSeek-4.1-Flash",
+    "deepseek-v4.1-flash-sg": "DeepSeek-4.1-Flash",
+    "deepseek-v4-flash": "DeepSeek-4-Flash",
+    "deepseek-v4-flash-vision-exp": "DeepSeek-4-Flash-Vision",
     "deepseek-v4-pro": "DeepSeek-4-Pro",
-    "deepseek-flash": "DeepSeek-4-Fs",
-    "qwen3.8-max": "Qwen-38-Max",
-    "qwen3.8-flash": "Qwen-38-Fs",
-    "qwen3.7-max": "Qwen-37-Max",
-    "qwen3.7-plus": "Qwen-37-Plus",
-    "qwen3.7-flash": "Qwen-37-Fs",
-    "glm-5.3": "GLM-53",
-    "glm-5.3-flash": "GLM-53-Fs",
-    "glm-5.2": "GLM-52",
-    "minimax-m3.1-flash": "MiniMax-M31-Fs",
+    "deepseek-flash": "DeepSeek-4-Flash",
+    "qwen3.8-max": "Qwen-3.8-Max",
+    "qwen3.8-flash": "Qwen-3.8-Flash",
+    "qwen3.7-max": "Qwen-3.7-Max",
+    "qwen3.7-plus": "Qwen-3.7-Plus",
+    "qwen3.7-flash": "Qwen-3.7-Flash",
+    "glm-5.3": "GLM-5.3",
+    "glm-5.3-flash": "GLM-5.3-Flash",
+    "glm-5.2": "GLM-5.2",
+    "minimax-m3.1-flash": "MiniMax-M3.1-Flash",
     "minimax-m3": "MiniMax-M3",
-    "minimax-m2.7": "MiniMax-M27",
-    "kimi-k2.8-preview": "Kimi-K28-Pre",
+    "minimax-m2.7": "MiniMax-M2.7",
+    "kimi-k2.8-preview": "Kimi-K2.8-Pre",
     "kimi-k3": "Kimi-K3",
-    "kimi-k2.6": "Kimi-K26",
-    "kimi-k2.5": "Kimi-K25",
+    "kimi-k2.6": "Kimi-K2.6",
+    "kimi-k2.5": "Kimi-K2.5",
     "hy3": "HY3",
     "hy3-x": "HY3-X",
     "hy4-preview": "HY4-Pre",
     "hy4-preview-f": "HY4-Pre",
     "step-5-preview": "Step-5-Pre",
     "space-bunny": "Space-Bunny",
-    "mimo-v2.6-pro": "MiMo-26-Pro",
-    "mimo-v2.6-flash": "MiMo-26-Fs",
-    "mimo-v2.5": "MiMo-25",
-    "mimo-v2.5-pro": "MiMo-25-Pro",
-    "longcat-2.0": "LongCat-20",
-    "longcat-2.5-preview-free": "LongCat-25-Pre",
+    "mimo-v2.6-pro": "MiMo-2.6-Pro",
+    "mimo-v2.6-flash": "MiMo-2.6-Flash",
+    "mimo-v2.5": "MiMo-2.5",
+    "mimo-v2.5-pro": "MiMo-2.5-Pro",
+    "longcat-2.0": "LongCat-2.0",
+    "longcat-2.5-preview-free": "LongCat-2.5-Pre",
     "beam-free": "Beam",
-    "claude-haiku-5-5": "Claude-Haiku-55",
+    "claude-haiku-5-5": "Claude-Haiku-5.5",
     "gpt-6-luna": "GPT-6-Luna",
-    "gpt-5.6-luna": "GPT-56-Luna",
-    "muse-spark-1.3-contributor": "Muse-Spark13",
-    "muse-spark-1.2-contributor": "Muse-Spark12",
+    "gpt-5.6-luna": "GPT-5.6-Luna",
+    "muse-spark-1.3-contributor": "Muse-Spark1.3",
+    "muse-spark-1.2-contributor": "Muse-Spark1.2",
 }
-CHANNEL_LETTER = {"WB": "W", "OC": "O", "QD": "Q"}
 VENDOR_ORDER = ("DSP", "QW", "GLM", "MM", "KIMI", "HY", "MIMO", "LONG", "BEAM",
                 "CL", "GPT", "MUSE", "STEP", "SPB", "OTHER")
 
@@ -369,27 +375,11 @@ def abbreviate(model: str) -> str:
     key = model.lower()
     if key in ABBR:
         return ABBR[key]
-    text = re.sub(r"(?<=\d)\.(?=\d)", "", model)
-    text = re.sub(r"^[Vv](?=\d)", "", text)
+    text = re.sub(r"^[Vv](?=\d)", "", model)
     text = re.sub(r"(?i)flash\b", "Fs", text)
     text = re.sub(r"(?i)preview\b", "Pre", text)
     text = re.sub(r"[^A-Za-z0-9.-]+", "-", text).strip("-")
     return text or "MODEL"
-
-
-def group_of(item: dict, price: float, max_price: float,
-             arena_targets: dict[tuple[str, str], dict] | None = None) -> str | None:
-    if item["original"] in MAIN_IDS:
-        return "main"
-    if arena_targets and (item["channel"], item["upstream"]) in arena_targets:
-        return "main"
-    if max_price > 0 and price > max_price:
-        return None
-    if price <= FREE_MAX:
-        return "free"
-    if price <= LOW_MAX:
-        return "low"
-    return "high"
 
 
 VENDOR_PREFIXES = (
@@ -433,6 +423,7 @@ def classify(model: str, protocol: str, alias_models: dict, legacy: dict) -> dic
             "base_model": base_model,
             "protocol": str(entry.get("protocol") or protocol),
             "fallbacks": list(entry.get("fallbacks") or []),
+            "chain": list(entry.get("chain") or []),
             "legacy_ids": list(entry.get("legacy_ids") or [entry.get("original") or model, upstream]),
         }
     if model in legacy and legacy[model] in alias_models:
@@ -508,17 +499,50 @@ def inventory(cfg: dict, alias_models: dict, legacy: dict) -> list[dict]:
             if item is None:
                 continue
             item["provider_id"] = provider_id
-            key = (item["channel"], item["upstream"], item["protocol"])
-            if key in seen:
-                previous = seen[key]
-                for field in ("fallbacks", "legacy_ids"):
-                    values = previous.setdefault(field, [])
-                    for value in item.get(field) or []:
+            for hop in expand_hops(item):
+                key = (hop["channel"], hop["upstream"], hop["protocol"])
+                if key in seen:
+                    previous = seen[key]
+                    values = previous.setdefault("legacy_ids", [])
+                    for value in hop.get("legacy_ids") or []:
                         if value not in values:
                             values.append(value)
-                continue
-            seen[key] = item
+                    continue
+                seen[key] = hop
     return list(seen.values())
+
+
+def expand_hops(item: dict) -> list[dict]:
+    """One item per upstream: v2 chain, v1 fallbacks, or the item itself."""
+    chain = item.get("chain") or []
+    if chain:
+        out = []
+        for hop in chain:
+            sub = dict(item)
+            sub.update({
+                "channel": hop.get("channel") or item["channel"],
+                "upstream": hop.get("upstream") or item["upstream"],
+                "base_model": hop.get("base_model") or item["base_model"],
+                "original": hop.get("original") or hop.get("upstream") or item["upstream"],
+                "price": hop.get("price"),
+                "fallbacks": [],
+            })
+            out.append(sub)
+        return out
+    out = [dict(item)]
+    for fallback in item.get("fallbacks") or []:
+        if fallback == item["upstream"]:
+            continue
+        sub = dict(item)
+        sub.update({
+            "upstream": fallback,
+            "base_model": re.sub(r"^(cn|global):", "", fallback),
+            "original": fallback,
+            "price": None,
+            "fallbacks": [],
+        })
+        out.append(sub)
+    return out
 
 
 def raw_models(cfg: dict, alias_models: dict, legacy: dict) -> list[dict]:
@@ -542,102 +566,107 @@ def raw_models(cfg: dict, alias_models: dict, legacy: dict) -> list[dict]:
     return out
 
 
-def merge_inventory(items: list[dict], wb: dict, qd: dict, slot: str) -> list[dict]:
-    """Merge WorkBuddy CN/GB variants under one WB channel.
+CHANNEL_BASE = {"WB": WB_BASE, "QD": QD_BASE, "OC": OC_BASE}
 
-    GB is the primary; every GB price tier keeps its own entry (so a free GB
-    promo stays free), and the CN variants become fallbacks. Same-price CN/GB
-    pairs collapse into one entry. The displayed price is the GB (primary)
-    price; when GB is unavailable the router retries CN.
+
+def base_of(channel: str) -> str:
+    return CHANNEL_BASE.get(channel, OC_BASE)
+
+
+def family_entries(items: list[dict], wb: dict, qd: dict, slot: str) -> list[dict]:
+    """Collapse one entry per (model, protocol), merging channels by price.
+
+    The display name is just the model name (no channel, no price). Hops are
+    ordered cheapest-first across channels, and each hop carries its own base so
+    the router can switch upstreams without a shared host.
+
+    A free tier stays a separate entry (suffixed -F) when the same model also has
+    a paid tier, except for MERGE_FREE_GB families where the free hop is folded
+    into the paid entry and tried first.
     """
-    merged: list[dict] = []
-    wb_groups: dict[str, list[dict]] = {}
+    families: dict[tuple[str, str], dict[str, dict]] = {}
     for item in items:
-        if item["channel"] == "WB":
-            # `-sg` is a region variant, not a different model: keep the free
-            # GB and SG GB tiers in the same merge group so both get the CN
-            # fallback.
-            base_key = re.sub(r"-sg$", "", item["base_model"])
-            wb_groups.setdefault(base_key, []).append(item)
+        price = item.get("price")
+        if price is None:
+            price = price_of(item["channel"], item["upstream"], wb, qd, slot)
+        if price is None:
             continue
-        item = dict(item)
-        item["price"] = price_of(item["channel"], item["upstream"], wb, qd, slot)
-        item["region"] = ""
-        item["fallbacks"] = list(item.get("fallbacks") or [])
-        item["legacy_ids"] = list(item.get("legacy_ids") or [item["original"], item["upstream"]])
-        merged.append(item)
+        hop = dict(item)
+        hop["price"] = round(float(price), 2)
+        abbr = abbreviate(item["base_model"])
+        key = (abbr, item["protocol"])
+        families.setdefault(key, {})[(item["channel"], item["upstream"])] = hop
 
-    for base_model, group in wb_groups.items():
-        priced = []
-        for item in group:
-            item = dict(item)
-            item["price"] = price_of("WB", item["upstream"], wb, qd, slot)
-            priced.append(item)
-        gb = [item for item in priced
-              if item["upstream"].startswith("global:") and item["price"] is not None]
-        cn = [item for item in priced if item["upstream"].startswith("cn:")]
-        existing_fallbacks: list[str] = []
-        existing_legacy: list[str] = []
-        for item in priced:
-            for fb in item.get("fallbacks") or []:
-                if fb not in existing_fallbacks:
-                    existing_fallbacks.append(fb)
-            for lid in item.get("legacy_ids") or []:
-                if lid not in existing_legacy:
-                    existing_legacy.append(lid)
+    entries: list[dict] = []
+    for (abbr, protocol), hop_map in families.items():
+        hops = sorted(hop_map.values(), key=lambda h: (h["price"], h["upstream"]))
+        if not hops:
+            continue
+        free = [h for h in hops if h["price"] <= 0]
+        paid = [h for h in hops if h["price"] > 0]
+        base_model = hops[0]["base_model"]
+        family_key = re.sub(r"(-sg|-f)$", "", base_model.lower())
 
-        if gb:
-            by_price: dict[float, list[dict]] = {}
-            for item in gb:
-                by_price.setdefault(round(float(item["price"]), 2), []).append(item)
-            owner_price = max(by_price)
-            cn_upstreams: list[str] = []
-            for item in cn:
-                if item["upstream"] not in cn_upstreams:
-                    cn_upstreams.append(item["upstream"])
-            for fb in existing_fallbacks:
-                if fb not in cn_upstreams:
-                    cn_upstreams.append(fb)
-            cn_legacy: list[str] = []
-            for item in cn:
-                for lid in item.get("legacy_ids") or [item["original"], item["upstream"]]:
-                    if lid not in cn_legacy:
-                        cn_legacy.append(lid)
-            gb_legacy_all = set()
-            for rows in by_price.values():
-                for item in rows:
-                    gb_legacy_all.update(item.get("legacy_ids") or [item["original"], item["upstream"]])
-            for price, rows in by_price.items():
-                primary = sorted(rows, key=lambda row: row["upstream"])[0]
-                legacy_ids: list[str] = []
-                for item in rows:
-                    for lid in item.get("legacy_ids") or [item["original"], item["upstream"]]:
-                        if lid not in legacy_ids:
-                            legacy_ids.append(lid)
-                if price == owner_price:
-                    for lid in cn_legacy + [x for x in existing_legacy if x not in gb_legacy_all]:
-                        if lid not in legacy_ids:
-                            legacy_ids.append(lid)
-                entry = dict(primary)
-                entry.update({
-                    "region": "",
-                    "price": price,
-                    "fallbacks": cn_upstreams,
-                    "legacy_ids": legacy_ids,
-                })
-                merged.append(entry)
+        if family_key in MERGE_FREE_GB or not (free and paid):
+            groups = [hops]
         else:
-            for item in cn:
-                if item["price"] is None:
-                    continue
-                entry = dict(item)
-                entry.update({
-                    "region": "",
-                    "fallbacks": list(item.get("fallbacks") or []),
-                    "legacy_ids": list(item.get("legacy_ids") or [item["original"], item["upstream"]]),
-                })
-                merged.append(entry)
-    return merged
+            groups = [paid, free]
+
+        for group in groups:
+            group = sorted(group, key=lambda h: (
+                h["price"],
+                0 if h["upstream"].startswith("global:") else 1 if h["upstream"].startswith("cn:") else 2,
+                0 if h["channel"] == "WB" else 1 if h["channel"] == "QD" else 2,
+                h["upstream"],
+            ))
+            is_free_entry = all(h["price"] <= 0 for h in group)
+            name = abbr + ("-Free" if is_free_entry and len(groups) > 1 else "")
+            chain = [{
+                "upstream": h["upstream"],
+                "base": base_of(h["channel"]),
+                "channel": h["channel"],
+                "price": h["price"],
+                "original": h["original"],
+                "base_model": h["base_model"],
+            } for h in group]
+            legacy_ids: list[str] = []
+            for h in group:
+                for lid in h.get("legacy_ids") or [h["original"], h["upstream"]]:
+                    if lid not in legacy_ids:
+                        legacy_ids.append(lid)
+            entry = dict(group[0])
+            entry.update({
+                "name": name,
+                "abbr": abbr,
+                "protocol": protocol,
+                "channel": chain[0]["channel"],
+                "upstream": chain[0]["upstream"],
+                "base": chain[0]["base"],
+                "base_model": base_model,
+                "price": chain[0]["price"],
+                "chain": chain,
+                "fallbacks": [c["upstream"] for c in chain[1:]],
+                "legacy_ids": legacy_ids,
+                "is_free_entry": is_free_entry,
+            })
+            entries.append(entry)
+    return entries
+
+
+def entry_group(entry: dict, arena_targets: dict[tuple[str, str], dict]) -> tuple[str, str]:
+    """Return (group, reason) for a merged entry."""
+    for hop in entry["chain"]:
+        if hop["original"] in MAIN_IDS:
+            return "main", "manual"
+    for hop in entry["chain"]:
+        if (hop["channel"], hop["upstream"]) in arena_targets:
+            return "main", "arena"
+    price = entry["price"]
+    if price <= 0:
+        return "free", ""
+    if price <= LOW_MAX:
+        return "low", ""
+    return "high", ""
 
 
 def main() -> int:
@@ -672,7 +701,7 @@ def main() -> int:
     legacy = dict(existing.get("legacy") or {})
     wb, qd = wb_prices(), qd_prices()
     items = inventory(cfg, existing_models, legacy)
-    items = merge_inventory(items, wb, qd, args.slot)
+    entries = family_entries(items, wb, qd, args.slot)
     raw = raw_models(cfg, existing_models, legacy)
     arena_file = arena_main_path(args.arena_main)
     arena_targets = {} if args.no_arena else load_arena_targets(arena_file)
@@ -687,42 +716,36 @@ def main() -> int:
     grouped: dict[str, list[dict]] = {key: [] for key in ("main", "free", "low", "high")}
     skipped: list[str] = []
     used: set[str] = set()
-    for item in items:
-        price = item.get("price")
-        if price is None:
-            skipped.append(f"{item['original']} (no price)")
+    for entry in entries:
+        group, main_reason = entry_group(entry, arena_targets)
+        if args.max_price > 0 and entry["price"] > args.max_price:
+            skipped.append(f"{entry['name']} (price {entry['price']:g} > {args.max_price:g})")
             continue
-        group = group_of(item, price, args.max_price, arena_targets)
-        if group is None:
-            skipped.append(f"{item['original']} (price {price:g} > {args.max_price:g})")
-            continue
-        if item["original"] in MAIN_IDS:
-            main_reason = "manual"
-        elif (item["channel"], item["upstream"]) in arena_targets:
-            main_reason = "arena"
-        else:
-            main_reason = ""
-        abbr = abbreviate(item["base_model"])
-        channel = CHANNEL_LETTER.get(item["channel"], item["channel"])
-        new_id = f"{channel}/{price:.2f}/{abbr}"
+        new_id = entry["name"]
         if new_id in used:
-            suffix = 2
-            while f"{new_id}-{suffix}" in used:
-                suffix += 1
-            new_id = f"{new_id}-{suffix}"
+            # Same name, different protocol (e.g. a bridged variant).
+            suffix = "-Msg" if entry["protocol"] == "messages" else "-Resp" if entry["protocol"] == "responses" else "-2"
+            candidate = new_id + suffix
+            counter = 2
+            while candidate in used:
+                candidate = f"{new_id}{suffix}-{counter}"
+                counter += 1
+            new_id = candidate
         used.add(new_id)
-        item = dict(item)
-        item.update({"price": price, "group": group, "new_id": new_id, "abbr": abbr,
-                     "main_reason": main_reason,
-                     "fallbacks": list(item.get("fallbacks") or []),
-                     "legacy_ids": list(item.get("legacy_ids") or [item["original"], item["upstream"]])})
-        grouped[group].append(item)
+        entry = dict(entry)
+        entry.update({"group": group, "new_id": new_id, "main_reason": main_reason})
+        grouped[group].append(entry)
 
     for group, rows in grouped.items():
+        # Vendor blocks are ordered by that vendor's cheapest model; inside a
+        # block models go from cheap to expensive.
+        vendor_min: dict[str, float] = {}
+        for row in rows:
+            vendor = vendor_of(row["abbr"])
+            vendor_min[vendor] = min(vendor_min.get(vendor, row["price"]), row["price"])
         rows.sort(key=lambda r: (
-            0 if r["channel"] == "WB" else 1 if r["channel"] == "OC" else 2,
-            0 if vendor_of(r["abbr"]) == "DSP" else 1,
-            0 if r["region"] in ("", "CN") else 1,
+            0 if any(h["original"] in MAIN_FIRST for h in r["chain"]) else 1,
+            vendor_min[vendor_of(r["abbr"])],
             vendor_rank(r["abbr"]),
             r["price"],
             r["new_id"],
@@ -741,7 +764,9 @@ def main() -> int:
         for group, rows in grouped.items():
             kept = []
             for row in rows:
-                candidates = [row["new_id"], row.get("raw"), row["original"]]
+                candidates = [row["new_id"], row.get("raw")]
+                for hop in row["chain"]:
+                    candidates += [hop["upstream"], hop["original"]]
                 candidates += reverse_legacy.get(row["new_id"], [])
                 entry = next((probe[c] for c in candidates if c in probe), {})
                 status = entry.get("status")
@@ -765,7 +790,11 @@ def main() -> int:
     if arena_rows:
         print(f"\n## 主力扩充来源（{arena_file.name}）")
         for row in arena_rows:
-            entry = arena_targets[(row["channel"], row["upstream"])]
+            hop = next((h for h in row["chain"]
+                        if (h["channel"], h["upstream"]) in arena_targets), None)
+            if hop is None:
+                continue
+            entry = arena_targets[(hop["channel"], hop["upstream"])]
             ratio = float(entry.get("ratio") or 0) * 100
             print(f"  {row['new_id']:<34} 分数 {entry.get('score')}（基准 {ratio:.1f}%）"
                   f" #{entry.get('rank')}  {entry.get('model')}")
@@ -782,10 +811,11 @@ def main() -> int:
         print("\ndry run；加 --apply 写入 provider_config.json 与 alias map")
         return 0
 
-    new_id_by_key = {
-        (item["channel"], item["upstream"], item["protocol"]): item["new_id"]
-        for rows in grouped.values() for item in rows
-    }
+    new_id_by_key = {}
+    for rows in grouped.values():
+        for item in rows:
+            for hop in item["chain"]:
+                new_id_by_key[(hop["channel"], hop["upstream"], item["protocol"])] = item["new_id"]
     for item in raw:
         key = (item["channel"], item["upstream"], item["protocol"])
         if key in new_id_by_key:
@@ -837,7 +867,7 @@ def main() -> int:
             base = WB_BASE if row["channel"] == "WB" else QD_BASE if row["channel"] == "QD" else OC_BASE
             alias_models[row["new_id"]] = {
                 "channel": row["channel"],
-                "region": row["region"],
+                "region": "",
                 "upstream": row["upstream"],
                 "base_model": row["base_model"],
                 "base": base,
@@ -846,6 +876,7 @@ def main() -> int:
                 "price": row["price"],
                 "group": PROVIDER_NAMES[provider_id],
                 "fallbacks": list(row.get("fallbacks") or []),
+                "chain": list(row.get("chain") or []),
                 "legacy_ids": list(row.get("legacy_ids") or [row["original"], row["upstream"]]),
             }
             if row.get("main_reason"):
@@ -854,7 +885,18 @@ def main() -> int:
                 legacy[legacy_id] = row["new_id"]
 
     valid_ids = set(alias_models)
-    legacy = {key: value for key, value in legacy.items() if value in valid_ids}
+    # Follow rename chains (W/0.00/X -> W/0.03/X -> ...) so an id that has been
+    # renamed twice still resolves to a live model instead of being dropped.
+    resolved_legacy: dict[str, str] = {}
+    for key, value in legacy.items():
+        target = value
+        seen: set[str] = set()
+        while target not in valid_ids and target in legacy and target not in seen:
+            seen.add(target)
+            target = legacy[target]
+        if target in valid_ids:
+            resolved_legacy[key] = target
+    legacy = resolved_legacy
 
     cfg["config"]["providerConfigRules"]["providerRules"] = new_providers
     cfg["config"]["providerOrder"] = PROVIDER_IDS

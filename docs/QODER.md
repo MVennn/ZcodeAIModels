@@ -26,8 +26,8 @@ Qoder 走 7871：显示名是 `Q/积分/型号`，alias map 还原上游模型�
 组合层吃进一个大项目里，与「加一个上游 = 加一个适配器」的目标相反。
 
 上游项目：[shuishuipingan/qoder2api-hub](https://github.com/shuishuipingan/qoder2api-hub)
-（MIT，Python 3.9+，零第三方依赖）。本机 clone 在 `qoder/gateway/`，整目录被
-`.gitignore` 排除（与 `workbuddy/gateway/` 同一模式）。
+（MIT，Python 3.9+，零第三方依赖）。本机 clone 在 `gateways/upstream/qoder/`，整目录被
+`.gitignore` 排除（与 `gateways/upstream/workbuddy/` 同一模式）。
 
 ---
 
@@ -37,22 +37,22 @@ Qoder 走 7871：显示名是 `Q/积分/型号`，alias map 还原上游模型�
 |---|---|
 | 网关 | `http://127.0.0.1:8790/v1`（OpenAI Chat Completions） |
 | 看板 | `http://127.0.0.1:8790/` |
-| 面板密码 | 存在 `qoder/gateway/accounts/settings.json`（PBKDF2 摘要） |
-| API Key | 存在同一份 `settings.json`；合并模式下由 7871 路由从 `qoder/.env.local` 的 `QD_API_KEY` 读 |
-| 账号 | `qoder/gateway/accounts/*.json`（含 token，绝不入库） |
-| 用量 | `qoder/gateway/usage/` |
-| 日志 | `qoder/gateway/qoder-proxy.log` / `qoder-proxy.err.log` |
-| 启动 | `qoder/gateway/start-qoder-proxy.bat`（detached，关窗口不退出） |
-| 停止 | `qoder/gateway/stop-qoder-proxy.bat`（按 PID，只停 `qoder_proxy.py`） |
+| 面板密码 | 存在 `gateways/upstream/qoder/accounts/settings.json`（PBKDF2 摘要） |
+| API Key | 存在同一份 `settings.json`；合并模式下由 7871 路由从 `providers/qoder/.env.local` 的 `QD_API_KEY` 读 |
+| 账号 | `gateways/upstream/qoder/accounts/*.json`（含 token，绝不入库） |
+| 用量 | `gateways/upstream/qoder/usage/` |
+| 日志 | `gateways/upstream/qoder/qoder-proxy.log` / `qoder-proxy.err.log` |
+| 启动 | `gateways/upstream/qoder/start-qoder-proxy.bat`（detached，关窗口不退出） |
+| 停止 | `gateways/upstream/qoder/stop-qoder-proxy.bat`（按 PID，只停 `qoder_proxy.py`） |
 | 健康 | `GET http://127.0.0.1:8790/ping`、`GET /health` |
 
 API Key 与面板密码已持久化到 `accounts/settings.json`，所以 `.bat` 不需要
-额外参数即可用同一把 Key 重启。`qoder/.env.local` 只给同步/探测脚本读，
+额外参数即可用同一把 Key 重启。`providers/qoder/.env.local` 只给同步/探测脚本读，
 也在 `.gitignore` 里。
 
-当前没有把 Qoder 接进 `workbuddy/zcode_gateway_watch.ps1`：它是常驻进程，
+Qoder 现在由 `gateways/zgate` 以 `always` 策略托管（见 [MAINTENANCE.md](MAINTENANCE.md) §8.5）：它是常驻进程，
 不随 ZCode 起停。这样 09:00 / 21:00 的签到在 ZCode 没开时也会跑；如果以后
-想让它跟随 ZCode，再把 `start-qoder-proxy.bat` 加进守护器即可。
+要改成按需回收，把 `zgate.json` 的 `children.qoder.policy` 改成 `ondemand` 即可（会漏签到窗口）。
 
 ---
 
@@ -66,9 +66,9 @@ API Key 与面板密码已持久化到 `accounts/settings.json`，所以 `.bat` 
 - 账号的 OAuth 设备流凭据 30 天有效，到期前网关会自动续期；续不动时看板会
   标 `session dead`，重新授权一次即可。
 - 签到排程默认 **09:00 / 21:00**，Token 保活 **22:00**，状态在
-  `qoder/gateway/accounts/scheduler/state.json`。
+  `gateways/upstream/qoder/accounts/scheduler/state.json`。
 - 签到所需的 UMID 组件已用 `python _install_umid.py` 提取到
-  `qoder/gateway/umid/`（`runtime-info.exe` + `sgsdk.dll`）。2026-10-23 16:56
+  `gateways/upstream/qoder/umid/`（`runtime-info.exe` + `sgsdk.dll`）。2026-10-23 16:56
   的启动巡检已成功领取 **+100 Credits**，余额 399。
 - 国际版签到按设备去重（每台机器每天只有一个国际版账号能领）；国内版按账号。
 
@@ -76,7 +76,7 @@ API Key 与面板密码已持久化到 `accounts/settings.json`，所以 `.bat` 
 
 ## 4. ZCode provider
 
-`qoder/qoder_zcode_sync.py` 默认是**合并模式**：不创建独立 provider，把模型加
+`providers/qoder/qoder_zcode_sync.py` 默认是**合并模式**：不创建独立 provider，把模型加
 `qoder:` 前缀后写入现有三个 chat 组：
 
 | `price_factor` | 目标 provider | 显示组 |
@@ -127,25 +127,25 @@ API Key 与面板密码已持久化到 `accounts/settings.json`，所以 `.bat` 
 > （见 [MODEL-ALIAS.md](MODEL-ALIAS.md) §6）。下面的 Qoder 专用命令只用于采集/兼容。
 
 **每天 12:00 的定时任务已包含 Qoder**（`automation-3e2f8a53-b408-4bf8-90ff-4a331a721f5c`）：
-先跑 `qoder/qoder_probe_zcode.py --timeout 90 --sleep 3` 拉实时目录并逐个探测，再用
-`qoder/qoder_zcode_sync.py --probe-file qoder/qoder_probe.json --apply` 并入 chat 组，
+先跑 `providers/qoder/qoder_probe_zcode.py --timeout 90 --sleep 3` 拉实时目录并逐个探测，再用
+`providers/qoder/qoder_zcode_sync.py --probe-file providers/qoder/qoder_probe.json --apply` 并入 chat 组，
 最后由 `tools/model_alias.py --slot auto --apply` 归一化成 `Q/积分/型号` 并分到四组。
 探测默认经 7871；路由不可用时定时任务会改用 `--direct` 直连 8790 重探。
 完整四段顺序见 [MAINTENANCE.md](MAINTENANCE.md) §6。
 
 ```bash
 # 1. 看当前目录与价格（dry run，不写）
-python qoder/qoder_zcode_sync.py
+python providers/qoder/qoder_zcode_sync.py
 
-# 2. 用 ZCode 真实 body 探测（写入 qoder/qoder_probe.json）
-python qoder/qoder_probe_zcode.py
+# 2. 用 ZCode 真实 body 探测（写入 providers/qoder/qoder_probe.json）
+python providers/qoder/qoder_probe_zcode.py
 
 # 3. 只保留探测 ok 的模型并写入（先备份）
-python qoder/qoder_zcode_sync.py --probe-file qoder/qoder_probe.json --apply
+python providers/qoder/qoder_zcode_sync.py --probe-file providers/qoder/qoder_probe.json --apply
 
 # 单独重试排队的免费模型（例如晚上队列空了）
-python qoder/qoder_probe_zcode.py --only Qwen3.8-Flash --timeout 180
-python qoder/qoder_zcode_sync.py --probe-file qoder/qoder_probe.json --apply
+python providers/qoder/qoder_probe_zcode.py --only Qwen3.8-Flash --timeout 180
+python providers/qoder/qoder_zcode_sync.py --probe-file providers/qoder/qoder_probe.json --apply
 ```
 
 默认是合并模式：写入现有四组，不建独立 provider；`--separate` 才写
@@ -165,7 +165,7 @@ python qoder/qoder_zcode_sync.py --probe-file qoder/qoder_probe.json --apply
 升级 qoder2api-hub：
 
 ```bash
-git -C qoder/gateway pull --ff-only
+git -C gateways/upstream/qoder pull --ff-only
 # 然后 stop-qoder-proxy.bat → start-qoder-proxy.bat
 ```
 
@@ -185,7 +185,7 @@ git -C qoder/gateway pull --ff-only
   也不要把 Qoder 的 token 塞进 WorkBuddy2API。
 - 合并模式下 Qoder 模型在四组里，必须保证 7871 路由在跑；Qoder hub
   常驻、router 随 ZCode 起停（见 [MAINTENANCE.md](MAINTENANCE.md) §8.1）。
-- 本仓不把 `qoder/gateway/`、`qoder/.env.local`、`qoder/qoder_probe.json`、
+- 本仓不把 `gateways/upstream/qoder/`、`providers/qoder/.env.local`、`providers/qoder/qoder_probe.json`、
   `accounts/` 下的任何文件入库。
 
 ---

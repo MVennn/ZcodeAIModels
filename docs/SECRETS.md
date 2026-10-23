@@ -16,8 +16,8 @@
 
 - **ZCode 的 `provider_config.json` 本身就带 `apiKey`** —— 它是本机文件，不该入库；
 - **脚本自己产生的 `.bak-*` 备份**里同样带 key；
-- **`workbuddy/cache/` 与 `workbuddy/logs/` 是活数据缓存**（含账号池探测结果），随机器走，不随仓库走；
-- **`qoder/gateway/accounts/` 是 Qoder 的 OAuth token 与面板/Key 设置**，随机器走，不随仓库走。
+- **`providers/workbuddy/cache/` 与 `providers/workbuddy/logs/` 是活数据缓存**（含账号池探测结果），随机器走，不随仓库走；
+- **`gateways/upstream/qoder/accounts/` 是 Qoder 的 OAuth token 与面板/Key 设置**，随机器走，不随仓库走。
 
 统一列一次位置，比到处找强；也比「顺手把值删掉」安全 —— **值该轮换，而不是该被藏起来**。
 
@@ -29,15 +29,15 @@
 |---|---|---|---|
 | **OpenCode-Go API key**（`oc_sk_…`） | ZCode 的 `provider_config.json` 里的 `apiKey` 字段；也可从 OpenCode 控制台重新签发 | 5 个探测脚本从环境变量 **`OPENCODE_GO_KEY`** 读；**未设置时明确报错退出**，不会带着空 key 去请求 | **不入库**。轮换后重新 `export` |
 | **WorkBuddy 网关 key** | 本机 `wb2api` 网关自己的 `api_key`（网关面板 / 配置里） | 2 个 WorkBuddy 脚本从环境变量 **`WB_GATEWAY_KEY`** 读 | **不入库**。网关换账号池时一并轮换 |
-| **统一路由的上游 key** | 不新增凭据文件：OpenCode key 从 `provider_config.json` / `OPENCODE_GO_KEY` 读，WorkBuddy key 从 `workbuddy/gateway/config.json` / `WB_GATEWAY_KEY` 读 | `tools/unified-router.js` 启动时读取；只监听 `127.0.0.1`；`/health` 只返回 key 是否存在，不返回值 | **不入库**。轮换上游 key 后重启路由 |
-| **网关账号池凭据**（`auths/`，4 个号） | 本机 `workbuddy/gateway/auths/`（上游 clone 的运行目录）；`config.json` 里还有网关自己的 `api_key` | 整个 `workbuddy/gateway/` 被 `.gitignore` 排除；仓库里只出现 `WB_GATEWAY_KEY` 这个变量名 | **不入库**。换账号池时整目录一起换 |
-| **Qoder API key**（`qd-…`） | qoder2api-hub 的 `qoder/gateway/accounts/settings.json`；本地脚本与 7871 路由从 `qoder/.env.local` 的 `QD_API_KEY` 读 | `qoder/qoder_zcode_sync.py` / `qoder_probe_zcode.py` 只从环境变量或本地 `.env.local` 读；合并模式**不**把 key 写进 provider_config（separate 模式才写） | **不入库**。轮换后同步改 `settings.json` 与 `.env.local` |
-| **Qoder 面板密码** | `qoder/gateway/accounts/settings.json` 的 PBKDF2 摘要；初始值来自 `qoder/.env.local` 的 `QD_PANEL_PASSWORD` | 本仓不出现值；`.env.local` 与整个 clone 都 gitignore | **不入库**。看板「设置」可改 |
-| **Qoder 账号凭据**（OAuth device token / refresh token） | `qoder/gateway/accounts/<uid>.json` | 整个 `qoder/gateway/` 被 `.gitignore` 排除 | **不入库**。换账号时整目录操作 |
+| **统一路由的上游 key** | 不新增凭据文件：OpenCode key 从 `provider_config.json` / `OPENCODE_GO_KEY` 读，WorkBuddy key 从 `gateways/upstream/workbuddy/config.json` / `WB_GATEWAY_KEY` 读 | `gateways/zgate` 启动时读取；只监听 `127.0.0.1`；`/health` 只返回 key 是否存在，不返回值 | **不入库**。轮换上游 key 后重启路由 |
+| **网关账号池凭据**（`auths/`，4 个号） | 本机 `gateways/upstream/workbuddy/auths/`（上游 clone 的运行目录）；`config.json` 里还有网关自己的 `api_key` | 整个 `gateways/upstream/workbuddy/` 被 `.gitignore` 排除；仓库里只出现 `WB_GATEWAY_KEY` 这个变量名 | **不入库**。换账号池时整目录一起换 |
+| **Qoder API key**（`qd-…`） | qoder2api-hub 的 `gateways/upstream/qoder/accounts/settings.json`；本地脚本与 7871 路由从 `providers/qoder/.env.local` 的 `QD_API_KEY` 读 | `providers/qoder/qoder_zcode_sync.py` / `qoder_probe_zcode.py` 只从环境变量或本地 `.env.local` 读；合并模式**不**把 key 写进 provider_config（separate 模式才写） | **不入库**。轮换后同步改 `settings.json` 与 `.env.local` |
+| **Qoder 面板密码** | `gateways/upstream/qoder/accounts/settings.json` 的 PBKDF2 摘要；初始值来自 `providers/qoder/.env.local` 的 `QD_PANEL_PASSWORD` | 本仓不出现值；`.env.local` 与整个 clone 都 gitignore | **不入库**。看板「设置」可改 |
+| **Qoder 账号凭据**（OAuth device token / refresh token） | `gateways/upstream/qoder/accounts/<uid>.json` | 整个 `gateways/upstream/qoder/` 被 `.gitignore` 排除 | **不入库**。换账号时整目录操作 |
 | **其它供应商的凭据**（你自己接的） | 该服务商自己的控制台 / 账号设置 | **一律走环境变量**，不落进源码、文档、缓存、日志。命名建议 `<供应商>_KEY` / `<供应商>_BASE`，与 §3.5 的表同格式 | **不入库**。加变量时同步补 §3.5 的表 |
 | **ZCode provider 配置**（含各 provider 的 `apiKey`） | 本机 `~/.zcode/v2/provider_config.json` | 不在本仓；`--apply` 产生的 `provider_config.json.bak-*` 备份同样含 key，已被 `.gitignore` 排除 | **不入库**。回退步骤见 [MAINTENANCE.md](MAINTENANCE.md) §4 |
 | **网关模型目录快照** | 网关 `/panel/api/models` | `evidence/wb_panel_models.json` —— 目录结构证据，**不含凭据**，随仓库分发 | 可入库 |
-| **探测原始结果 / 账号池探测结果** | 本机探测输出 | `workbuddy/cache/wb_zcode_probe.json`、`opencode-go/probe/results/` —— `.gitignore` 已排除 | **不入库**（体积大 + 含账号池信息） |
+| **探测原始结果 / 账号池探测结果** | 本机探测输出 | `providers/workbuddy/cache/wb_zcode_probe.json`、`providers/opencode-go/probe/results/` —— `.gitignore` 已排除 | **不入库**（体积大 + 含账号池信息） |
 
 > **加新供应商时的完整清单**（三件事，缺一不可）：
 > ① 脚本读 `os.environ.get("<供应商>_KEY")`，**不设就报错退出**；
@@ -55,7 +55,7 @@
 ### 3.1 OpenCode-Go API key
 
 - **环境变量**：**`OPENCODE_GO_KEY`**。
-- **谁在读**：`opencode-go/probe/` 下的 5 个脚本 ——
+- **谁在读**：`providers/opencode-go/probe/` 下的 5 个脚本 ——
   `probe_models.py`、`probe_protocols.py`、`bench_models.py`、`bench_clean.py`、
   `thinking-off-probe.js`。
 - **缺失时**：Python 脚本抛 `RuntimeError`、Node 脚本打印错误并退出，
@@ -71,8 +71,8 @@ export OPENCODE_GO_KEY='<OpenCode-Go api_key>'
 ### 3.2 WorkBuddy 网关 key
 
 - **环境变量**：**`WB_GATEWAY_KEY`**。
-- **谁在读**：`workbuddy/workbuddy_probe_zcode.py`、`workbuddy/workbuddy_zcode_sync.py`
-  （历史脚本 `workbuddy/archive/workbuddy_probe_models.py` 同样读它）。
+- **谁在读**：`providers/workbuddy/workbuddy_probe_zcode.py`、`providers/workbuddy/workbuddy_zcode_sync.py`
+  （历史脚本 `providers/workbuddy/archive/workbuddy_probe_models.py` 同样读它）。
 - **缺失时**：**本地不会报错** —— 脚本照常发请求，只是 `Authorization` 头带空值，
   网关回 **401**。这是本仓与 OpenCode-Go 侧的一个**行为差异**，排查时注意区分：
   「OpenCode-Go 侧立刻抛 `RuntimeError`」与「WorkBuddy 侧表现为 401」是两种症状。
@@ -84,7 +84,7 @@ export WB_GATEWAY_KEY='<网关 api_key>'
 ### 3.3 网关地址
 
 - **环境变量**：**`WB_GATEWAY_BASE`**，默认 `http://127.0.0.1:7863`。
-- **谁在读**：`workbuddy/workbuddy_probe_zcode.py`、`workbuddy/workbuddy_zcode_sync.py`。
+- **谁在读**：`providers/workbuddy/workbuddy_probe_zcode.py`、`providers/workbuddy/workbuddy_zcode_sync.py`。
 - 换成远端网关时用环境变量覆盖，不必改代码。
 
 ### 3.4 ZCode 配置文件路径
@@ -93,9 +93,9 @@ export WB_GATEWAY_KEY='<网关 api_key>'
 |---|---|
 | 默认路径 | `~/.zcode/v2/provider_config.json`（Windows：`C:\Users\<用户名>\.zcode\v2\provider_config.json`） |
 | 覆盖方式 | 环境变量 **`ZCODE_PERSONAL_PROVIDER_CONFIG_FILE`** |
-| 谁在读 | `workbuddy/workbuddy_zcode_sync.py` |
+| 谁在读 | `providers/workbuddy/workbuddy_zcode_sync.py` |
 
-> **已知缺口**：`opencode-go/ops/go_model_sync.py` **不读**这个环境变量 ——
+> **已知缺口**：`providers/opencode-go/ops/go_model_sync.py` **不读**这个环境变量 ——
 > 它用 `--config` 参数，默认值按**当前用户主目录**推导
 > （`~/.zcode/v2/provider_config.json`）。换机器时要么带 `--config`，要么改脚本让它也认
 > `ZCODE_PERSONAL_PROVIDER_CONFIG_FILE`。
@@ -105,29 +105,29 @@ export WB_GATEWAY_KEY='<网关 api_key>'
 
 | 环境变量 | 谁在读 | 默认值 | 缺失时 |
 |---|---|---|---|
-| **`OPENCODE_GO_KEY`** | `opencode-go/probe/` 下 5 个脚本 + `tools/unified-router.js`（缺省回退到 `provider_config.json`） | 无 | 明确报错退出（不静默）；路由对应上游 502 |
-| **`WB_GATEWAY_KEY`** | `workbuddy/` 下 2 个现役脚本 + 1 个归档脚本 + `tools/unified-router.js`（缺省回退到网关 `config.json`） | 无（空串） | 不本地报错，表现为网关 **401**；路由对应上游 502 |
-| **`WB_GATEWAY_BASE`** | 同上 + `tools/unified-router.js` | `http://127.0.0.1:7863` | 用默认值 |
-| **`UNIFIED_ROUTER_PORT`** | `tools/unified-router.js` | `7871` | 用默认值；改了要同步改五个 chat 组的 `baseUrl` |
-| **`ZCODE_PERSONAL_PROVIDER_CONFIG_FILE`** | `workbuddy/workbuddy_zcode_sync.py` | `~/.zcode/v2/provider_config.json` | 用默认值 |
-| `WB_PRICING_FILE` | `workbuddy/` 下 2 个脚本 | `workbuddy/cache/wb_pricing.json` | 用默认值 |
-| `WB_ZCODE_PROBE_FILE` | 同上 | `workbuddy/cache/wb_zcode_probe.json` | 用默认值 |
-| `GO_SYNC_REPORT_DIR` | `opencode-go/ops/go_model_sync.py` | 本仓 `evidence/` | 用默认值 |
-| `ZCODE_BUILTIN` / `ZCODE_API_TYPE` | `workbuddy/zcode_effective_body.js` | 见脚本 | 用默认值 —— **不是凭据**，是协议开关 |
-| `OPENCODE_SESSION` | `opencode-go/ops/opencode-header-proxy.js` | `local-client-session` | 用默认值 —— **不是凭据**，是会话标识 |
-| **`QD_API_KEY`** | `qoder/qoder_zcode_sync.py`、`qoder/qoder_probe_zcode.py`（缺省回退 `qoder/.env.local`） | 无 | 明确报错退出（不静默） |
+| **`OPENCODE_GO_KEY`** | `providers/opencode-go/probe/` 下 5 个脚本 + `gateways/zgate`（缺省回退到 `provider_config.json`） | 无 | 明确报错退出（不静默）；路由对应上游 502 |
+| **`WB_GATEWAY_KEY`** | `providers/workbuddy/` 下 2 个现役脚本 + 1 个归档脚本 + `gateways/zgate`（缺省回退到网关 `config.json`） | 无（空串） | 不本地报错，表现为网关 **401**；路由对应上游 502 |
+| **`WB_GATEWAY_BASE`** | 同上 + `gateways/zgate` | `http://127.0.0.1:7863` | 用默认值 |
+| **`ZGATE_LISTEN`** / **`UNIFIED_ROUTER_PORT`**（旧） | `gateways/zgate` | `127.0.0.1:7871` | 用默认值；改了要同步改四组的 `baseUrl` |
+| **`ZCODE_PERSONAL_PROVIDER_CONFIG_FILE`** | `providers/workbuddy/workbuddy_zcode_sync.py` | `~/.zcode/v2/provider_config.json` | 用默认值 |
+| `WB_PRICING_FILE` | `workbuddy/` 下 2 个脚本 | `providers/workbuddy/cache/wb_pricing.json` | 用默认值 |
+| `WB_ZCODE_PROBE_FILE` | 同上 | `providers/workbuddy/cache/wb_zcode_probe.json` | 用默认值 |
+| `GO_SYNC_REPORT_DIR` | `providers/opencode-go/ops/go_model_sync.py` | 本仓 `evidence/` | 用默认值 |
+| `ZCODE_BUILTIN` / `ZCODE_API_TYPE` | `providers/workbuddy/zcode_effective_body.js` | 见脚本 | 用默认值 —— **不是凭据**，是协议开关 |
+| `OPENCODE_SESSION` | `providers/opencode-go/ops/opencode-header-proxy.js` | `local-client-session` | 用默认值 —— **不是凭据**，是会话标识 |
+| **`QD_API_KEY`** | `providers/qoder/qoder_zcode_sync.py`、`providers/qoder/qoder_probe_zcode.py`（缺省回退 `providers/qoder/.env.local`） | 无 | 明确报错退出（不静默） |
 | **`QD_GATEWAY_BASE`** | 同上 | `http://127.0.0.1:8790/v1` | 用默认值 |
 | `QD_PANEL_PASSWORD` | 首次启动 qoder2api-hub 时用；之后以 `accounts/settings.json` 的摘要为准 | 无 | 用已持久化的面板密码 |
 
 ### 3.6 Qoder（qoder2api-hub）
 
 - **环境变量**：`QD_API_KEY`（必填）、`QD_GATEWAY_BASE`（默认 `http://127.0.0.1:8790/v1`）。
-- **谁在读**：`qoder/qoder_zcode_sync.py`、`qoder/qoder_probe_zcode.py`、
-  `tools/unified-router.js`（合并模式下 7871 用它给 Qoder 上游鉴权）。
-- **本机明文落点**：`qoder/.env.local`（`QD_API_KEY` / `QD_PANEL_PASSWORD`），
-  已被 `.gitignore` 排除；整个 `qoder/gateway/` clone 也被排除。
+- **谁在读**：`providers/qoder/qoder_zcode_sync.py`、`providers/qoder/qoder_probe_zcode.py`、
+  `gateways/zgate`（7871 用它给 Qoder 上游鉴权）。
+- **本机明文落点**：`providers/qoder/.env.local`（`QD_API_KEY` / `QD_PANEL_PASSWORD`），
+  已被 `.gitignore` 排除；整个 `gateways/upstream/qoder/` clone 也被排除。
 - **网关侧持久化**：API Key 与面板密码的摘要在
-  `qoder/gateway/accounts/settings.json`；OAuth 账号在 `accounts/<uid>.json`。
+  `gateways/upstream/qoder/accounts/settings.json`；OAuth 账号在 `accounts/<uid>.json`。
 - **合并模式**：key 只在 `.env.local` / 路由里；`--separate` 才写进
   provider_config.json 的 `qoder` provider。
 - **缺失时**：脚本明确报错退出；路由缺 key 时 `qoder:` 请求返回 502。
@@ -142,17 +142,17 @@ export WB_GATEWAY_KEY='<网关 api_key>'
 
 | 位置 | 是什么 | 为什么不入库 |
 |---|---|---|
-| `workbuddy/cache/` | 网关倍率快照（`wb_pricing.json`）、探测结果缓存（`wb_zcode_probe.json`） | 活数据，含账号池相关信息；且需要定期刷新（见 [MAINTENANCE.md](MAINTENANCE.md) §1、§3） |
-| `workbuddy/logs/` | 探测日志（`wb_zcode_probe.log`） | 一次性日志 |
-| `opencode-go/probe/results/<日期>/` | 探测原始结果 | 体积大、可重跑再生 |
-| `qoder/gateway/accounts/` | Qoder OAuth token、面板/Key 设置、签到状态 | 含 token；整个 clone 被 `.gitignore` 排除 |
-| `qoder/qoder_probe.json` | Qoder 模型探测结果 | 活数据，可重跑再生 |
-| `qoder/.env.local` | 脚本用的 API key / 面板密码 | 明文凭据 |
+| `providers/workbuddy/cache/` | 网关倍率快照（`wb_pricing.json`）、探测结果缓存（`wb_zcode_probe.json`） | 活数据，含账号池相关信息；且需要定期刷新（见 [MAINTENANCE.md](MAINTENANCE.md) §1、§3） |
+| `providers/workbuddy/logs/` | 探测日志（`wb_zcode_probe.log`） | 一次性日志 |
+| `providers/opencode-go/probe/results/<日期>/` | 探测原始结果 | 体积大、可重跑再生 |
+| `gateways/upstream/qoder/accounts/` | Qoder OAuth token、面板/Key 设置、签到状态 | 含 token；整个 clone 被 `.gitignore` 排除 |
+| `providers/qoder/qoder_probe.json` | Qoder 模型探测结果 | 活数据，可重跑再生 |
+| `providers/qoder/.env.local` | 脚本用的 API key / 面板密码 | 明文凭据 |
 | `provider_config.json.bak-*` | 脚本 `--apply` 前自动备份 | **含 apiKey** |
 
-`.gitignore` 里对应的排除项：`/workbuddy/cache/*.json`、`/workbuddy/logs/`、
-`/workbuddy/cache/*.log`、`/opencode-go/probe/results/`、`/qoder/gateway/`、
-`/qoder/qoder_probe.json`、`*.env.local`、`*.bak-*`。
+`.gitignore` 里对应的排除项：`/providers/workbuddy/cache/*.json`、`/providers/workbuddy/logs/`、
+`/providers/workbuddy/cache/*.log`、`/providers/opencode-go/probe/results/`、`/gateways/upstream/qoder/`、
+`/providers/qoder/qoder_probe.json`、`*.env.local`、`*.bak-*`。
 
 > **结论随仓库走，原始快照放 `evidence/`** —— `evidence/` 下的模型目录快照与
 > 自动收录报告不含凭据，可以放心分发。
@@ -163,7 +163,7 @@ export WB_GATEWAY_KEY='<网关 api_key>'
 
 ```sh
 # 1) 确认没有把凭据文件带进去
-git ls-files | grep -E 'provider_config\.json|\.bak-|workbuddy/cache/|qoder/gateway/|qoder/qoder_probe\.json|\.env$|\.key$'
+git ls-files | grep -E 'provider_config\.json|\.bak-|providers/workbuddy/cache/|gateways/upstream/qoder/|providers/qoder/qoder_probe\.json|\.env$|\.key$'
 
 # 2) 确认忽略规则生效
 git status --ignored --short | grep -E '^!!' | head -20
@@ -177,8 +177,8 @@ git diff --cached | grep -nE 'oc_sk_|apiKey|api_key|Bearer [A-Za-z0-9]'
 - [ ] 5 个探测脚本源码里**没有**明文 `oc_sk_…`（应只有 `os.environ.get("OPENCODE_GO_KEY", ...)` /
       `process.env.OPENCODE_GO_KEY`）；
 - [ ] `provider_config.json` 及其 `.bak-*` 备份**不在** `git ls-files` 里；
-- [ ] `workbuddy/cache/`、`workbuddy/logs/`、`opencode-go/probe/results/` 不在库里；
-- [ ] `qoder/gateway/`、`qoder/.env.local`、`qoder/qoder_probe.json` 不在库里；
+- [ ] `providers/workbuddy/cache/`、`providers/workbuddy/logs/`、`providers/opencode-go/probe/results/` 不在库里；
+- [ ] `gateways/upstream/qoder/`、`providers/qoder/.env.local`、`providers/qoder/qoder_probe.json` 不在库里；
 - [ ] `evidence/` 下的文件不含 `apiKey` / `oc_sk_…`；
 - [ ] 轮换过 `OPENCODE_GO_KEY` 与网关 key 的话，**重新 export** 一遍；
       换了 key 之后旧值就失效，不必再从仓库里清理。

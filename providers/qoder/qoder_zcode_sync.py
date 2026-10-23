@@ -132,7 +132,7 @@ def fetch_models(base: str, key: str, timeout: int = 20) -> list[dict]:
     except Exception as exc:
         raise SystemExit(
             f"无法连接 qoder2api-hub（{url}）：{exc}\n"
-            "先运行 qoder/gateway/start-qoder-proxy.bat，确认 8790 已就绪。"
+            "先运行 gateways/upstream/qoder/start-qoder-proxy.bat，确认 8790 已就绪。"
         ) from exc
     data = payload.get("data")
     if not isinstance(data, list):

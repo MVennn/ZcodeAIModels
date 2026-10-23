@@ -12,7 +12,7 @@
 | 文档 | 一句话定位 |
 |---|---|
 | [MODEL-PROVIDERS.md](MODEL-PROVIDERS.md) | **provider 与模型参数正本**：接供应商的四步方法、ZCode 配置落点、三组 provider（OpenCode-Go / WorkBuddy / Qoder）的分组 / 协议 / 工具调用 / 关思考参数 |
-| [MODEL-ALIAS.md](MODEL-ALIAS.md) | **统一命名与四组正本**：`渠道/积分/型号`、三家积分换算、主力（人工 + 榜单扩充）/免费/低耗/高耗、alias map 与协议桥接 |
+| [MODEL-ALIAS.md](MODEL-ALIAS.md) | **统一命名与四组正本**：纯型号名、跨渠道合并链路（chain）、免费 `-Free`、主力/免费/低耗/高耗与 0.11 分界、alias map 与协议桥接 |
 | [QODER.md](QODER.md) | **Qoder 接入正本**：qoder2api-hub 的 8790 进程、OAuth/签到、`qoder` provider 的模型与同步/探测命令、边界与故障处理 |
 | [MODEL-QUICK-REF.md](MODEL-QUICK-REF.md) | 早期速查（2026-10-20）：价格、额度与实测首字。**结论已并入 MODEL-PROVIDERS.md**，本篇保留作历史快照 |
 | [archive/OPENCODE-GO-ANALYSIS.md](archive/OPENCODE-GO-ANALYSIS.md) | 2026-10-19 的阶段性分析（归档只读）：协议归属实测、价格带筛选、出口方案 |
@@ -49,7 +49,8 @@
 | [BENCHMARKS.md](BENCHMARKS.md) | **外部跑分参考**：AI 能力专项测试（2026-09-11 快照）+ ArenaGalleri 实时榜；主力自动扩充的基准、窗口与候选表 |
 | 仓库根 [third-party/](../third-party/README.md) | 随仓分发的上游文件：ZCode 规则数据与引擎源码、ZCodium 规则切片，各带来源凭证 |
 | 仓库根 [LICENSE](../LICENSE) | 许可证全文（**MIT**），与 [NOTICE](../NOTICE) 配套 |
-| [release-notes/](release-notes/README.md) | 面向使用者的 Release 说明，文件名 = `versionName`；格式规范在它的 README。已发布：[0.2.0.md](release-notes/0.2.0.md) / [0.1.0.md](release-notes/0.1.0.md) |
+| [reports/](reports/README.md) | **同步报告索引**：每次自动化结束后的模型清单快照与变化（新增 / 移除 / 分组 / 链路），最新在最上面 |
+| [release-notes/](release-notes/README.md) | 面向使用者的 Release 说明，文件名 = `versionName`；格式规范在它的 README。已发布：[0.3.0.md](release-notes/0.3.0.md) / [0.2.0.md](release-notes/0.2.0.md) / [0.1.0.md](release-notes/0.1.0.md) |
 | `../evidence/` | 证据快照：网关模型目录、自动收录报告、WorkBuddy 接入线历史台账（只读） |
 
 ---

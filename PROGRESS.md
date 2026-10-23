@@ -1091,3 +1091,247 @@ provider 列表；Qoder hub 与 WorkBuddy/OpenCode 的现有链路保持不变�
   `Kimi-K28-Pre`
 
 ## 状态: 已完成
+
+---
+
+# 2026-10-23 第 N+13 轮：运行架构整合（zgate 单入口 + 目录两轴）
+
+## 任务目标
+用户确认 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) 的提案：把三个反代收进一个目录，
+能用 Go 合并的合并，减少常驻内存；当前「每家一个目录 + 路由在 tools + 守护器在 workbuddy」
+的结构不再适合仓库体量，一并整理可删可并的东西。
+
+## 已完成变更
+- [x] 新增 `gateways/zgate`（Go 1.22，零第三方依赖）：7871 路由 + alias map 热加载 +
+      chat ↔ Anthropic Messages / OpenAI Responses 协议桥 + 子进程守护
+      （Job Object / 单飞拉起 / 健康检查 / 空闲回收 / 崩溃退避重启）
+- [x] 子命令：`serve` / `status` / `install` / `uninstall` / `version`；配置 `zgate.json`；
+      GUI 子系统 + `AttachConsole`，计划任务不闪窗、终端里照常输出
+- [x] 等价性：旧路由与新入口并行（7871 / 7971）跑 9 个用例，9/9 一致后才切流
+- [x] 目录重构：`workbuddy/gateway` → `gateways/upstream/workbuddy`，
+      `qoder/gateway` → `gateways/upstream/qoder`，三家脚本 → `providers/<vendor>/`，
+      旧 JS 路由 → `gateways/legacy-router/`（回退用）
+- [x] 同步修改：`.gitignore`、`tools/model_alias.py`、`tools/model_probe.py`、
+      `tools/check-docs.py`、`tools/check-secrets.py`、旧路由的两处凭据回退路径
+- [x] 删除：`zcode_gateway_watch.ps1` / `.vbs`、3 份过期的 `wb_pricing.json.bak-*`、
+      `__pycache__`
+- [x] 文档：`MAINTENANCE.md` §8 重写（zgate 生命周期/配置/日志/上游更新）、
+      `TOOLS.md` 工具表重排、`TROUBLESHOOTING.md` §11/§12 改写、
+      `MODEL-PROVIDERS.md` / `MODEL-ALIAS.md` / `PITFALLS.md` / `QODER.md` /
+      `SECRETS.md` / `README.md` / `CONTRIBUTING.md` / `AGENTS.md` / `NOTICE` /
+      issue 模板的路径与措辞
+- [x] 新增 `docs/ARCHITECTURE.md`（提案 + §10 落地记录）、`docs/release-notes/0.3.0.md`，
+      `CHANGELOG.md` 开 0.3.0
+- [x] 测试：`bridge` / `alias` / `router` / `supervisor` 共 12 个用例 + 冒烟
+      `gateways/zgate/smoke_test.py`；CI 增加 Go 格式 / 构建 / 测试
+
+## 验收
+- `go vet ./...`、`gofmt -l .`、`go test ./...` 全绿（supervisor 的两个用例会真实拉起子进程）
+- 等价性 9/9（OC / WB（含 fallback chain）/ QD / messages 桥 / responses 桥 / 三种流式 / 未知模型）
+- 切换后冒烟 6/6：四条通道 + 两种桥 + 流式；WB 冷启动 1.6 秒
+- 内存（WorkingSet）：改造前 293.4 MB（4 进程）→ 99.3 MB（zgate 18.5 + Qoder 57.2 + wb2api 23.2）；
+  WB 空闲回收后 76.1 MB
+- 端口：7871 = zgate，7863 = wb2api（子进程），8790 = qoder（子进程），7863 只在 WB 请求后出现
+- 登录自启：`%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\ZcodeAIModels zgate.lnk`
+- `python tools/check-docs.py`（25 篇）、`python tools/check-secrets.py`（97 文件）通过
+
+## 待解决 / 注意事项
+- **切 7871 会断掉正在走这条路由的会话** —— 本轮切换时把正在跑这份工作的会话也断了
+  （用户当时切了模型才恢复）。以后重启 zgate 前先在 ZCode 里切到直连模型。
+- `gateways/legacy-router/` 保留一个版本作回退；确认稳定后删除。
+- Qoder 仍是 `always`；`ondemand` / 窗口档未启用 —— 需要先实测「窗口拉起能补签」。
+- WorkBuddy 的签到/夜猫子/额度刷新只在进程活着时跑；要 24/7 就把
+  `children.workbuddy.policy` 改成 `always`（多占约 23 MB）。
+- `zgate.exe` 不入库，换机器要 `cd gateways/zgate && go build -ldflags "-s -w" -o zgate.exe .`。
+
+## 状态: 已完成
+
+---
+
+# 2026-10-23 第 N+14 轮：代码优化 + 三个网关全部随用随拉
+
+## 任务目标
+用户要求：① 按上一条评审把代码问题修掉；② 没被调用就不要拉起任何网关（含 Qoder），随用随拉；
+③ 兼顾自动化（签到 / 保活）。
+
+## 已完成变更
+- [x] **P0 桥超时**：`bridge.DefaultTimeout = 120s`，`Forward` 用 `context.WithTimeout`；新增超时用例
+- [x] **P1 句柄双关闭**：`winproc.Process.Release` 改 `sync.Once`
+- [x] **P1 接管实例监控**：`tick` 对 `external` 子进程每 5 秒健康检查，失败转回自管并自动重启
+- [x] **P1 日志运行时轮转**：`logx` 按累计写入量在 5 MB 处 rename + 重开；`status` 不再打开写句柄
+- [x] **全部按需**：`zgate.json` 两个 child 都改 `ondemand` + `idleSeconds: 300`
+- [x] **签到窗口**：新增 `children.*.windows`（`HH:MM-HH:MM`，支持跨午夜）；
+      WB 四档、Qoder 三档；窗内按 `always`，窗口结束后按空闲回收
+- [x] **热加载**：`POST /admin/reload` + `zgate reload`（策略 / 空闲 / 窗口生效；
+      新增 child、监听地址、上游 base 仍需重启）
+- [x] **退避**：1s→2s→4s→…→60s（与 ARCHITECTURE §3.2 一致）
+- [x] **杂项**：`qoder:` 前缀大小写不敏感；`args` 解析不再把 `/c` 当路径；
+      删除 `WaitExit` / `Missing` / `Redacted` / `doForward` 包装 / `sseOf` 死参数；
+      `normalizePath` 直接用 `r.URL`
+- [x] **冒烟改造**：`smoke_test.py` 从 alias map 按渠道挑最低价模型，不再写死 ID
+- [x] 文档：`MAINTENANCE.md` §8（策略表 / 窗口表 / reload 命令）、`ARCHITECTURE.md` §10.6、
+      `TOOLS.md`、`CHANGELOG.md`、`release-notes/0.3.0.md`
+
+## 验收
+- `go test ./...` 20 个用例全绿（新增窗口解析/跨午夜、ApplyConfig、退避、桥超时、reload）
+- `go vet` / `gofmt -l` 干净；`check-docs`（25 篇）/ `check-secrets`（97 文件）通过
+- 旁路实例（7971）实测：启动时无窗口的子进程保持 `stopped`；窗口内自动 `running`；
+  `POST /admin/reload` 去掉窗口 + `idleSeconds=1` 后一个 tick 内回到 `stopped`
+- 二进制已构建为 `gateways/zgate/zgate-next.exe`（运行中的 `zgate.exe` 被锁，需重启替换）
+
+## 待解决 / 注意事项
+- **替换需要重启 zgate**：已安排延迟执行（停 → 覆盖 → 起 → 等 /health）并写
+  `%LOCALAPPDATA%\ZCodeGateway\update-0.3.1.log`；这一步会中断经过 7871 的在途请求（约 2 秒）
+- 重启后两个子进程都应为 `stopped`；第一条 WB / Qoder 消息会有 1–2 秒冷启动
+- 签到窗口能否真正补签，还需要观察一个真实 09:00 / 21:00 窗口（Qoder 启动巡检
+  `_allow_complement_checkin` 的实测未做）
+
+## 状态: 已完成
+
+### 第 N+14 轮补充：上线 + DeepSeek 限流核查（2026-10-23 20:33）
+
+- 二进制替换与重启已由一次性计划任务完成（20:33:02 停 → 替换 → 20:33:04 健康），
+  日志 `%LOCALAPPDATA%\ZCodeGateway\update-0.3.1.log`；任务已删除。
+- 线上生效：两个 child 都是 `ondemand`，`windows` 已在 `/health` 可见；Qoder 空闲已回收（stopped）。
+- **回退链缺陷已修并上线**：WB 把上游 6004 转成 `400 model_unavailable`，旧逻辑不重试；
+  现在按池故障触发 region fallback（普通 400 仍直通），日志出现
+  `Bad Request model_unavailable, fallback cn:deepseek-v4.1-flash`。
+- 但实测该回退仍失败：`deepseek-v4.1-flash` 的冷却按**模型名**（不带 region）记在 4 个账号上，
+  sg 与 cn 共用同一冷却键，所以 `global → cn` 换区也救不回来。
+  可用的是另一个模型 `cn:deepseek-v4-flash`（`W/0.17/DeepSeek-4-Fs`，200）。
+
+---
+
+# 2026-10-23 第 N+15 轮：显示名恢复版本点号 + 免费 DeepSeek 进主力置顶
+
+## 任务目标
+用户要求：① 把免费的 `DeepSeek-41-Fs`（`W/0.00`）也整合进主力并优先使用；
+② 显示名里的 `41` / `38` / `26` 这类连写恢复成 `4.1` / `3.8` / `2.6`，其他同类一起改。
+
+## 已完成变更
+- [x] `tools/model_alias.py`：`MAIN_IDS` 加入 `global:deepseek-v4.1-flash`；
+      新增 `MAIN_FIRST` 集合，组内排序时该模型固定第一
+- [x] `ABBR` 全部改成带点号：`DeepSeek-4.1-Fs` / `Qwen-3.8-Fs` / `Qwen-3.8-Max` /
+      `Qwen-3.7-*` / `GLM-5.3(-Fs)` / `GLM-5.2` / `MiniMax-M3.1-Fs` / `MiniMax-M2.7` /
+      `MiMo-2.6-*` / `MiMo-2.5*` / `Claude-Haiku-5.5` / `Kimi-K2.8-Pre` / `Kimi-K2.6` /
+      `Kimi-K2.5` / `GPT-5.6-Luna` / `Muse-Spark1.2` / `Muse-Spark1.3` / `LongCat-2.0` /
+      `LongCat-2.5-Pre`
+- [x] `abbreviate()` 兜底不再删除数字之间的点号
+- [x] 重新生成：36 个模型（主力 8 / 免费 5 / 低耗 12 / 高耗 11），
+      主力第一位 = `W/0.00/DeepSeek-4.1-Fs`；备份 `provider_config.json.bak-alias-20261023-212104-841800`
+- [x] 文档：`MODEL-ALIAS.md`（命名规则、组规则、示例）、`BENCHMARKS.md`、`PITFALLS.md`、
+      `CHANGELOG.md`
+- [x] `gateways/zgate/smoke_test.py` 改为每个渠道取最便宜的前 3 个候选逐个试，
+      冷却中的模型不再让整轮冒烟假红
+
+## 验收
+- `~/.zcode/v2/model-alias-map.json`：36 条模型、99 条 legacy；旧名（`DeepSeek-41-Fs`、
+  `MiMo-26-Fs`…）全部映射到新名
+- 实测经 7871：`W/0.00/DeepSeek-4.1-Fs` 200（免费档已可用，早于网关提示的 21:54）、
+  `W/0.03/DeepSeek-4.1-Fs` 200、`Q/0.09/GLM-5.3-Fs` 200、`O/0.06/MiMo-2.6-Fs` 200；
+  旧名 `O/0.06/MiMo-26-Fs` 也仍 200（legacy 生效）
+- `check-docs` 25 篇通过
+
+## 待解决 / 注意事项
+- 免费 DeepSeek 是**移动**进主力（不是双份），免费组因此少一条（5 条）
+- 冒烟时 OC 桥接出现过两次 `EOF`（HTTP/2 连接复用导致的上游瞬断，重试即 200）；
+  考虑把 zgate 的 Transport 切回 HTTP/1.1（与旧 Node 路由一致）或对 EOF 做一次重试，
+  需要再重启一次 zgate，留待下次空档
+- Qoder `DeepSeek-Flash` 仍偶发 `10605` 限流（既有问题）
+
+## 状态: 已完成
+
+### 第 N+15 轮修正：免费档并入 `W/0.03`（同日 21:26）
+
+- 用户澄清：不是单列 `W/0.00` 进主力，而是把免费档**并入 `W/0.03` 这一条**。
+- 实现：`MERGE_FREE_GB = {"deepseek-v4.1-flash"}` —— 该 base model 的 GB 多价档合并成一个条目，
+  `upstream` 取最便宜的 GB 档（免费），其余档与 CN 依次进 `fallbacks`；显示价保留最高档 0.03。
+- 结果：`W/0.03/DeepSeek-4.1-Fs` 的链路 = `global:deepseek-v4.1-flash`（免费）→
+  `global:deepseek-v4.1-flash-sg`（0.03）→ `cn:deepseek-v4.1-flash`；
+  `W/0.00/DeepSeek-4.1-Fs` 不再单独存在。
+- 配置：35 个模型（主力 7 / 免费 4 / 低耗 13 / 高耗 11），
+  备份 `provider_config.json.bak-alias-20261023-212649-949100`。
+- 实测：经 7871 请求 `W/0.03/DeepSeek-4.1-Fs` 返回 200，日志链路显示
+  `free -> sg -> cn`。
+
+### 第 N+15 轮修正 2：合并幂等（同日 21:28）
+
+- 发现：第一次合并后，下一次 `--apply` 会丢掉付费档（配置里只剩免费 upstream），
+  条目又退回 `W/0.00`。
+- 修法：`MERGE_FREE_GB` 分支改为**从 `wb_pricing.json` 重建 `global:<base>` 与
+  `global:<base>-sg` 两个档位**，不再依赖配置里残留的条目；链路 = 免费 → 付费 SG → CN。
+- 实测：连续两次 dry run / apply 都稳定输出 `W/0.03/DeepSeek-4.1-Fs`；
+  alias map 的 `upstream` 为 `global:deepseek-v4.1-flash`，
+  `fallbacks` 为 `[global:deepseek-v4.1-flash-sg, cn:deepseek-v4.1-flash]`；
+  线上请求 200，日志链路 `free -> sg -> cn`。
+- 备份：`provider_config.json.bak-alias-20261023-212838-434500`。
+
+---
+
+# 2026-10-23 第 N+16 轮：显示名只留型号 + 跨渠道合并链路
+
+## 任务目标
+用户要求：去掉 `W/O/Q` 与积分，同型号整合到一个口子；低于 DeepSeek 的进低耗、
+高于的进高耗、免费的进免费；免费与付费同名时保留免费那条；其余名字只留型号。
+
+## 已完成变更
+- [x] 命名：`<型号>`，不再带渠道/积分；版本点号保留
+- [x] 分组：免费（最低价 0）/ 低耗（0 < 最低价 ≤ 0.11）/ 高耗（> 0.11）；
+      主力仍由 `MAIN_IDS` + 榜单决定并优先
+- [x] 跨渠道合并：`family_entries()` 按「型号 + 协议」聚合，链路按价格升序，
+      同价 GB → CN → 其它渠道；每跳自带 `base` / `channel` / `upstream` / `price`
+- [x] 免费重复：单独成条加 `-F`；`deepseek-v4.1-flash` 走 `MERGE_FREE_GB` 并入付费条目置顶
+- [x] 幂等：链路写回 alias map 的 `chain`，`classify` 会带回 `chain`，
+      重复 `--apply` 不再丢渠道（修过一次：`MiMo-2.6-Pro` 曾因此掉出主力）
+- [x] legacy：改名链传递解析（`A -> B -> C` 自动落到 C）
+- [x] router：`alias.Target.Chain` + `routeChain` / `attemptBridge`，按跳切 base/key；
+      旧 `base`+`fallbacks` 路径保留兼容
+- [x] 删除：`merge_inventory` / `group_of` / `CHANNEL_LETTER` 等死代码
+- [x] 文档：`MODEL-ALIAS.md` 重写（命名 / 链路 / 分组 / 峰谷），README、TOOLS、
+      MODEL-PROVIDERS、PITFALLS、BENCHMARKS、docs 索引同步
+
+## 验收
+- 生成结果：28 个模型（主力 6 / 免费 5 / 低耗 8 / 高耗 9）；连续两次生成结果一致
+- 链路示例：`DeepSeek-4.1-Fs` = WB 免费 0.00 → WB sg 0.03 → WB cn 0.11 → OC 0.11；
+  `GLM-5.3-Fs` = WB 0.08（GB→CN）→ QD 0.09 → OC 0.10
+- 线上（21:41 切换后）：`DeepSeek-4.1-Fs`、`GLM-5.3-Fs`、`HY3-F`、`Claude-Haiku-5.5`
+  全部 200；旧名 `W/0.03/DeepSeek-4.1-Fs` 经 legacy 仍 200
+- `go test ./...` 25 个用例（新增跨渠道 chain 用例）全绿；`check-docs` / `check-secrets` 通过
+
+## 待解决 / 注意事项
+- 分组基准 0.11 是固定常数；DeepSeek 调价后需要手动改 `LOW_MAX`
+- 同名不同协议目前用 `-Msg` / `-Resp` 兜底，当前没有触发
+- 峰谷价现在只影响链路顺序与分组归属，不再改显示名
+
+## 状态: 已完成
+
+---
+
+# 2026-10-23 第 N+17 轮：Flash/-Free 命名、按消耗排序、自动化同步报告
+
+## 任务目标
+用户要求：`Fs` 改回 `Flash`、`-F` 改 `-Free`；组内按积分消耗从低到高排，同厂商粘块、
+按该厂商最便宜的那条定位；自动化结束后输出 markdown 说明新增、改文档并推送。
+
+## 已完成变更
+- [x] `ABBR` / 兜底缩写：`-Fs` → `-Flash`；免费后缀 `-F` → `-Free`
+- [x] 组内排序：`(厂商最低价, 厂商顺序, 价格, 名字)`，同厂商聚块
+- [x] 新增 `tools/sync_report.py`：对比 `~/.zcode/v2/model-sync-state.json`，
+      输出新增 / 移除 / 分组变化 / 链路变化；`--write` 写 `docs/reports/MODEL-SYNC-<时间>.md`
+      并更新索引与快照，`--push` 执行 `git add/commit/push`
+- [x] 新增 `docs/reports/README.md` 索引并接入 `docs/README.md`
+- [x] `MAINTENANCE.md` §6 的每日自动化补第 ⑤ 步；`TOOLS.md` 增加工具条目
+- [x] 线上应用：28 个模型（主力 6 / 免费 5 / 低耗 8 / 高耗 9），无需重启 zgate
+
+## 验收
+- 线上 `DeepSeek-4.1-Flash`、`HY3-Free`、`GLM-5.3-Flash` 均 200
+- 排序：低耗 = Muse 0.04 → HY 0.05/0.11 → MiMo 0.06 → GLM 0.08 → MM 0.08 → GPT 0.09
+- `sync_report.py`：首轮基线、次轮 0 变化、人工扰动后能报出新增/分组/链路变化
+- `check-docs` 27 篇通过
+
+## 待解决 / 注意事项
+- ZCode 的定时任务本体（`automation-3e2f8a53…`）无法从仓库侧修改；
+  需要把 `python tools/sync_report.py --write --push` 加到自动化提示词最后一步
+- 本轮改动尚未提交/推送；`--push` 的提交范围只有 `docs/reports/`
+
+## 状态: 已完成

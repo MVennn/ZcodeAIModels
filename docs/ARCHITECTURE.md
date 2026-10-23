@@ -4,9 +4,10 @@
 > **一个 Go 入口进程 + 按需拉起的子进程**，实测常驻内存 293 MB → ~128 MB
 > （ZCode 关闭时 ~20 MB），目录按「运行层 / 接入层」两轴重排。
 
-**状态：提案（2026-10-23），未动一行代码。**
-现役口径仍以 [MAINTENANCE.md](MAINTENANCE.md) §8 与 [TOOLS.md](TOOLS.md) 为准；
-确认落地后再改那两篇，本篇届时升级为「运行架构正本」。
+**状态：已落地（2026-10-23）。**
+运行层现在是 `gateways/`：`zgate`（Go）监听 7871 并托管两个子进程；
+接入层是 `providers/`。落地差异与实测数据见 §10，日常操作见
+[MAINTENANCE.md](MAINTENANCE.md) §8。
 
 ---
 
@@ -72,7 +73,7 @@ qoder2api-hub（Python，`qoder_proxy.py`）。把它们"合进一个进程"等�
 | 约束 | 来源 | 对方案的影响 |
 |---|---|---|
 | ZCode 每个 provider 只能填一个 `api.baseUrl` | 客户端机制 | 四组必须共用 7871 入口 → 路由不能去掉 |
-| 四个组里混着三个渠道的模型（`渠道/积分/型号` 命名） | [MODEL-ALIAS.md](MODEL-ALIAS.md) | 分流必须按 alias map 做，不能按组做 |
+| 四个组里混着三个渠道的模型 | [MODEL-ALIAS.md](MODEL-ALIAS.md) | 分流必须按 alias map 的 `chain` 做，不能按组做 |
 | 两个上游是 git clone，更新方式是 `git pull --ff-only` | [MAINTENANCE.md](MAINTENANCE.md) §8 | 不能改上游源码；只能当子进程管 |
 | Qoder 自带调度器（09:00 / 21:00 签到、22:00 保活） | [QODER.md](QODER.md)、`qoder_scheduler.py` | 停掉即漏任务，除非由外部在窗口内拉起 |
 | WorkBuddy 自带签到/活跃/夜猫子/额度刷新，且**只在进程活着时跑** | [MAINTENANCE.md](MAINTENANCE.md) §8 副作用 | 现状已经因为跟 ZCode 起停而漏跑；整合时可以顺手修 |
@@ -203,7 +204,7 @@ ZcodeAIModels/
 |---|---|
 | `workbuddy/gateway/` | `gateways/upstream/workbuddy/` |
 | `qoder/gateway/` | `gateways/upstream/qoder/` |
-| `tools/unified-router.js`、`tools/protocol_bridge.js` | 迁入 `gateways/zgate/` 并重写为 Go；JS 版留在 `docs/archive/` 作对照 |
+| `tools/unified-router.js`、`tools/protocol_bridge.js` | 迁入 `gateways/zgate/` 并重写为 Go；JS 版留在 `gateways/legacy-router/` 作回退 |
 | `opencode-go/ops/opencode-header-proxy.js` | 先留在 `providers/opencode-go/ops/`，P3 后由 zgate profile 取代 |
 | `opencode-go/{ops,probe}/` | `providers/opencode-go/` |
 | `workbuddy/*.py`、`workbuddy/cache/`、`workbuddy/logs/` | `providers/workbuddy/` |
@@ -339,6 +340,9 @@ ZcodeAIModels/
 
 ## 8. 待确认（每项都给了推荐）
 
+> **2026-10-23 已按推荐项落地**：A 选 ①、B 选 ①、C 选 ①（Qoder 保持常驻）、
+> D 留作配置项、E 选 ②（JS 保留一个版本）。落地差异见 §10。
+
 | # | 问题 | 选项 | 推荐 |
 |---|---|---|---|
 | A | 入口换成 Go，还是保守地把守护并进现有 Node 路由？ | ① Go 一体（293→128，去 Node 依赖）② Node 一体（293→169，改动最小） | **①**：Go 1.26 已装，桥+路由共 ~1500 行，换掉 946 行 JS/PS1，维护面积不增；②可作为第一步 |
@@ -376,3 +380,81 @@ foreach ($p in 7863,7871,8790,8787) {
 | **把两个上游重写成 Go 或嵌进本进程** | wb2api（Go 上游，含 panel/auths/定时任务）与 qoder_proxy（Python 1.1 万行，含 OAuth/签名/风控/调度/看板）重写成本以月计，且放弃 `git pull` 更新通道。**不可行** |
 | **加一层 Nginx/Caddy 统一反代** | 只是把两段跳转变三段，多一个进程，内存反而涨 |
 | **`node --snapshot-blob` / Bun 单文件** | Bun 单文件体积与内存都不比 Node 好；snapshot 省的是启动时间不是常驻内存 |
+
+---
+
+## 10. 落地记录（2026-10-23）
+
+### 10.1 实际做了什么
+
+| 阶段 | 结果 |
+|---|---|
+| P0 目录重构 | 完成。`gateways/{zgate,legacy-router,upstream/{workbuddy,qoder}}` + `providers/{opencode-go,workbuddy,qoder}`；4 个脚本的硬编码路径、`.gitignore`、19 篇文档/模板的路径全部改齐，`check-docs` / `check-secrets` 通过 |
+| P1 守护器 | 完成，但**没有**按原计划跟随 ZCode 主进程 —— 见 §10.2 |
+| P2 路由 + 协议桥 | 完成。Go 实现约 2000 行（含测试），替换 857 行 JS |
+| P3 子进程回收 | 两个上游都用 `ondemand`（空闲 300 秒回收）；签到/保活用 `windows` 定时窗口兜底 |
+
+### 10.2 与提案的差异
+
+1. **去掉了「跟随 ZCode 主进程」**。在 Go 里判 ZCode 主进程要读 PEB 命令行（`--type=` 过滤），
+   实现成本高且脆弱。改成 **zgate 常驻 + 子进程策略**：zgate 约 19 MB，常驻代价远小于原来的
+   PowerShell 守护器（124 MB），还顺手解决了「ZCode 关着时 WorkBuddy 定时任务不跑」的老问题 ——
+   把 `children.workbuddy.policy` 设成 `always` 即可让它 24/7 跑。
+2. **自启用启动文件夹快捷方式**，不是 `schtasks /create /sc ONLOGON`（当前权限下返回「拒绝访问」）。
+3. ~~`scheduled` 窗口档没有实现~~ —— 2026-10-23 晚补上（见 §10.6）：它不是第三种 policy，
+   而是给任意 child 加的 `windows` 列表，窗内按 `always` 处理。
+4. **旧 JS 路由保留**在 `gateways/legacy-router/`，作为回退；P3 验收通过后可删。
+
+### 10.3 等价性验证
+
+旧路由（7871）与新入口（7971）并排跑同一批请求，9 个用例逐项比对状态码、响应形态、
+SSE 事件序列：OC chat / WB chat（含 fallback chain）/ QD chat / messages 桥 / responses 桥 /
+三种流式 / 未知模型，**9/9 一致**。之后切到 7871，四条通道各打一发真实请求全部 200；
+WB 冷启动 1.6 秒，Qoder 由 zgate 启动后 `/ping` 200。
+
+### 10.4 实测内存
+
+| 状态 | 改造前 | 改造后 |
+|---|---|---|
+| 三路都在用 | 293.4 MB（4 进程） | **99.3 MB**（zgate 18.7 + Qoder 57.4 + wb2api 23.2） |
+| WB 空闲 15 分钟回收后 | — | **76.1 MB**（zgate + Qoder） |
+| 全部停掉只剩 zgate | — | **18.7 MB** |
+
+省下来的主要是 PowerShell（124.2 MB）与 Node（71.5 MB）两个运行时，
+与 §1 的基线测量一致：Go 空载 8.3 MB、Node 空载 46.6 MB。
+
+### 10.5 已知取舍
+
+- WB 首次请求多 1–2 秒冷启动（旧守护器在 ZCode 启动时就常驻了）。
+  不能接受就把 `children.workbuddy.policy` 改成 `always`。
+- 路由与桥的行为靠 §10.3 的样本兜底；后续改 `model-alias-map.json` 或思考参数矩阵时，
+  仍需按 [MAINTENANCE.md](MAINTENANCE.md) §3 先探测再同步。
+
+### 10.6 追加：全部按需 + 定时窗口（2026-10-23 晚）
+
+用户要求「没被调用就不要拉起任何一个网关」。落地为：
+
+| 变化 | 说明 |
+|---|---|
+| 两个 child 都改 `ondemand` | ZCode 启动后不再自动起 Qoder；7863 / 8790 平时都是空的 |
+| 新增 `children.*.windows` | 本地时间 `HH:MM-HH:MM`，支持跨午夜；窗内等同 `always`，窗口结束再按 `idleSeconds` 回收 |
+| 默认窗口 | WB：`08:58-09:15`、`09:58-10:15`、`20:58-21:15`、`21:58-22:15`；Qoder：三档（9 / 21 / 22 点） |
+| 空闲阈值降到 300 秒 | 一次对话结束后 5 分钟内回收 |
+| 新增 `zgate reload` + `POST /admin/reload` | 改策略/窗口/阈值不用重启；新增 child、监听地址、上游 base 仍需重启 |
+
+顺带修掉的问题：
+
+- 协议桥加 120 秒超时（旧 JS 有，Go 版最初漏了）；
+- `Process.Release` 改为 `sync.Once`，消除监控 goroutine 与主动停止的 double CloseHandle；
+- 接管的 `external` 实例每 5 秒做一次健康检查，死了会转回 zgate 管理并自动重启；
+- 重启退避改成 1s→2s→4s→…→60s（与 §3.2 一致）；
+- 日志在运行期按 5 MB 轮转（常驻进程原来只有启动时轮转）；`zgate status` 不再打开写句柄；
+- **回退链补齐**：WB 的 `400 model_unavailable`（上游 6004 模型级限流）原来不触发 region fallback，
+  现在按池故障处理（普通 400 不重试）；
+- `qoder:` 前缀改成大小写不敏感；清理了若干死代码（`WaitExit`、`Missing`/`Redacted`、无用的 log 字段）。
+
+实测（新二进制，旁路 7971 验证）：
+
+- 启动时不带窗口的子进程保持 `stopped`；窗口内的子进程自动 `running`；
+- `POST /admin/reload` 去掉窗口并把 `idleSeconds` 设 1 后，一个 tick 内回到 `stopped`；
+- 单元测试新增：窗口解析/跨午夜、`ApplyConfig`、退避序列、桥超时、`/admin/reload`，共 24 个用例。

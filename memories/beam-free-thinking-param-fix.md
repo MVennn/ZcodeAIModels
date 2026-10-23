@@ -37,7 +37,7 @@ metadata:
 - 其余失败与 thinking 无关：协议放错组（glm-5.3-flash、gpt-6-luna 曾放 messages 组）、模型不在订阅（deepseek/glm 的 -free 变体）、额度、并发、DNS。
 - 日志分析脚本：`~/.zcode/cli/exec/log-scan.js`、探测脚本 `probe-matrix.js`。
 
-**关思考参数矩阵（2026-10-19 22:50，脚本 `opencode-go/probe/thinking-off-probe.js` 实测）**：
+**关思考参数矩阵（2026-10-19 22:50，脚本 `providers/opencode-go/probe/thinking-off-probe.js` 实测）**：
 - `{"thinking":{"type":"disabled"}}` 能真正关掉思考：`longcat-2.0`（首字 3.6s→1.7s）、`longcat-2.5-preview-free`（8.7→7.4s，模型本身慢）、`minimax-m3`、`deepseek-v4.1-flash`（2.5→1.4s，`reasoning_effort:"none"` 也有效）。
 - `minimax-m3.1-flash-free`：`thinking:disabled` 与 `reasoning_effort:"none"` 都返回 400，必须用 `{"enable_thinking":false}`（200、无 reasoning、约 1.2s 出正文）。
 - `glm-5.3-flash`：三种写法都关不掉——`thinking:disabled` / `reasoning_effort:"none"` 是 400，`enable_thinking:false` 被忽略仍在思考；只能给足 max_tokens，否则思考吃光预算导致正文为空。

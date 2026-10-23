@@ -5,9 +5,19 @@
 ## 跑起来
 
 ```bash
-python3 opencode-go/ops/go_model_sync.py            # 干跑（默认不写配置）
-python3 opencode-go/ops/go_model_sync.py --apply     # 真写
-node opencode-go/ops/opencode-header-proxy.js       # 常驻的请求头注入代理
+python3 providers/opencode-go/ops/go_model_sync.py            # 干跑（默认不写配置）
+python3 providers/opencode-go/ops/go_model_sync.py --apply     # 真写
+node providers/opencode-go/ops/opencode-header-proxy.js       # 常驻的请求头注入代理
+```
+
+统一入口 `gateways/zgate` 是 Go 代码，改完这样验：
+
+```bash
+cd gateways/zgate
+gofmt -l . && go vet ./... && go test ./...   # 单元测试（不联网）
+go build -o zgate.exe .
+./zgate.exe status                             # 看服务/子进程/端口
+python smoke_test.py                           # 四条通道各打一发（会花少量额度）
 ```
 
 凭据一律走环境变量：
@@ -23,7 +33,7 @@ node opencode-go/ops/opencode-header-proxy.js       # 常驻的请求头注入�
 
 ## 加一个新供应商
 
-**不要**把新供应商的代码塞进 `workbuddy/` 或 `opencode-go/`。照着现有结构新建一份，
+**不要**把新供应商的代码塞进 `providers/workbuddy/` 或 `providers/opencode-go/`。照着现有结构新建一份，
 四步（详见 [docs/MODEL-PROVIDERS.md](docs/MODEL-PROVIDERS.md) §0）：
 
 1. 摸清它的**接口面** —— 模型清单在哪、价格怎么取、鉴权怎么带；
@@ -37,7 +47,7 @@ node opencode-go/ops/opencode-header-proxy.js       # 常驻的请求头注入�
 
 - **凭据只走环境变量。** 代码、文档、日志、缓存里都不许出现明文 key。
 - **探测要有间隔。** 详见 `docs/MAINTENANCE.md`。
-- 改 `workbuddy/zcode_effective_body.js` 时要**对着上游源码**核对语义 ——
+- 改 `providers/workbuddy/zcode_effective_body.js` 时要**对着上游源码**核对语义 ——
   ZCode 已开源（Apache-2.0），vendored 副本在 `third-party/zcode/`，
   规则遍历顺序与合并语义见 `third-party/zcode/UPSTREAM.md`。
 - 不要改 `third-party/`（vendored 上游）。

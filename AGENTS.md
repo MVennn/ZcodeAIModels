@@ -72,7 +72,15 @@
 
 ---
 
-## 4. 其它约定（简）
+## 4. 目录两轴：`gateways/` 跑进程，`providers/` 跑脚本
+
+- `gateways/` 只放**会被启动的东西**：`zgate`（Go 入口）、`legacy-router`（旧 Node 路由，回退用）、
+  `upstream/{workbuddy,qoder}`（上游 clone，gitignored）。
+- `providers/` 只放**手动执行的采集/探测/同步脚本**：`opencode-go/`、`workbuddy/`、`qoder/`。
+- `tools/` 放跨供应商工具（`model_alias` / 榜单 / 探测 / 文档与密钥检查）。
+- 判断规则一句话：会被启动 → `gateways/`；被手动执行 → `providers/`；跨供应商复用 → `tools/`。
+
+## 5. 其它约定（简）
 
 - **文档正本**：每条规则只在一篇文档里定义，其余位置只留一句话 + 链接。
   正本映射表见 [docs/DOC-RULES.md](docs/DOC-RULES.md) §2。

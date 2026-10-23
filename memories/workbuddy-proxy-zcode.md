@@ -48,7 +48,7 @@ metadata:
   `thinking` + `enable_thinking` + `reasoning_effort` + `reasoning` 四件套；
   但 `.*deepseek-v4[.-]1-flash.*`（idx 67）只发 `thinking` + `reasoning_effort`，
   `.*kimi-k2\.6.*`（idx 33）只发 `thinking`。**手写规则表极易错**。
-- 已写 `workbuddy/zcode_effective_body.js`：复刻引擎解析顺序并用 Node
+- 已写 `providers/workbuddy/zcode_effective_body.js`：复刻引擎解析顺序并用 Node
   `new Function` 求值 `optionSpecs.reasoningLevel.map`，直接算出某 modelId 的**真实请求体**。
 - 网关**不删** ZCode 发的 thinking 类字段，原样透传上游 → 上游不认就 400。
   所以探测必须用 ZCode 真实 body，不能用裸 body（否则会漏判）。

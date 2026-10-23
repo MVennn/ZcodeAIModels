@@ -53,7 +53,7 @@
 
 ### 1.3 实例 B：WorkBuddy —— 价格表由 `workbuddy_fetch_pricing.py` 生成
 
-`workbuddy/cache/wb_pricing.json`（模型倍率 / 上下文 / 输出上限 / effort 档位）
+`providers/workbuddy/cache/wb_pricing.json`（模型倍率 / 上下文 / 输出上限 / effort 档位）
 由 **`workbuddy_fetch_pricing.py`** 生成：它 `GET /panel/api/models`，把上游条目
 **归一化**成下表字段，写进 `cache/wb_pricing.json`（写前自动备份旧文件）。
 
@@ -105,12 +105,12 @@ curl -s http://127.0.0.1:7863/panel/api/models \
 
 | 场景 | 频率 | 命令 |
 |---|---|---|
-| OpenCode-Go 新模型收录 | **每天一次** | `python opencode-go/ops/go_model_sync.py --apply` |
+| OpenCode-Go 新模型收录 | **每天一次** | `python providers/opencode-go/ops/go_model_sync.py --apply` |
 | 已配置模型体检 | 跟上面同一次 | 同上（默认会体检；`--no-existing` 可跳过） |
 | 外部榜单 → 主力候选 | **每天一次**（随 08:00 / 22:00 与工作日时段） | `python tools/arena_leaderboard.py --refresh --write` |
 | 候选变化 → 重写四组 | 随上一步；候选没变脚本会跳过 | `python tools/model_alias.py --slot auto --probe-file ~/.zcode/v2/model_probe.json --apply` |
-| WorkBuddy 可用性复探 | **换套餐 / 换账号池后**才需要全量重探 | `python workbuddy/workbuddy_probe_zcode.py --sleep 20` |
-| 某个模型单独复探 | 按需 | `python workbuddy/workbuddy_probe_zcode.py --only <前缀> --sleep 20 --force` |
+| WorkBuddy 可用性复探 | **换套餐 / 换账号池后**才需要全量重探 | `python providers/workbuddy/workbuddy_probe_zcode.py --sleep 20` |
+| 某个模型单独复探 | 按需 | `python providers/workbuddy/workbuddy_probe_zcode.py --only <前缀> --sleep 20 --force` |
 
 **不要**把全量探测挂成高频定时任务 —— 探测会消耗额度，也会触发上游限流。
 榜单接口不消耗本仓额度，可以随时 `--refresh` 看排名；`--apply` 只在候选集合或规则
@@ -144,10 +144,10 @@ WorkBuddy 侧**只能用** `workbuddy_probe_zcode.py`（它先调 `zcode_effecti
 
 | 文件 | 内容 | 保留 | 理由 |
 |---|---|---|---|
-| `workbuddy/cache/wb_pricing.json` | 网关倍率快照（活数据） | 本机保留，**不随仓库分发** | 含账号池相关信息；也因为需要定期刷新 |
-| `workbuddy/cache/wb_zcode_probe.json` | 探测结果缓存（活数据，断点续跑用） | 本机保留，**不随仓库分发** | 含账号池探测结果 |
-| `workbuddy/logs/wb_zcode_probe.log` | 探测日志 | 本机保留，**不随仓库分发** | 一次性日志 |
-| `opencode-go/probe/results/20261019/*.json` | 三份探测原始结果（34 模型 / 28 组基准 / 决赛采样） | 本机保留，**不随仓库分发** | 体积大、可重跑再生。三个探测脚本把结果写到**当前工作目录**，跑完要手动挪进 `results/<日期>/` |
+| `providers/workbuddy/cache/wb_pricing.json` | 网关倍率快照（活数据） | 本机保留，**不随仓库分发** | 含账号池相关信息；也因为需要定期刷新 |
+| `providers/workbuddy/cache/wb_zcode_probe.json` | 探测结果缓存（活数据，断点续跑用） | 本机保留，**不随仓库分发** | 含账号池探测结果 |
+| `providers/workbuddy/logs/wb_zcode_probe.log` | 探测日志 | 本机保留，**不随仓库分发** | 一次性日志 |
+| `providers/opencode-go/probe/results/20261019/*.json` | 三份探测原始结果（34 模型 / 28 组基准 / 决赛采样） | 本机保留，**不随仓库分发** | 体积大、可重跑再生。三个探测脚本把结果写到**当前工作目录**，跑完要手动挪进 `results/<日期>/` |
 | `evidence/wb_panel_models.json` | 网关模型目录快照 | **随仓库分发** | 目录结构证据，无凭据 |
 | `evidence/go-model-sync/*.md` | 每次自动收录的报告 | **随仓库分发**（可挑代表性的几份） | 收录决策的证据 |
 
@@ -170,7 +170,7 @@ WorkBuddy 侧**只能用** `workbuddy_probe_zcode.py`（它先调 `zcode_effecti
 |---|---|---|
 | `go_model_sync.py --apply` | `provider_config.json.bak-gosync-<时间戳>` | 写 `.tmp` → 校验 JSON → `os.replace` 原子替换 |
 | `workbuddy_zcode_sync.py --apply` | `provider_config.json.bak-wbproxy-<时间戳>` | 同上（`.tmp-wbproxy` → `os.replace`） |
-| `qoder/qoder_zcode_sync.py --apply` | `provider_config.json.bak-qoder-merge-<时间戳>`（`--separate` 为 `.bak-qoder-<时间戳>`） | 同上（`.tmp-qoder` → `os.replace`） |
+| `providers/qoder/qoder_zcode_sync.py --apply` | `provider_config.json.bak-qoder-merge-<时间戳>`（`--separate` 为 `.bak-qoder-<时间戳>`） | 同上（`.tmp-qoder` → `os.replace`） |
 | `tools/model_alias.py --apply` | `provider_config.json.bak-alias-<时间戳>` | 同上（`.tmp-alias` → `os.replace`） |
 
 ### 4.2 手动备份（建议在批量操作前额外做一份）
@@ -222,9 +222,9 @@ python -c "import json,os; json.load(open(os.path.expanduser('~/.zcode/v2/provid
 
 | 周期 | 动作 |
 |---|---|
-| **每天 12:00（定时任务 `automation-3e2f8a53-b408-4bf8-90ff-4a331a721f5c`）** | 四段顺序：① `python opencode-go/ops/go_model_sync.py --apply`；② WorkBuddy（`workbuddy_fetch_pricing.py` → `workbuddy_probe_zcode.py --max-rate 0.3 --sleep 20` → `workbuddy_zcode_sync.py --max-rate 0.3 --apply`）；③ Qoder（`qoder_probe_zcode.py --timeout 90 --sleep 3` → `qoder_zcode_sync.py --probe-file qoder/qoder_probe.json --apply`）；④ `python tools/model_alias.py --slot auto --apply` 归一化四组与 alias map。手动补跑也按这个顺序；**不要在 ④ 之后单独跑旧 sync 的 `--apply`** |
+| **每天 12:00（定时任务 `automation-3e2f8a53-b408-4bf8-90ff-4a331a721f5c`）** | 四段顺序：① `python providers/opencode-go/ops/go_model_sync.py --apply`；② WorkBuddy（`workbuddy_fetch_pricing.py` → `workbuddy_probe_zcode.py --max-rate 0.3 --sleep 20` → `workbuddy_zcode_sync.py --max-rate 0.3 --apply`）；③ Qoder（`qoder_probe_zcode.py --timeout 90 --sleep 3` → `qoder_zcode_sync.py --probe-file providers/qoder/qoder_probe.json --apply`）；④ `python tools/model_alias.py --slot auto --apply` 归一化四组与 alias map；⑤ `python tools/sync_report.py --write --push` 生成 `docs/reports/MODEL-SYNC-<时间>.md`（写明新增 / 移除 / 分组 / 链路变化）、更新报告索引并提交推送。手动补跑也按这个顺序；**不要在 ④ 之后单独跑旧 sync 的 `--apply`** |
 | **每天（可选，全量体检）** | `python tools/model_probe.py` → `python tools/model_alias.py --slot auto --probe-file ~/.zcode/v2/model_probe.json --apply`；定时任务不跑全量 probe，各 sync 自带定向探测。规则见 [MODEL-ALIAS.md](MODEL-ALIAS.md) §6 |
-| **每天 08:00 / 22:00 + 工作日 09:00 / 12:00 / 14:00 / 18:00** | `python workbuddy/workbuddy_fetch_pricing.py` → `python tools/model_alias.py --slot auto --apply`（峰谷价切换，见 [MODEL-ALIAS.md](MODEL-ALIAS.md) §4.1） |
+| **每天 08:00 / 22:00 + 工作日 09:00 / 12:00 / 14:00 / 18:00** | `python providers/workbuddy/workbuddy_fetch_pricing.py` → `python tools/model_alias.py --slot auto --apply`（峰谷价切换，见 [MODEL-ALIAS.md](MODEL-ALIAS.md) §4.1） |
 | **每月** | 复核 [MODEL-PROVIDERS.md](MODEL-PROVIDERS.md) 里的价格 / 额度（`wb_pricing.json` 已由每日任务自动刷新） |
 | **换套餐 / 换账号池后** | 全量重探 WorkBuddy（`--sleep 20`）+ 重跑同步 |
 | **每次接入新供应商** | 照 §1.1 的通用做法写一份取数脚本 + 在 [MODEL-PROVIDERS.md](MODEL-PROVIDERS.md) §0 的表里补一行；凭据按 [SECRETS.md](SECRETS.md) §2、§3.5 加环境变量 |
@@ -250,104 +250,103 @@ python -c "import json,os; json.load(open(os.path.expanduser('~/.zcode/v2/provid
 
 ---
 
-## 8. 网关与统一路由随 ZCode 自动起停
+## 8. 网关生命周期（zgate）
 
-`workbuddy/zcode_gateway_watch.ps1` 是一个**无窗口守护器**：ZCode **主进程**从无到有 →
-静默拉起 `wb2api` 和 `node tools/unified-router.js`；主进程退出 → 宽限 8 秒 +
-在途连接排空（默认最多 5 秒）后停网关。日常只开 ZCode 就行，不用再手动开 cmd。
+2026-10-23 起，三个反代由**一个进程**托管：`gateways/zgate`（Go，约 19 MB）。
+它监听 `127.0.0.1:7871`，按 alias map 把四个 chat provider 的请求分流到三条上游，
+并按策略拉起 / 回收两个本地上游进程：
 
-主进程判据是「命令行既不含 `--type=`、也不含 `zcode.cjs` 的 `ZCode.exe`」——
-GPU / renderer / crashpad / CLI 宿主晚退几秒不会拖住网关。拿到主进程后按**进程句柄**
-判存活（不是只记 PID），PID 被系统复用也不会把已退出的 ZCode 误判成还在跑。
-网关「就绪」以 `/panel/` 返回 200 为准；统一路由「就绪」以 `/health` 返回 200 为准。
+| 上游 | 端口 | 谁在跑 | 策略 |
+|---|---|---|---|
+| OpenCode-Go | 远程 | — | 直连，无本地进程 |
+| WorkBuddy（`wb2api`） | 7863 | zgate 的子进程 | `ondemand`：首个 WB 请求时拉起，空闲 300 秒回收 |
+| Qoder（`qoder_proxy.py`） | 8790 | zgate 的子进程 | `ondemand`：同上，随用随拉 |
 
-退出路径的三种收尾都会写日志：宽限期内 ZCode 回来 → `在 Ns 宽限期内重新出现，取消停止`；
-排空期内回来 → `在排空期间重新出现，取消停止并恢复统一路由`（已停的路由会立刻拉回）；
-确认退出 → 停路由 → 排空 → 停网关。守护器**启动时先对账**：没有 ZCode 主进程却还有
-网关 / 路由在监听，说明上次没停干净（守护器被结束、关机前 ZCode 已退等），直接清掉；
-要手动常驻网关时加 `-KeepOrphans`。每 15 分钟写一条 `心跳：ZCode=… 网关=… 路由=…`，
-日志里长时间没有心跳就说明守护器本身没了。
+两个上游都**不常驻**：没人用就一个都不起，zgate 自己只占约 19 MB。
+签到 / 保活这类定时任务靠 `children.*.windows` 兜底 —— 窗口内按 `always` 处理，
+窗口结束后若没有请求，再按 `idleSeconds` 回收：
 
-> **关窗 ≠ 退出**：ZCode 默认 `closeToTrayOnWindows=true`，点右上角 × 只是最小化到托盘，
-> 主进程还在，网关 / 路由保持运行是预期行为。要触发停止请从托盘菜单「退出」。
+| 子进程 | 默认窗口（本地时间） | 对应上游任务 |
+|---|---|---|
+| WorkBuddy | `08:58-09:15`、`09:58-10:15`、`20:58-21:15`、`21:58-22:15` | 签到 9/21 点、活跃 10 点、token 保活 22 点 |
+| Qoder | `08:58-09:15`、`20:58-21:15`、`21:58-22:15` | 签到 9/21 点、保活 22 点 |
+
+策略与窗口写在 `gateways/zgate/zgate.json`，改完用 `zgate.exe reload` 热加载
+（新增子进程、监听地址、上游 base 仍要重启）。
+子进程装在 **Job Object** 里，zgate 崩溃或被结束时会一起收掉，不会留下占着 7863 / 8790 的孤儿。
+
+### 8.1 日常命令
 
 | 动作 | 命令（在仓库根执行） |
 |---|---|
-| 注册开机自启并立即启动 | `powershell -NoProfile -ExecutionPolicy Bypass -File workbuddy/zcode_gateway_watch.ps1 -Install` |
-| 看当前状态（ZCode 主进程 / 网关 / 统一路由 / 五个 chat 组指向） | 同上，`-Status` |
-| 移除自启并停守护器（网关/路由保持运行） | 同上，`-Uninstall` |
-| 只验证状态机、不启停进程 | 同上，`-DryRun -ProcessName ping`（配一个假进程名） |
-| 不启停统一路由（只用 OpenCode 直连） | 同上，`-NoRouter` |
+| 看状态（服务是否在跑 / 子进程 / 端口 / 凭据有无） | `gateways/zgate/zgate.exe status` |
+| 前台启动（排错用；正常由登录自启拉起） | `gateways/zgate/zgate.exe serve` |
+| 注册登录自启 | `gateways/zgate/zgate.exe install` |
+| 移除登录自启 | `gateways/zgate/zgate.exe uninstall` |
+| 热加载策略/窗口（改完 `zgate.json`） | `gateways/zgate/zgate.exe reload` |
+| 健康检查 | `curl http://127.0.0.1:7871/health`（含每个子进程的 `state` / `pid` / `idle_s`） |
+| 只重启 WorkBuddy 上游 | `taskkill /IM wb2api.exe /F`，下一次 WB 请求自动拉起 |
+| 只重启 Qoder 上游 | `taskkill /IM python.exe /F` 后用下面的 bat 兜底，或重启 zgate |
 
-| 变量 / 参数 | 默认 | 说明 |
+自启方式是**启动文件夹快捷方式**（`%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\ZcodeAIModels zgate.lnk`）——
+`schtasks /create /sc ONLOGON` 在当前权限下会被拒绝（拒绝访问），快捷方式不需要管理员。
+
+### 8.2 配置项（`gateways/zgate/zgate.json`）
+
+| 键 | 默认 | 说明 |
 |---|---|---|
-| `WB_GATEWAY_DIR` | `<仓库>/workbuddy/gateway` | 网关目录（含 `wb2api.exe`、`config.json`） |
-| `WB_GATEWAY_BASE` | `http://127.0.0.1:7863` | 健康检查 + `/panel/` 就绪判定 + provider 指向校验 |
-| `ZCODE_WATCH_LOG` | `%LOCALAPPDATA%\ZCodeGateway` | 守护器、网关与路由的日志目录 |
-| `-PollMilliseconds` | `500` | 主进程轮询间隔；越小拉起越快 |
-| `-StopGraceSeconds` | `8` | 主进程退出后等多久再停（防止更新 / 重启误杀；宽限内回来会写日志） |
-| `-DrainTimeoutSeconds` | `5` | 停网关前等在途连接排空的上限，超时才强制停止；排空期 ZCode 回来立刻取消 |
-| `-HeartbeatSeconds` | `900` | 心跳日志间隔；写 `心跳：ZCode=… 网关=… 路由=…`，用来判断守护器是否还活着 |
-| `-ProcessName` | `ZCode` | 被跟随的进程名；换客户端时改这个 |
-| `-RouterPort` | `7871` | 统一路由监听端口（五个 chat 组按这个端口写 `baseUrl`） |
-| `-RouterScript` | `<仓库>/tools/unified-router.js` | 统一路由脚本路径 |
-| `-NoRouter` | 关 | 不启动 / 不停止统一路由 |
-| `-KeepOrphans` | 关 | 启动时不清掉「没有 ZCode 但还在监听」的遗留网关 / 路由 |
+| `listen` | `127.0.0.1:7871` | 四个 chat provider 的 `baseUrl` 指向这里；环境变量 `ZGATE_LISTEN` 可覆盖 |
+| `aliasMap` | `~/.zcode/v2/model-alias-map.json` | 显示名 → 上游；按 mtime 热加载，改完不用重启 |
+| `providerConfig` | `~/.zcode/v2/provider_config.json` | 凭据兜底来源 |
+| `children.<name>.policy` | `ondemand` | `always` 常驻 / `ondemand` 按需（默认谁都不用就不起） |
+| `children.<name>.idleSeconds` | `300` | `ondemand` 的空闲回收阈值 |
+| `children.<name>.windows` | 见 §8 表 | 本地时间窗口 `HH:MM-HH:MM`，可跨午夜；窗内按 `always` 处理 |
+| `children.<name>.health` | — | 就绪判定；WB 用 `/panel/`（`/status` 需要鉴权，返回 401） |
+| `children.<name>.startTimeoutSeconds` | 25 / 30 / 40 | 冷启动等待上限 |
 
-`-Status` 会顺带读出 `provider_config.json` 里五个 chat provider 的模型数、
-`baseUrl` 是否指向统一路由、`apiKey` 是否存在（**只报状态，不打印值**）。
-分离模式（`--separate`）下则读 `workbuddy-*` 四个 provider 并校验指向网关。
-ZCode 每次启动时，守护器也会做同一项校验，发现不匹配就写一条「联动警告」到日志。
+### 8.3 日志
 
-**统一路由**：`tools/unified-router.js` 监听 `127.0.0.1:7871`，按 model 前缀分流
-（`cn:` / `global:` → 网关，其余 → OpenCode-Go）。手动启动：
-`node tools/unified-router.js`；健康检查 `GET http://127.0.0.1:7871/health`。
-它随守护器起停，正常情况下不需要单独开。
+| 文件（`%LOCALAPPDATA%\ZCodeGateway\`） | 内容 |
+|---|---|
+| `zgate.log` | 路由日志（每个请求一行 `model=… -> 通道`）、子进程起停、错误；超过 5 MB 轮转为 `.1` |
+| `workbuddy.stdout.log` / `.stderr.log` | WorkBuddy 上游输出 |
+| `qoder.stdout.log` / `.stderr.log` | Qoder 上游输出（Qoder 自己还会写 `gateways/upstream/qoder/qoder-proxy.log`） |
 
-日志（UTF-8）：`%LOCALAPPDATA%\ZCodeGateway\watchdog.log`（超过 1 MB 轮转为 `.1`）；
-网关输出在同目录 `gateway.stdout.log` / `gateway.stderr.log`，路由输出
-`router.stdout.log` / `router.stderr.log`（每次启动前轮转为 `.1`）。
-手工兜底仍是网关目录下的 `stop-gateway.bat`（`taskkill /IM wb2api.exe /F`）。
+### 8.4 上游 clone 的更新
 
-**网关目录是上游仓库的独立 clone**（`workbuddy/gateway/`，自带 `.git`），整目录被主仓
-`.gitignore` 排除 —— 里面有 `auths/` 账号凭据、`config.json`（网关自己的 `api_key`）、
-`data/` 运行时状态与 `wb2api.exe`，都不进公开仓库。**注意：`git clean -fdx` 会把整个
-clone 一起删掉**，别在不确认的情况下跑。
+两个上游仍是**独立 clone**，整目录被主仓 `.gitignore` 排除（含账号凭据与运行时状态）。
 
 | 场景 | 命令 |
 |---|---|
-| 检查 / 拉取上游更新 | `git -C workbuddy/gateway fetch && git -C workbuddy/gateway pull --ff-only` |
-| 新机器重建网关目录 | `git clone https://github.com/linguo2625469/workbuddy2api-panel.git workbuddy/gateway`，再按 `config.example.json` 建 `config.json`、放 `auths/`，并 `go build -o wb2api.exe ./cmd/server` |
-| 本机对 clone 的本地改动 | `.gitignore` 补了 `.api_key_secret` / `server.log`；`go.mod` 把 `redis/go-redis` 从 indirect 提为直接依赖（构建需要） |
+| 更新 WorkBuddy 上游 | `git -C gateways/upstream/workbuddy pull --ff-only`，再 `taskkill /IM wb2api.exe /F`（下次请求自动重启） |
+| 更新 Qoder 上游 | `git -C gateways/upstream/qoder pull --ff-only`，再重启 zgate |
+| 新机器重建 WorkBuddy | `git clone https://github.com/linguo2625469/workbuddy2api-panel.git gateways/upstream/workbuddy`，按 `config.example.json` 建 `config.json`、放 `auths/`，`go build -o wb2api.exe ./cmd/server` |
+| 新机器重建 Qoder | 见 [QODER.md](QODER.md) §2 |
 
-> ⚠️ **副作用（实例 B）**：网关的定时任务（签到 9 / 21 点、活跃 10 点、token 保活 22 点、
-> 夜猫子 23:00–08:00、余额刷新每 5 分钟）**只在网关进程活着时才跑**。
-> 把网关绑到 ZCode 生命周期后，ZCode 不在的时段这些任务不会执行 ——
-> 要它们照常跑，就别装自启，改成手动常驻网关。
->
-> 排查见 [TROUBLESHOOTING.md](TROUBLESHOOTING.md) §11。
+> ⚠️ **WorkBuddy 的定时任务**（签到 9 / 21 点、活跃 10 点、token 保活 22 点、夜猫子、
+> 余额刷新）只在进程活着时才跑。签到 / 活跃 / 保活已由 `windows` 覆盖；
+> **夜猫子（23:00–08:00）与每 5 分钟的余额刷新仍然只在有 WB 请求时跑** ——
+> 要让它们常跑，把 `children.workbuddy.policy` 改成 `always`（多占约 23 MB），
+> 或加 `"23:00-08:00"` 窗口（跨午夜也支持）。排查见
+> [TROUBLESHOOTING.md](TROUBLESHOOTING.md) §11。
 
-### 8.1 Qoder（qoder2api-hub，8790）
+### 8.5 Qoder（qoder2api-hub，8790）
 
-Qoder 的 **hub 进程不跟随 ZCode**，是常驻 detached 进程（这样 ZCode 不在时
-09:00 / 21:00 的签到也能跑）；但合并模式下 `qoder:` 模型经 7871 路由，路由仍随
-ZCode 起停：
+Qoder 由 zgate 托管（默认 `ondemand`，签到/保活窗口自动唤醒），
+`qoder:` 模型经 7871 分流；ZCode 侧没有独立 `qoder` provider。
 
 | 场景 | 命令 |
 |---|---|
-| 启动 | `qoder/gateway/start-qoder-proxy.bat`（detached，关窗口不退出） |
-| 停止 | `qoder/gateway/stop-qoder-proxy.bat` |
-| 健康 | `curl http://127.0.0.1:8790/ping` / `curl http://127.0.0.1:8790/health` |
-| 日志 | `qoder/gateway/qoder-proxy.log` / `qoder-proxy.err.log` |
-| 签到状态 | `qoder/gateway/accounts/scheduler/state.json` |
-| 升级 | `git -C qoder/gateway pull --ff-only` → stop → start |
+| 看状态 | `gateways/zgate/zgate.exe status`，或 `curl http://127.0.0.1:8790/ping` |
+| 手动兜底启动（zgate 不在时） | `gateways/upstream/qoder/start-qoder-proxy.bat` |
+| 手动兜底停止 | `gateways/upstream/qoder/stop-qoder-proxy.bat` |
+| 日志 | `gateways/upstream/qoder/qoder-proxy.log`；zgate 侧见 §8.3 |
+| 签到状态 | `gateways/upstream/qoder/accounts/scheduler/state.json` |
 | 每日同步 | `python tools/model_probe.py`（可加 `--group 免费`）→ `python tools/model_alias.py --slot auto --probe-file ~/.zcode/v2/model_probe.json --apply`；Qoder 显示名为 `Q/积分/型号` |
 
 > Qoder 的专用 `qoder_probe_zcode.py` / `qoder_zcode_sync.py` 现在只作数据采集与兼容；
 > 四组统一探测用 `tools/model_probe.py`，最终写入用 `tools/model_alias.py`。
-
-> ⚠️ 重启机器后 hub 不会自动起（当前没有注册开机自启）；需要时手动
-> `start-qoder-proxy.bat`。Qoder 的账号、签到与模型细节见 [QODER.md](QODER.md)。
+> 账号、签到与模型细节见 [QODER.md](QODER.md)。
 
 ---
 
@@ -371,5 +370,5 @@ ZCode 起停：
 | 日期 | 做了什么 | 结果 |
 |---|---|---|
 | 2026-10-23 | 统一模型命名：四组（主力/免费/低耗/高耗）、`渠道/积分/型号`、alias map、协议桥接 | 43 个模型 / 4 个 provider；37 ok，5 个 WB GB 因池冷却暂为瞬时限流 |
-| 2026-10-23 | 接入 Qoder：qoder2api-hub clone 到 `qoder/gateway`（8790）、OAuth 账号、独立 `qoder` provider、同步/探测脚本与文档 | 7 个模型探测 200；免费 `DeepSeek-Flash` 1.1s；`Qwen3.8-Flash` 因 10605 排队暂不收录 |
+| 2026-10-23 | 接入 Qoder：qoder2api-hub clone 到 `gateways/upstream/qoder`（8790）、OAuth 账号、独立 `qoder` provider、同步/探测脚本与文档 | 7 个模型探测 200；免费 `DeepSeek-Flash` 1.1s；`Qwen3.8-Flash` 因 10605 排队暂不收录 |
 | 2026-10-22 | 收尾大扫除：清 `__pycache__` 与过期定价备份；对齐模型计数 / 快照日期、Release 说明反馈入口、AGENTS 的 CodeGraph 状态 | 仓库 53109K → 53053K；`python tools/check-docs.py` 通过 |

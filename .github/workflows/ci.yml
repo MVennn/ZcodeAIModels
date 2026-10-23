@@ -29,6 +29,18 @@ jobs:
         with:
           node-version: '18'
 
+      - name: 装 Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Go 格式
+        run: test -z "$(gofmt -l gateways/zgate)"
+
+      - name: Go 构建与测试
+        working-directory: gateways/zgate
+        run: go build ./... && go test ./...
+
       - name: Python 语法
         run: python3 -c "import ast,glob; [ast.parse(open(f,encoding='utf-8').read(), f) for f in glob.glob('**/*.py', recursive=True)]"
 
