@@ -133,7 +133,7 @@ func (s *Server) routeAlias(w http.ResponseWriter, r *http.Request, body []byte,
 		return
 	}
 	channel := t.Channel
-		key := s.keyset().For(channel)
+	key := s.keyset().For(channel)
 	if key == "" {
 		writeJSON(w, 502, errorBody(channel+" key not configured", "configuration_error"))
 		return
