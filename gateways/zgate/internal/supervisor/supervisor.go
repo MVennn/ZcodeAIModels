@@ -54,13 +54,14 @@ type kid struct {
 
 // Supervisor owns all children.
 type Supervisor struct {
-	logDir string
-	log    *logx.Logger
-	client *http.Client
-	mu     sync.Mutex
-	kids   map[string]*kid
-	stopCh chan struct{}
-	doneCh chan struct{}
+	logDir  string
+	log     *logx.Logger
+	client  *http.Client
+	mu      sync.Mutex
+	kids    map[string]*kid
+	stopCh  chan struct{}
+	doneCh  chan struct{}
+	stopped bool
 }
 
 // New builds a supervisor; call Start to launch it.
@@ -100,6 +101,10 @@ func normalize(child *config.Child) {
 // Start brings up children that are always-on (or inside a window) and begins
 // the monitor loop. Everything else waits for its first request.
 func (s *Supervisor) Start() {
+	// Start the monitor first so Stop always has a done signal, even while the
+	// boot loop below is still running (main starts Start in a goroutine so the
+	// HTTP server does not wait for serial child boots).
+	go s.loop()
 	now := time.Now()
 	s.mu.Lock()
 	var boot []string
@@ -114,11 +119,13 @@ func (s *Supervisor) Start() {
 			s.log.Warnf("子进程 %s 启动失败: %v", name, err)
 		}
 	}
-	go s.loop()
 }
 
 // Stop terminates every child and stops the monitor.
 func (s *Supervisor) Stop() {
+	s.mu.Lock()
+	s.stopped = true
+	s.mu.Unlock()
 	close(s.stopCh)
 	<-s.doneCh
 	s.mu.Lock()
@@ -140,6 +147,10 @@ func (s *Supervisor) Stop() {
 func (s *Supervisor) Ensure(name string) error {
 	for {
 		s.mu.Lock()
+		if s.stopped {
+			s.mu.Unlock()
+			return nil
+		}
 		k, ok := s.kids[name]
 		if !ok {
 			s.mu.Unlock()
@@ -171,9 +182,12 @@ func (s *Supervisor) Ensure(name string) error {
 			continue
 		}
 		k.starting = true
+		// Copy under the lock: ApplyConfig may replace k.cfg at any time and
+		// startChild runs unlocked (long health-check loop).
+		cfg := k.cfg
 		s.mu.Unlock()
 
-		err := s.startChild(k)
+		err := s.startChild(k, cfg)
 
 		s.mu.Lock()
 		k.starting = false
@@ -205,21 +219,21 @@ func (s *Supervisor) Touch(name string) {
 	s.mu.Unlock()
 }
 
-func (s *Supervisor) startChild(k *kid) error {
-	if winproc.PortBusy(k.cfg.Port) {
-		if s.healthy(k.cfg.Health) {
+func (s *Supervisor) startChild(k *kid, cfg config.Child) error {
+	if winproc.PortBusy(cfg.Port) {
+		if s.healthy(cfg.Health) {
 			s.mu.Lock()
 			k.external = true
 			k.ready = true
 			k.lastErr = ""
 			s.mu.Unlock()
-			s.log.Infof("子进程 %s：端口 %d 已有健康实例，接管（不重复启动）", k.name, k.cfg.Port)
+			s.log.Infof("子进程 %s：端口 %d 已有健康实例，接管（不重复启动）", k.name, cfg.Port)
 			return nil
 		}
-		return fmt.Errorf("端口 %d 被占用且健康检查不通", k.cfg.Port)
+		return fmt.Errorf("端口 %d 被占用且健康检查不通", cfg.Port)
 	}
 
-	if k.cfg.Exe == "" {
+	if cfg.Exe == "" {
 		return fmt.Errorf("未配置可执行文件")
 	}
 	outPath := filepath.Join(s.logDir, k.name+".stdout.log")
@@ -234,15 +248,15 @@ func (s *Supervisor) startChild(k *kid) error {
 		return err
 	}
 
-	s.log.Infof("启动子进程 %s: %s %v (cwd=%s)", k.name, k.cfg.Exe, k.cfg.Args, k.cfg.Cwd)
-	proc, err := winproc.Start(k.cfg.Exe, k.cfg.Args, k.cfg.Cwd, outFile, errFile)
+	s.log.Infof("启动子进程 %s: %s %v (cwd=%s)", k.name, cfg.Exe, cfg.Args, cfg.Cwd)
+	proc, err := winproc.Start(cfg.Exe, cfg.Args, cfg.Cwd, outFile, errFile)
 	if err != nil {
 		_ = outFile.Close()
 		_ = errFile.Close()
 		return fmt.Errorf("启动失败: %w", err)
 	}
 
-	deadline := time.Now().Add(time.Duration(k.cfg.StartTimeoutSeconds) * time.Second)
+	deadline := time.Now().Add(time.Duration(cfg.StartTimeoutSeconds) * time.Second)
 	for time.Now().Before(deadline) {
 		select {
 		case <-proc.Done():
@@ -251,7 +265,7 @@ func (s *Supervisor) startChild(k *kid) error {
 			_ = errFile.Close()
 			return fmt.Errorf("启动后立即退出（日志 %s）", errPath)
 		case <-time.After(200 * time.Millisecond):
-			if s.healthy(k.cfg.Health) {
+			if s.healthy(cfg.Health) {
 				s.mu.Lock()
 				k.proc = proc
 				k.outFile = outFile
@@ -273,7 +287,7 @@ func (s *Supervisor) startChild(k *kid) error {
 	proc.Release()
 	_ = outFile.Close()
 	_ = errFile.Close()
-	return fmt.Errorf("健康检查超时（%ds，%s）", k.cfg.StartTimeoutSeconds, k.cfg.Health)
+	return fmt.Errorf("健康检查超时（%ds，%s）", cfg.StartTimeoutSeconds, cfg.Health)
 }
 
 // watch clears the state as soon as the child exits on its own.

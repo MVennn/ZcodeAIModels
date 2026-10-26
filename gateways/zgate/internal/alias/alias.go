@@ -52,6 +52,7 @@ type Map struct {
 	path  string
 	mu    sync.RWMutex
 	mtime time.Time
+	size  int64
 	data  *file
 }
 
@@ -72,7 +73,9 @@ func (m *Map) Reload() {
 		return
 	}
 	m.mu.RLock()
-	same := m.data != nil && stat.ModTime().Equal(m.mtime)
+	// mtime alone misses a rewrite within the filesystem timestamp granularity
+	// (or a writer that preserves mtime); the size catches those.
+	same := m.data != nil && stat.ModTime().Equal(m.mtime) && stat.Size() == m.size
 	m.mu.RUnlock()
 	if same {
 		return
@@ -88,6 +91,7 @@ func (m *Map) Reload() {
 	m.mu.Lock()
 	m.data = &next
 	m.mtime = stat.ModTime()
+	m.size = stat.Size()
 	m.mu.Unlock()
 }
 

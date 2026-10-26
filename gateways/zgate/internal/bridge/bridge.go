@@ -32,6 +32,9 @@ type Options struct {
 	UpstreamModel string
 	DisplayModel  string
 	Timeout       time.Duration
+	// Ctx is the inbound request context; cancellation stops the upstream
+	// call instead of pinning a connection after the client has gone away.
+	Ctx context.Context
 }
 
 // Result is what the router writes back.
@@ -74,12 +77,18 @@ func Forward(client *http.Client, opts Options) Result {
 	if timeout <= 0 {
 		timeout = DefaultTimeout
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	parent := opts.Ctx
+	if parent == nil {
+		parent = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
 	status, raw := postJSON(ctx, client, url, headers, payload)
 	if status < 200 || status >= 300 {
 		msg := upstreamMessage(raw, status)
-		return jsonResult(502, errorBody("bridge upstream error: "+msg, "upstream_error"))
+		// Keep the upstream status: a 4xx is a client/credential problem that
+		// must not be retried across every hop, and callers need the real code.
+		return jsonResult(status, errorBody("bridge upstream error: "+msg, "upstream_error"))
 	}
 	var data map[string]any
 	if err := json.Unmarshal(raw, &data); err != nil {
@@ -150,7 +159,13 @@ func truncate(s string, n int) string {
 	if len(s) <= n {
 		return s
 	}
-	return s[:n]
+	// Count characters, not bytes: cutting a multi-byte rune in half produces
+	// invalid UTF-8 in the error text returned to the client.
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return string(r[:n])
 }
 
 func jsonResult(status int, payload any) Result {
@@ -412,8 +427,12 @@ func chatToAnthropic(body []byte, model string) map[string]any {
 	optionalNumber(payload, src, "top_p", "top_p")
 	if stop, ok := src["stop"]; ok && stop != nil {
 		if arr, ok := stop.([]any); ok {
-			payload["stop_sequences"] = arr
-		} else {
+			if len(arr) > 0 {
+				payload["stop_sequences"] = arr
+			}
+		} else if s, isStr := stop.(string); !isStr || s != "" {
+			// The JS version skipped every falsy value; an empty string would
+			// become [""] here and can be rejected upstream.
 			payload["stop_sequences"] = []any{stop}
 		}
 	}

@@ -194,7 +194,7 @@ def update_index(report_name: str, current: dict, changes: dict, baseline: bool)
     index.write_text(text, encoding="utf-8")
 
 
-def git_push(report_name: str) -> int:
+def git_push(report_name: str, out_dir: Path = REPORT_DIR) -> int:
     def run(args: list[str]) -> int:
         proc = subprocess.run(args, cwd=ROOT, text=True, capture_output=True)
         if proc.returncode != 0:
@@ -202,7 +202,15 @@ def git_push(report_name: str) -> int:
             print(proc.stderr.strip(), file=sys.stderr)
         return proc.returncode
 
-    if run(["git", "add", "docs/reports"]) != 0:
+    # Commit the directory the report was actually written to: with
+    # --out-dir the fixed "docs/reports" add staged nothing and git reported
+    # "nothing to commit" as success.
+    try:
+        rel_dir = out_dir.resolve().relative_to(ROOT.resolve()).as_posix()
+    except ValueError:
+        print(f"报告目录 {out_dir} 不在仓库内，无法自动提交", file=sys.stderr)
+        return 1
+    if run(["git", "add", rel_dir]) != 0:
         return 1
     if run(["git", "commit", "-m", f"docs(reports): 模型同步报告 {report_name}"]) != 0:
         # Nothing to commit is not a failure for the automation.
@@ -259,7 +267,7 @@ def main() -> int:
     print(f"已写入 {out_dir / name}")
 
     if args.push:
-        code = git_push(name)
+        code = git_push(name, out_dir)
         print("已推送" if code == 0 else "推送失败（见上面的 git 输出）")
         return code
     return 0

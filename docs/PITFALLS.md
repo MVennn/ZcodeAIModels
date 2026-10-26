@@ -316,3 +316,32 @@ prune。它同时也认不出这些模型已经配置过，会把整个 Go 目�
 **下次怎么避**：凡是消费 `personalModelIds` 并直接请求上游的脚本，先问一句
 「这个 id 是显示名还是上游 id」；显示名一律经 alias map 还原，删除时仍用显示名
 （配置里存的是它）。
+
+## 17. 从 JS 移植时，`url.search` 自带 `?`，Go 的 `RawQuery` 不带
+
+- **现象**：任何带查询参数的请求都 404/400，日志里路径和 query 粘在一起
+  （`POST /chat/completionsstream=1`）。
+- **根因**：JS 的 `url.search` 返回 `?a=b`，Go 的 `u.RawQuery` 只返回 `a=b`；
+  移植时直接 `base + path + search`，少了一个分隔符。
+- **解法**：拼接 query 时显式补 `?`（或在 `normalizePath` 里统一返回带 `?` 的串），
+  并补一条「上游确实收到 query」的端到端测试 —— 只测 path 的用例发现不了。
+- **验证**：`go test ./internal/router -run TestQueryString`。
+
+## 18. 用 `dirname` 层数推仓库根，脚本一搬家就落错目录
+
+- **现象**：同步报告跑到 `providers/evidence/`，与已入库的 `evidence/` 分家，
+  下一次大扫除才发现。
+- **根因**：`os.path.dirname(...)` 叠了三层，脚本在 `providers/opencode-go/ops/`
+  下时只到 `providers/`；脚本从 `scripts/` 搬过来后层数没跟着改。
+- **解法**：路径按「相对仓库根的固定层级」写，并在注释里标明层级；或者用
+  `git rev-parse --show-toplevel` / 显式配置项。改目录结构时全局搜 `dirname(`。
+- **验证**：跑一次 `--dry-run`，确认报告路径在 `evidence/` 下。
+
+## 19. 价格源静默失败会把整个渠道的模型从配置里剔除
+
+- **现象**：某次同步后某渠道的模型全没了，日志里只有「收录 N 个」，没有告警。
+- **根因**：价格缓存读不到时函数返回空表，下游把「没有价格」当成「不可用」直接
+  `continue`；`--apply` 随后重写配置，等于整批删除。
+- **解法**：价格源不可用必须 stderr 告警；整渠道 100% 无价时拒绝写入
+  （提供显式 `--force-unpriced` 绕过），并把「因缺价未收录 N 个」打进摘要。
+- **验证**：临时改名价格缓存跑一次 `--apply`，确认退出码非零且配置未变。

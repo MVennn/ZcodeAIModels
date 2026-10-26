@@ -354,7 +354,9 @@ async function forwardChat(res, options) {
       || (result.json && result.json.message)
       || result.text.slice(0, 500)
       || ('upstream HTTP ' + result.status);
-    sendJson(res, 502, {
+    // 保留上游状态码：一律 502 会让探测脚本把 401/400 也归成 error，
+    // 丢掉"凭证失效/参数错误"这些可区分的信息。
+    sendJson(res, result.status >= 400 ? result.status : 502, {
       error: { message: 'bridge upstream error: ' + message, type: 'upstream_error' },
     });
     return;

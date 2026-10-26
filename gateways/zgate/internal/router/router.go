@@ -61,10 +61,18 @@ func (s *Server) Config() *config.Config {
 	return s.cfg
 }
 
-func (s *Server) setConfig(cfg *config.Config) {
+func (s *Server) setRuntime(cfg *config.Config, ks keys.Set) {
 	s.cfgMu.Lock()
 	s.cfg = cfg
+	s.keys = ks
 	s.cfgMu.Unlock()
+}
+
+// keyset returns the current credentials; /admin/reload can swap them.
+func (s *Server) keyset() keys.Set {
+	s.cfgMu.RLock()
+	defer s.cfgMu.RUnlock()
+	return s.keys
 }
 
 // Handler is the whole routing table.
@@ -125,7 +133,7 @@ func (s *Server) routeAlias(w http.ResponseWriter, r *http.Request, body []byte,
 		return
 	}
 	channel := t.Channel
-	key := s.keys.For(channel)
+		key := s.keyset().For(channel)
 	if key == "" {
 		writeJSON(w, 502, errorBody(channel+" key not configured", "configuration_error"))
 		return
@@ -151,6 +159,7 @@ func (s *Server) routeAlias(w http.ResponseWriter, r *http.Request, body []byte,
 			Body:          body,
 			UpstreamModel: t.Upstream,
 			DisplayModel:  model,
+			Ctx:           r.Context(),
 		})
 		writeResult(w, result)
 		return
@@ -181,10 +190,11 @@ func (s *Server) routeFallback(w http.ResponseWriter, r *http.Request, body []by
 	cfg := s.Config()
 	base := cfg.Upstreams["OC"].Base
 	label := "opencode"
-	key := s.keys.OC
+	ks := s.keyset()
+	key := ks.OC
 	switch {
 	case isChat && isQoder(model):
-		channel, label, key = "QD", "qoder", s.keys.QD
+		channel, label, key = "QD", "qoder", ks.QD
 		base = cfg.Upstreams["QD"].Base
 		if key == "" {
 			writeJSON(w, 502, errorBody("Qoder key not configured", "configuration_error"))
@@ -197,7 +207,7 @@ func (s *Server) routeFallback(w http.ResponseWriter, r *http.Request, body []by
 		}
 		body = rewritten
 	case isChat && isWorkBuddy(model):
-		channel, label, key = "WB", "workbuddy", s.keys.WB
+		channel, label, key = "WB", "workbuddy", ks.WB
 		base = cfg.Upstreams["WB"].Base
 		if key == "" {
 			writeJSON(w, 502, errorBody("WorkBuddy key not configured", "configuration_error"))
@@ -236,7 +246,10 @@ func (s *Server) forwardHeaders(r *http.Request, body []byte, channel, key strin
 	h := http.Header{}
 	for name, values := range r.Header {
 		if hopByHop[strings.ToLower(name)] || strings.EqualFold(name, "host") ||
-			strings.EqualFold(name, "content-length") {
+			strings.EqualFold(name, "content-length") ||
+			// The transport disables transparent decompression, so forwarding
+			// Accept-Encoding would hide error bodies from chainAccept.
+			strings.EqualFold(name, "accept-encoding") {
 			continue
 		}
 		for _, v := range values {
@@ -310,11 +323,13 @@ func (s *Server) doForwardWith(w http.ResponseWriter, r *http.Request, body []by
 
 	var head []byte
 	if accept != nil {
-		// Peek at the start of the body: a 400 can still mean "pool cooling
-		// down", which should fall through to the next region.
-		buf := make([]byte, 8192)
-		n, _ := resp.Body.Read(buf)
-		head = buf[:n]
+		// Peek at error bodies: a 400 can still mean "pool cooling down",
+		// which should fall through to the next region. Successful responses
+		// stream without buffering, and a bounded ReadAll avoids the
+		// single-Read partial-segment trap on error bodies.
+		if resp.StatusCode >= 400 {
+			head, _ = io.ReadAll(io.LimitReader(resp.Body, 8192))
+		}
 		if !accept(resp.StatusCode, head) {
 			_, _ = io.Copy(io.Discard, resp.Body)
 			retry(fmt.Sprintf("%s %s", http.StatusText(resp.StatusCode), retryHint(head)))
@@ -369,7 +384,7 @@ func (s *Server) health(w http.ResponseWriter) {
 		u := s.Config().Upstreams[channel]
 		return map[string]any{
 			"base":  u.Base,
-			"key":   s.keys.For(channel) != "",
+			"key":   s.keyset().For(channel) != "",
 			"child": u.Child,
 		}
 	}
@@ -412,7 +427,7 @@ func (s *Server) attemptChain(w http.ResponseWriter, r *http.Request, body []byt
 		return
 	}
 	hop := t.Chain[index]
-	key := s.keys.For(hop.Channel)
+	key := s.keyset().For(hop.Channel)
 	if key == "" {
 		s.log.Warnf("通道 %s 缺少 key，跳过 %s", hop.Channel, hop.Upstream)
 		s.attemptChain(w, r, body, model, t, path, search, index+1)
@@ -442,7 +457,7 @@ func (s *Server) attemptBridge(w http.ResponseWriter, r *http.Request, body []by
 		return
 	}
 	hop := t.Chain[index]
-	key := s.keys.For(hop.Channel)
+	key := s.keyset().For(hop.Channel)
 	if key == "" {
 		s.attemptBridge(w, r, body, model, t, protocol, path, search, index+1)
 		return
@@ -459,8 +474,12 @@ func (s *Server) attemptBridge(w http.ResponseWriter, r *http.Request, body []by
 		Body:          body,
 		UpstreamModel: hop.Upstream,
 		DisplayModel:  model,
+		Ctx:           r.Context(),
 	})
-	if result.Status >= 500 || result.Status == 429 || result.Status == 503 {
+	// Retry only on server-side failures; a 4xx (bad request, bad key) would
+	// fail identically on every hop. The last hop's real error is passed
+	// through instead of a generic "all upstreams failed".
+	if (result.Status >= 500 || result.Status == 429) && index+1 < len(t.Chain) {
 		s.log.Infof("[router] %s -> HTTP %d, fallback %s", hop.Upstream, result.Status, nextHopName(t.Chain, index))
 		s.attemptBridge(w, r, body, model, t, protocol, path, search, index+1)
 		return
@@ -495,8 +514,9 @@ func nextHopName(chain []alias.Hop, index int) string {
 }
 
 // reload re-reads zgate.json and applies the parts that can change at runtime:
-// child policies, idle thresholds and windows. Listen address, upstreams and
-// executables still need a restart.
+// config values, upstream bases, credentials, child policies, idle thresholds
+// and windows. The listen address, newly added children and a changed alias-map
+// path still need a restart.
 func (s *Server) reload(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		writeJSON(w, 405, errorBody("use POST", "invalid_request_error"))
@@ -508,8 +528,9 @@ func (s *Server) reload(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 400, errorBody("配置读取失败: "+err.Error(), "configuration_error"))
 		return
 	}
+	ks := keys.Load(next.ProviderConfig, next.WBGatewayConfig, next.QoderEnvFile)
 	applied, stale, added := s.sup.ApplyConfig(next.Children)
-	s.setConfig(next)
+	s.setRuntime(next, ks)
 	s.aliases.Reload()
 	s.log.Infof("配置已热加载: %s（生效 %v）", next.Path, applied)
 	writeJSON(w, 200, map[string]any{
@@ -517,7 +538,7 @@ func (s *Server) reload(w http.ResponseWriter, r *http.Request) {
 		"applied": applied,
 		"stale":   stale,
 		"added":   added,
-		"note":    "新增子进程、监听地址与上游 base 仍需重启 zgate",
+		"note":    "监听地址、新增子进程与 alias map 路径仍需重启 zgate；配置、上游 base 与 key 已热加载",
 	})
 }
 
@@ -542,7 +563,12 @@ func normalizePath(r *http.Request) (string, string) {
 	if path == "" {
 		path = "/"
 	}
-	return path, r.URL.RawQuery
+	// RawQuery does not include the "?", while the JS router's url.search does.
+	// Callers concatenate base+path+search, so keep the separator here.
+	if r.URL.RawQuery != "" {
+		return path, "?" + r.URL.RawQuery
+	}
+	return path, ""
 }
 
 func rewriteModel(body []byte, upstream string) ([]byte, bool) {

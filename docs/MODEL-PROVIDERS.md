@@ -192,7 +192,7 @@ python providers/qoder/qoder_zcode_sync.py                   # 只打印 Qoder �
 | **claude-haiku-5-5** | ✅ 已实测 | 待补 | 0.10 / 0.50 | $15 | 30M | 子代理、小改动；>100K 上下文涨价 5 倍 |
 | qwen3.8-flash | ✅ 已实测 | 待补 | 0.15 / 0.47 | $30 | 64M | 中文任务、翻译 |
 | qwen3.7-plus | ✅ 已实测 | 待补 | 0.40 / 1.60 | $60 | 37.5M | 输出极长，一次性生成大段内容 |
-| minimax-m2.7 | ✅ 已实测 | 待补 | 未列 | 未列 | — | 通用备选 |
+| minimax-m2.7 | ✅ 已实测 | 待补 | 0.30 / 1.20 | 未列 | — | 通用备选；仅 messages 协议 |
 
 ### 2.7 响应 `opencode-go-responses`（`openai-responses`）
 

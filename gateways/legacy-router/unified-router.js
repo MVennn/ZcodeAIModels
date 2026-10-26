@@ -130,7 +130,7 @@ function loadKeys() {
   return { opencode, workbuddy, qoder };
 }
 
-const KEYS = loadKeys();
+let KEYS = loadKeys();
 if (!KEYS.opencode) {
   console.warn('[router] 缺少 OpenCode-Go key：设置 OPENCODE_GO_KEY 或检查 provider_config.json');
 }
@@ -140,6 +140,39 @@ if (!KEYS.workbuddy) {
 if (!KEYS.qoder) {
   console.warn('[router] 缺少 Qoder key：设置 QD_API_KEY 或检查 providers/qoder/.env.local');
 }
+
+// 同步脚本可能在运行期间改写 key 文件；alias map 是按 mtime 热加载的，
+// key 不跟着刷新会让整渠道 401 到进程重启。最多每分钟 stat 一次。
+const KEY_SOURCES = [
+  configPath(),
+  path.join(__dirname, '..', 'upstream', 'workbuddy', 'config.json'),
+  path.join(__dirname, '..', '..', 'providers', 'qoder', '.env.local'),
+];
+let keysStamp = '';
+let keysCheckedAt = 0;
+
+function keyStamp() {
+  return KEY_SOURCES.map((p) => {
+    try {
+      const st = fs.statSync(p);
+      return `${p}:${st.mtimeMs}:${st.size}`;
+    } catch {
+      return `${p}:missing`;
+    }
+  }).join('|');
+}
+
+function refreshKeys() {
+  const now = Date.now();
+  if (now - keysCheckedAt < 60000) return;
+  keysCheckedAt = now;
+  const stamp = keyStamp();
+  if (stamp === keysStamp) return;
+  keysStamp = stamp;
+  KEYS = loadKeys();
+  console.log('[router] 上游 key 文件已变化，重新加载');
+}
+keysStamp = keyStamp();
 
 function normalizePath(rawUrl) {
   const url = new URL(rawUrl || '/', 'http://localhost');
@@ -240,20 +273,26 @@ function forward(req, res, body, baseUrl, pathname, search, headers) {
   upstream.end();
 }
 
-// Try a primary upstream, then its fallbacks (WorkBuddy GB -> CN). Only
-// retry on pool/rate/gateway failures; a 400/404 is a model error, not a
-// reason to switch regions.
-function forwardChain(req, res, body, baseUrl, pathname, search, headers, chain) {
+// Try a primary upstream, then its fallbacks. Only retry on pool/rate/gateway
+// failures; a 400/404 is a model error, not a reason to switch regions.
+//
+// Every hop carries its own base and channel: the alias map merges channels
+// (WB -> OC is the cheapest-first order), so a single baseUrl would send the
+// OC model name to the WorkBuddy gateway (or vice versa) and the fallback
+// could never succeed.
+function forwardChain(req, res, body, pathname, search, headers, hops) {
+  const names = hops.map((hop) => hop.channel + ':' + hop.upstream);
   const attempt = (index) => {
-    if (index >= chain.length) {
+    if (index >= hops.length) {
       return sendJson(res, 502, {
-        error: { message: 'all upstreams failed: ' + chain.join(' -> '), type: 'proxy_error' },
+        error: { message: 'all upstreams failed: ' + names.join(' -> '), type: 'proxy_error' },
       });
     }
+    const hop = hops[index];
     let payload;
     try {
       payload = JSON.parse(body.toString('utf8'));
-      payload.model = chain[index];
+      payload.model = hop.upstream;
     } catch (err) {
       return sendJson(res, 400, {
         error: { message: 'invalid JSON body', type: 'invalid_request_error' },
@@ -261,7 +300,13 @@ function forwardChain(req, res, body, baseUrl, pathname, search, headers, chain)
     }
     const outBody = Buffer.from(JSON.stringify(payload), 'utf8');
     const attemptHeaders = { ...headers, 'content-length': String(outBody.length) };
-    const target = new URL(baseUrl + pathname + search);
+    const hopKey = keyForChannel(hop.channel);
+    if (hopKey) attemptHeaders['authorization'] = 'Bearer ' + hopKey;
+    if (hop.channel === 'OC') {
+      attemptHeaders['user-agent'] = 'opencode-cli/1.0';
+      attemptHeaders['x-opencode-session'] = attemptHeaders['x-opencode-session'] || SESSION;
+    }
+    const target = new URL(hop.base + pathname + search);
     const isHttps = target.protocol === 'https:';
     const transport = isHttps ? https : http;
     const upstream = transport.request(
@@ -275,8 +320,8 @@ function forwardChain(req, res, body, baseUrl, pathname, search, headers, chain)
       },
       (upstreamRes) => {
         const status = upstreamRes.statusCode || 502;
-        if ([429, 502, 503, 504].includes(status) && index + 1 < chain.length) {
-          console.log(`[router] ${chain[index]} -> ${status}, fallback ${chain[index + 1]}`);
+        if ([429, 502, 503, 504].includes(status) && index + 1 < hops.length) {
+          console.log(`[router] ${names[index]} -> ${status}, fallback ${names[index + 1]}`);
           upstreamRes.resume();
           attempt(index + 1);
           return;
@@ -286,8 +331,8 @@ function forwardChain(req, res, body, baseUrl, pathname, search, headers, chain)
       }
     );
     upstream.on('error', (err) => {
-      if (index + 1 < chain.length) {
-        console.log(`[router] ${chain[index]} -> ${err.message}, fallback ${chain[index + 1]}`);
+      if (index + 1 < hops.length) {
+        console.log(`[router] ${names[index]} -> ${err.message}, fallback ${names[index + 1]}`);
         attempt(index + 1);
       } else if (!res.headersSent) {
         sendJson(res, 502, {
@@ -306,6 +351,7 @@ function forwardChain(req, res, body, baseUrl, pathname, search, headers, chain)
 
 const server = http.createServer(async (req, res) => {
   try {
+    refreshKeys();
     const { pathname, search } = normalizePath(req.url);
     if (pathname === '/health') {
       const alias = loadAliasMap();
@@ -389,16 +435,24 @@ const server = http.createServer(async (req, res) => {
         });
       }
 
-      const chain = [mapped.upstream, ...(mapped.fallbacks || [])].filter(Boolean);
+      // Prefer the hop list from the alias map: each hop has its own base and
+      // channel. Fall back to the flat `fallbacks` names only for old maps.
+      const hops = Array.isArray(mapped.chain) && mapped.chain.length
+        ? mapped.chain.filter((hop) => hop && hop.upstream && hop.base)
+        : [mapped.upstream, ...(mapped.fallbacks || [])]
+            .filter(Boolean)
+            .map((upstream) => ({ upstream, base: mapped.base, channel: mapped.channel }));
       headers['authorization'] = 'Bearer ' + key;
       if (mapped.channel === 'OC') {
         headers['user-agent'] = 'opencode-cli/1.0';
         headers['x-opencode-session'] = headers['x-opencode-session'] || SESSION;
       }
       console.log(`${req.method} ${pathname}${search} model=${model} -> ${mapped.channel}` +
-        (chain.length > 1 ? ` (${chain.join(' -> ')})` : ''));
-      if (chain.length > 1) {
-        return forwardChain(req, res, body, mapped.base, pathname, search, headers, chain);
+        (hops.length > 1
+          ? ` (${hops.map((hop) => hop.channel + ':' + hop.upstream).join(' -> ')})`
+          : ''));
+      if (hops.length > 1) {
+        return forwardChain(req, res, body, pathname, search, headers, hops);
       }
 
       try {

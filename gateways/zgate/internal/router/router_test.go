@@ -218,6 +218,37 @@ func TestNormalizePath(t *testing.T) {
 			t.Fatalf("normalizePath(%q)=%q want %q", in, got, want)
 		}
 	}
+
+	// The query part must keep its "?" so base+path+search stays a valid URL.
+	r := httptest.NewRequest("POST", "/v1/chat/completions?stream=1", nil)
+	gotPath, gotSearch := normalizePath(r)
+	if gotPath != "/chat/completions" || gotSearch != "?stream=1" {
+		t.Fatalf("normalizePath with query = (%q,%q), want (/chat/completions,?stream=1)", gotPath, gotSearch)
+	}
+}
+
+func TestQueryStringIsForwarded(t *testing.T) {
+	var gotPath, gotQuery string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath, gotQuery = r.URL.Path, r.URL.RawQuery
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"x","object":"chat.completion","choices":[]}`))
+	}))
+	defer upstream.Close()
+
+	srv, _ := newServer(t, `{"models":{},"legacy":{}}`, upstream.URL)
+	front := httptest.NewServer(srv.Handler())
+	defer front.Close()
+
+	resp, err := http.Post(front.URL+"/v1/chat/completions?stream=1", "application/json",
+		strings.NewReader(`{"model":"deepseek-v4.1-flash","stream":true}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if gotPath != "/chat/completions" || gotQuery != "stream=1" {
+		t.Fatalf("upstream got path=%q query=%q, want /chat/completions?stream=1", gotPath, gotQuery)
+	}
 }
 
 func TestAdminReloadAppliesPolicy(t *testing.T) {

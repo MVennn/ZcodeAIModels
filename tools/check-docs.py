@@ -107,7 +107,11 @@ def main() -> int:
                     for f2 in fn2:
                         if f2.endswith(".md"):
                             linked.add(os.path.abspath(os.path.join(dp2, f2)))
-            if frag and target.endswith(".md") and frag not in anchor_map.get(target, set()):
+            # 目标文件存在但没被收集（被 SKIP/FROZEN 排除，或只检查了子目录）时
+            # anchor_map 里没有它，不能据此判"锚点不存在"。
+            if (frag and target.endswith(".md")
+                    and target in anchor_map
+                    and frag not in anchor_map[target]):
                 problems.append(f"{rel}: 目标锚点不存在 → {link}")
         # 根 README 是面向用户的门面（对齐系列仓 gsauxiliary 的格式），不套文档引言块规则
         if (not HAS_ONE_LINER.search(s)

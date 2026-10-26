@@ -72,12 +72,6 @@ PROVIDER_NAMES = {
     PROVIDER_LOW: "低耗",
     PROVIDER_HIGH: "高耗",
 }
-REMOVE_PROVIDERS = {
-    "opencode-go-chat-backup",
-    "opencode-go-messages",
-    "opencode-go-responses",
-    "qoder",
-}
 ROUTER_BASE = "http://127.0.0.1:7871/v1"
 WB_BASE = "http://127.0.0.1:7863/v1"
 QD_BASE = "http://127.0.0.1:8790/v1"
@@ -126,7 +120,7 @@ OC_PRICES = {
     "claude-haiku-5-5": {"flat": 0.09},
     "qwen3.8-flash": {"flat": 0.09},
     "qwen3.7-plus": {"flat": 0.29},
-    "minimax-m2.7": None,
+    "minimax-m2.7": {"flat": 0.22},
     "gpt-6-luna": {"flat": 0.09},
     "gpt-5.6-luna": {"flat": 0.21},
     "muse-spark-1.3-contributor": {"flat": 0.04},
@@ -257,10 +251,25 @@ def model_rules(cfg: dict) -> list[dict]:
     return cfg["config"].setdefault("modelConfigRules", {}).setdefault("providerModelRules", [])
 
 
+_PRICE_WARNED: set[str] = set()
+# 缺价统计：整渠道无价时 --apply 会把该渠道的模型整批从配置里剔除。
+_UNPRICED: dict[str, int] = {}
+_CHANNEL_ITEMS: dict[str, int] = {}
+
+
+def _warn_price_once(channel: str, detail: str) -> None:
+    """价格源不可用必须留痕：静默返回空表会把整个渠道的模型从配置里剔除。"""
+    if channel in _PRICE_WARNED:
+        return
+    _PRICE_WARNED.add(channel)
+    print(f"WARN: {channel} 价格源不可用（{detail}），该渠道模型将无法定价", file=sys.stderr)
+
+
 def wb_prices() -> dict[str, dict]:
     try:
         rows = json.loads(WB_PRICING.read_text(encoding="utf-8"))
-    except Exception:
+    except Exception as exc:
+        _warn_price_once("WB", f"{WB_PRICING}: {exc}")
         return {}
     out = {}
     for row in rows:
@@ -306,8 +315,8 @@ def qd_prices() -> dict[str, dict]:
                 }
             if out:
                 return out
-        except Exception:
-            pass
+        except Exception as exc:
+            _warn_price_once("QD", f"127.0.0.1:8790: {exc}")
     return {
         name: {"price": price, "peak": price, "valley": price, "off_peak": {}}
         for name, price in QD_PRICES.items()
@@ -401,6 +410,22 @@ def vendor_rank(abbr: str) -> int:
     return VENDOR_ORDER.index(vendor_of(abbr))
 
 
+_PROTOCOL_HINTS: dict | None = None
+
+
+def protocol_hints() -> dict:
+    """go 同步写下的新模型协议提示（chat/messages/responses），供 classify 兜底。"""
+    global _PROTOCOL_HINTS
+    if _PROTOCOL_HINTS is None:
+        path = (Path(__file__).resolve().parent.parent
+                / "providers" / "opencode-go" / "cache" / "go_protocols.json")
+        try:
+            _PROTOCOL_HINTS = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            _PROTOCOL_HINTS = {}
+    return _PROTOCOL_HINTS
+
+
 def classify(model: str, protocol: str, alias_models: dict, legacy: dict) -> dict | None:
     """Map any config model id (old or already-renamed) to its inventory fields."""
     if model in alias_models:
@@ -465,6 +490,11 @@ def classify(model: str, protocol: str, alias_models: dict, legacy: dict) -> dic
     if model.startswith(("WB:", "OC:", "QD:")):
         # A renamed id that is not in the alias map: refuse to guess.
         return None
+    # 4 组制：messages / responses 模型也进成本档，协议由 go 同步写的提示缓存兜底，
+    # 写进 alias map 后 zgate 才能按 protocol 桥接。
+    hint = protocol_hints().get(model)
+    if hint:
+        protocol = hint
     return {
         "raw": model,
         "original": model,
@@ -586,10 +616,12 @@ def family_entries(items: list[dict], wb: dict, qd: dict, slot: str) -> list[dic
     """
     families: dict[tuple[str, str], dict[str, dict]] = {}
     for item in items:
+        _CHANNEL_ITEMS[item["channel"]] = _CHANNEL_ITEMS.get(item["channel"], 0) + 1
         price = item.get("price")
         if price is None:
             price = price_of(item["channel"], item["upstream"], wb, qd, slot)
         if price is None:
+            _UNPRICED[item["channel"]] = _UNPRICED.get(item["channel"], 0) + 1
             continue
         hop = dict(item)
         hop["price"] = round(float(price), 2)
@@ -684,6 +716,8 @@ def main() -> int:
                         help=f"榜单候选文件（默认 {DEFAULT_ARENA}）")
     parser.add_argument("--no-arena", action="store_true",
                         help="忽略榜单候选，主力只用人工 MAIN_IDS")
+    parser.add_argument("--force-unpriced", action="store_true",
+                        help="允许在某个渠道全部无价时仍然 --apply（默认拒绝，避免整批剔除）")
     args = parser.parse_args()
 
     path = config_path(args.config)
@@ -807,6 +841,18 @@ def main() -> int:
         for line in transient_kept:
             print(f"  {line}")
 
+    if _UNPRICED:
+        detail = "、".join(f"{ch} {n} 个" for ch, n in sorted(_UNPRICED.items()))
+        print(f"\nWARN: 因缺价未收录：{detail}（价格源不可用时先修复再 --apply）", file=sys.stderr)
+    dead = [ch for ch, n in _CHANNEL_ITEMS.items() if n and _UNPRICED.get(ch, 0) == n]
+    if dead and args.apply and not args.force_unpriced:
+        print(
+            f"ERROR: 渠道 {'、'.join(dead)} 的全部模型都没有价格，拒绝写入 —— "
+            "这会把该渠道的模型整批从配置里剔除。修好价格源后重跑，或加 --force-unpriced。",
+            file=sys.stderr,
+        )
+        return 1
+
     if not args.apply:
         print("\ndry run；加 --apply 写入 provider_config.json 与 alias map")
         return 0
@@ -898,7 +944,13 @@ def main() -> int:
             resolved_legacy[key] = target
     legacy = resolved_legacy
 
-    cfg["config"]["providerConfigRules"]["providerRules"] = new_providers
+    # 读取路径兼容 list/dict 两种形态（见 provider_rules），写入也必须归一化，
+    # 否则 list 形态会在这里抛 TypeError，整轮 --apply 白跑。
+    pcr = cfg["config"]["providerConfigRules"]
+    if isinstance(pcr, list):
+        pcr[:] = new_providers
+    else:
+        pcr["providerRules"] = new_providers
     cfg["config"]["providerOrder"] = PROVIDER_IDS
     cfg["config"]["modelConfigRules"]["providerModelRules"] = new_model_rules
     cfg["config"]["modelConfigRules"]["manualProviderModelRules"] = []

@@ -146,7 +146,10 @@ func serve() error {
 		return fmt.Errorf("监听 %s 失败: %w", cfg.Listen, err)
 	}
 
-	sup.Start()
+	// Boot children in the background: Start() runs the boot list serially and
+	// each child can take StartTimeoutSeconds, while the HTTP server should be
+	// accepting requests during that window.
+	go sup.Start()
 	srv := &http.Server{
 		Handler:  router.New(cfg, ks, am, sup, client, log).Handler(),
 		ErrorLog: nil,
@@ -346,12 +349,14 @@ func install() error {
 	}
 	// schtasks ONLOGON needs elevation; a Startup shortcut does not, and it is
 	// the mechanism the old PowerShell watchdog already used.
+	// PowerShell single-quoted strings escape a quote by doubling it.
+	psq := func(p string) string { return strings.ReplaceAll(p, "'", "''") }
 	script := fmt.Sprintf(
 		"$ws = New-Object -ComObject WScript.Shell; "+
 			"$s = $ws.CreateShortcut('%s'); "+
 			"$s.TargetPath = '%s'; $s.Arguments = 'serve'; $s.WorkingDirectory = '%s'; "+
 			"$s.WindowStyle = 7; $s.Description = 'ZCode 统一入口 (zgate)'; $s.Save()",
-		link, exe, workDir)
+		psq(link), psq(exe), psq(workDir))
 	out, err := exec.Command("powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("创建启动快捷方式失败: %v\n%s", err, out)

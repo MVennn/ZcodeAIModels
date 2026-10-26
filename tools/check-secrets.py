@@ -123,10 +123,13 @@ def main() -> int:
                         if PLACEHOLDER.search(m.group(0)):
                             continue
                         if name == "本机用户目录":
-                            # 截断形式的描述性引用，或占位用户名（C:/Users/You/）
-                            if TRUNCATED_PATH.search(line):
+                            # 只豁免命中片段本身：截断形式（C:/Users/x\...）或
+                            # 占位用户名（C:/Users/You）。同一行里并排写下的
+                            # 完整真实路径仍会被报出来。
+                            frag = line[m.start():m.start() + 120]
+                            if allow_truncated and TRUNCATED_PATH.match(frag):
                                 continue
-                            if PLACEHOLDER_USER.search(line):
+                            if PLACEHOLDER_USER.match(frag):
                                 continue
                         bad.append((rel, lineno, name, line.strip()[:120]))
         except OSError:

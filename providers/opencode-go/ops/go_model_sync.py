@@ -61,9 +61,14 @@ DEFAULT_CONFIG = os.path.join(
 # model_alias.py 写的显示名映射（`W/0.03/…` -> `global:…`）
 ALIAS_MAP = os.path.join(os.path.dirname(DEFAULT_CONFIG), "model-alias-map.json")
 # 报告默认写进本仓的 evidence/（可用环境变量覆盖）
+# 脚本在 providers/opencode-go/ops/ 下，向上四层才是仓库根；三层会落到
+# providers/evidence/，与已入库的 evidence/ 分家。
 REPORT_DIR = os.environ.get(
     "GO_SYNC_REPORT_DIR",
-    os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "evidence"),
+    os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))),
+        "evidence",
+    ),
 )
 UA = "opencode-cli/1.0"
 
@@ -74,17 +79,25 @@ LOW_COST_MIN_M = 80.0
 
 # 备用档：以 deepseek-v4.1-flash 为 100 基准、性价比 < 1 的模型。
 # 依据见 docs/BENCHMARKS.md §5.4；新增模型不要自动进这里，必须人工确认。
-BACKUP_PROVIDER = "opencode-go-chat-backup"
+# 四组制：备用档并入高耗，不再单独建 opencode-go-chat-backup。
+BACKUP_PROVIDER = "opencode-go-chat-slow"
 BACKUP_MODEL_IDS = {"minimax-m3"}
 
+# 四组制：messages / responses 协议的模型也按成本进这 4 组，不再单独建
+# opencode-go-messages / opencode-go-responses；协议差异由 zgate 按 alias map
+# 里的 protocol 做桥接。
 CHAT_PROVIDER = {
     "免费": "opencode-go-chat-free",
     "低耗": "opencode-go-chat-fast",
     "高耗": "opencode-go-chat-slow",
     "备用": BACKUP_PROVIDER,
 }
-MESSAGES_PROVIDER = "opencode-go-messages"
-RESPONSES_PROVIDER = "opencode-go-responses"
+
+# 协议提示缓存：本脚本把新模型的真实协议写在这里，model_alias.py 读取后写进
+# alias map（4 组制靠 alias 的 protocol 让 zgate 桥接 messages/responses）。
+PROTOCOL_CACHE = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "cache", "go_protocols.json"
+)
 
 # 协议 <-> 端点路径关键字
 PROTOCOLS = ("chat/completions", "messages", "responses")
@@ -445,8 +458,22 @@ def probe_targets(conf, alias):
         if channel in ("WB", "QD") or is_non_go_id(display):
             skipped += 1
             continue
-        targets[str(entry.get("upstream") or display)] = (display, pid)
+        targets[str(entry.get("upstream") or display)] = (
+            display, pid, entry.get("protocol"),
+        )
     return targets, skipped
+
+
+def _probe_protocol(alias_proto, pid):
+    """体检用真实协议探测：优先 alias map 的 protocol，缺失时按 providerId 兜底。"""
+    mapping = {"chat": "chat/completions", "messages": "messages", "responses": "responses"}
+    if alias_proto in mapping:
+        return mapping[alias_proto]
+    if "responses" in pid:
+        return "responses"
+    if "messages" in pid:
+        return "messages"
+    return "chat/completions"
 
 
 def api_key(cfg):
@@ -581,7 +608,7 @@ def prune_model(cfg, model):
 
 
 def reclassify_backup(cfg):
-    """Ensure the 备用 provider exists and holds BACKUP_MODEL_IDS.
+    """把人工指定的 BACKUP_MODEL_IDS 并入高耗组（4 组制不再单独建备用 provider）。
     Returns the list of models actually moved."""
     present = {
         m for m in BACKUP_MODEL_IDS
@@ -590,7 +617,6 @@ def reclassify_backup(cfg):
     }
     if not present:
         return []
-    ensure_provider(cfg, BACKUP_PROVIDER, "备用", "opencode-go-chat-slow")
     moved = []
     for model in sorted(present):
         before = next(
@@ -601,12 +627,6 @@ def reclassify_backup(cfg):
         move_model(cfg, model, BACKUP_PROVIDER)
         if before != BACKUP_PROVIDER:
             moved.append(model)
-    order = cfg["config"].setdefault("providerOrder", [])
-    if BACKUP_PROVIDER in order:
-        order.remove(BACKUP_PROVIDER)
-    idx = (order.index("opencode-go-chat-slow") + 1
-           if "opencode-go-chat-slow" in order else len(order))
-    order.insert(idx, BACKUP_PROVIDER)
     return moved
 
 
@@ -682,9 +702,8 @@ def main():
     if not args.no_existing:
         log("\n## 已配置模型体检")
         verb = "移除" if (args.apply and not args.probe_only) else "将移除"
-        for m, (display, pid) in sorted(probes.items()):
-            proto = ("responses" if "responses" in pid else
-                     "messages" if "messages" in pid else "chat/completions")
+        for m, (display, pid, alias_proto) in sorted(probes.items()):
+            proto = _probe_protocol(alias_proto, pid)
             st, kind, raw = probe_detail(m, proto, thinking=False)
             why = stale_reason(m, st, kind, raw, deprecated, live, hint)
             if why:
@@ -709,7 +728,6 @@ def main():
     for m in new_models:
         price = price_lookup(m, go_price, public_price)
         proto_hint = hint.get(m)
-        row = {"model": m, "price": price, "hint": proto_hint}
         if m in deprecated:
             skipped.append((m, "已过官方弃用日 %s" % deprecated[m]))
             continue
@@ -719,6 +737,7 @@ def main():
             else:
                 skipped.append((m, "价格未知（不在任何价格表），只列候选"))
                 continue
+        row = {"model": m, "price": price, "hint": proto_hint}
         if not price.get("free") and price.get("out_max") is not None and price["out_max"] > MAX_OUTPUT_PRICE:
             skipped.append((m, "输出单价 $%.2f 超过门槛 $%.2f" % (price["out_max"], MAX_OUTPUT_PRICE)))
             continue
@@ -731,12 +750,7 @@ def main():
             tier, durable = "免费", None
         else:
             tier, durable = tier_for(price, m)
-        if proto == "chat/completions":
-            provider_id = CHAT_PROVIDER[tier]
-        elif proto == "messages":
-            provider_id, tier = MESSAGES_PROVIDER, "对话"
-        else:
-            provider_id, tier = RESPONSES_PROVIDER, "响应"
+        provider_id = CHAT_PROVIDER[tier]
         row.update({"tier": tier, "provider": provider_id, "durable": durable})
         added.append(row)
 
@@ -771,14 +785,22 @@ def main():
             by_provider.setdefault(r["provider"], []).append(r)
         for pid, rows in by_provider.items():
             rows.sort(key=lambda r: tail_number(r["model"]), reverse=True)
-            # responses 组现在是"响应"（协议语义），原来的"备用"标签已不准确
-            if pid == RESPONSES_PROVIDER:
-                for pr in provider_rules(cfg):
-                    if pr["providerId"] == pid and pr.get("providerName") != "响应":
-                        log("  · provider 标签 %s -> 响应（providerId 不变）" % pr.get("providerName"))
-                        pr["providerName"] = "响应"
             for r in rows:
                 add_model(cfg, r["model"], pid, r["needs_no_thinking"], r.get("durable"))
+        # 记录新模型的真实协议，供 model_alias.py 写进 alias map（4 组制靠它桥接）。
+        try:
+            hints = {}
+            if os.path.exists(PROTOCOL_CACHE):
+                with open(PROTOCOL_CACHE, encoding="utf-8") as f:
+                    hints = json.load(f) or {}
+            for r in added:
+                hints[r["model"]] = ("chat" if r["protocol"] == "chat/completions"
+                                     else r["protocol"])
+            os.makedirs(os.path.dirname(PROTOCOL_CACHE), exist_ok=True)
+            with open(PROTOCOL_CACHE, "w", encoding="utf-8") as f:
+                json.dump(hints, f, ensure_ascii=False, indent=2)
+        except OSError as e:
+            log("  · 协议提示缓存写入失败: %s" % e)
         moved = reclassify_backup(cfg)
         if moved:
             log("  · 备用档移动: " + ", ".join(moved))

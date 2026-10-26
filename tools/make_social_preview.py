@@ -270,11 +270,14 @@ def path_to_subpaths(d, steps=20):
             if cur:
                 subs.append(cur)
             x, y = a[0], a[1]
-            if rel and subs:
-                px, py = subs[-1][-1]
-                x, y = px + x, py + y
+            if rel:
+                # A relative moveto is relative to the *current* point (the end
+                # of the previous subpath), not to an earlier subpath's end.
+                bx, by = cur[-1] if cur else (0.0, 0.0)
+                x, y = bx + x, by + y
             cur = [(x, y)]
             start = (x, y)
+            ctrl = None
             rest = a[2:]
             for i in range(0, len(rest) - 1, 2):
                 x2, y2 = rest[i], rest[i + 1]
@@ -282,17 +285,20 @@ def path_to_subpaths(d, steps=20):
                     x2, y2 = cur[-1][0] + x2, cur[-1][1] + y2
                 cur.append((x2, y2))
         elif up == "L":
+            ctrl = None
             for i in range(0, len(a) - 1, 2):
                 x, y = a[i], a[i + 1]
                 if rel:
                     x, y = cur[-1][0] + x, cur[-1][1] + y
                 cur.append((x, y))
         elif up == "H":
+            ctrl = None
             for x in a:
                 if rel:
                     x += cur[-1][0]
                 cur.append((x, cur[-1][1]))
         elif up == "V":
+            ctrl = None
             for y in a:
                 if rel:
                     y += cur[-1][1]

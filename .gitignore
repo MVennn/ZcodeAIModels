@@ -45,6 +45,8 @@ credentials.json
 
 # ---- OpenCode-Go 探测原始结果（体积大、可重跑再生，本地留存）----
 /providers/opencode-go/probe/results/
+# go_model_sync 写下的新模型协议提示（本地缓存，model_alias 读取）
+/providers/opencode-go/cache/
 
 # ---- Python 字节码 ----
 __pycache__/

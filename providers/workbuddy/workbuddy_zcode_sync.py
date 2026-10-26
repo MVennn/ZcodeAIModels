@@ -116,7 +116,8 @@ UNIFIED_TARGETS = {
     "free": "opencode-go-chat-free",
     "low": "opencode-go-chat-fast",
     "high": "opencode-go-chat-slow",
-    "backup": "opencode-go-chat-backup",
+    # 四组制：备用档并入高耗，不再单独建 opencode-go-chat-backup。
+    "backup": "opencode-go-chat-slow",
 }
 ROUTER_BASE = os.environ.get("UNIFIED_ROUTER_BASE", "http://127.0.0.1:7871/v1")
 UNIFIED_ORDER = (
@@ -124,9 +125,6 @@ UNIFIED_ORDER = (
     "opencode-go-chat-free",
     "opencode-go-chat-fast",
     "opencode-go-chat-slow",
-    "opencode-go-chat-backup",
-    "opencode-go-messages",
-    "opencode-go-responses",
 )
 
 GROUP = "standard-personal"
@@ -454,7 +452,7 @@ def apply_unified(
     all_wb = {str(rec["id"]) for recs in tiers.values() for rec in recs}
     stale: set[str] = set()
     uncertain: set[str] = set()
-    for target_pid in UNIFIED_TARGETS.values():
+    for target_pid in dict.fromkeys(UNIFIED_TARGETS.values()):
         target = by_id.get(target_pid)
         if target is None:
             continue
@@ -667,9 +665,14 @@ def main() -> int:
             if pstat in ("blocked", "unavailable"):
                 excluded.append((mid, pstat))
                 continue
-            if pstat in ("error", "rate_limited"):
-                excluded.append((mid, pstat or "unprobed"))
-                continue
+            # rate_limited / queued / timeout / error are transient: dropping
+            # the model here removes it from the config until a later probe
+            # happens to succeed, while a never-probed model is kept — two
+            # contradictory policies. Keep it this round and say so.
+            if pstat in ("rate_limited", "queued", "timeout", "error"):
+                print(f"  note: {mid} 本次探测 {pstat}（瞬态，保留）", file=sys.stderr)
+            elif pstat is None:
+                print(f"  note: {mid} 无探测记录（保留，等待下一轮探测）", file=sys.stderr)
         tier = tier_of(rate, mid)
         if tier is None:
             excluded.append((mid, "unclassified"))

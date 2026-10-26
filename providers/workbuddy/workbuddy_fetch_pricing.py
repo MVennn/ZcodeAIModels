@@ -130,6 +130,20 @@ def _as_bool(raw) -> bool:
     return False
 
 
+# 免费模型按 `-f` 后缀命名；纯路由别名没有自己的价格（解析到下层模型）。
+FREE_SUFFIX = "-f"
+ALIAS_IDS = {
+    "cn:auto",
+    "global:auto-chat",
+    "global:default-model",
+    "global:primary-model",
+    "global:deep-model",
+    "global:fast-model",
+    "global:balanced-model",
+    "global:enhance-1.0",
+}
+
+
 def normalize(model: dict) -> dict | None:
     """把上游的一个模型条目归一化成价格表的一行。"""
     mid = _first(model, "id", "name", "model", "model_id")
@@ -144,6 +158,18 @@ def normalize(model: dict) -> dict | None:
     if eff_rate is None:
         eff_rate = list_rate
 
+    # 网关没公布价格时保留 None（下游 rate_of 会返回 None 并跳过该模型），
+    # 不能归零 —— 归零会让付费模型被分到"免费"档。只有显式免费的
+    # `-f` 模型和纯路由别名才补 0.0。
+    if list_rate is None and not (mid.endswith(FREE_SUFFIX) or mid in ALIAS_IDS):
+        list_rate = None
+        eff_rate = None
+    else:
+        if list_rate is None:
+            list_rate = 0.0
+        if eff_rate is None:
+            eff_rate = list_rate
+
     efforts = _first(model, "efforts", "supported_efforts", default=[])
     if isinstance(efforts, str):
         efforts = [e.strip() for e in efforts.split(",") if e.strip()]
@@ -157,8 +183,8 @@ def normalize(model: dict) -> dict | None:
         "id": mid,
         "credits": str(credits),
         "promo": str(promo),
-        "list_rate": list_rate if list_rate is not None else 0.0,
-        "eff_rate": eff_rate if eff_rate is not None else 0.0,
+        "list_rate": list_rate,
+        "eff_rate": eff_rate,
         "promo_label": str(_first(model, "promo_label", default="") or ""),
         "ctx": ctx,
         "out": out,

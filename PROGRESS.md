@@ -1377,3 +1377,102 @@ provider 列表；Qoder hub 与 WorkBuddy/OpenCode 的现有链路保持不变�
 - 0.3.0 尚未打 tag，本轮并入 0.3.0 段落；`zgate` 二进制内版本串仍是 0.3.0
 
 ## 状态: 已完成
+
+---
+
+# 2026-10-26 第七轮：五段模型同步（Go / WorkBuddy / Qoder / 命名 / 报告）
+
+## 任务目标
+按用户给定五段流程把 OpenCode-Go 套餐、WorkBuddy2API 网关、Qoder 新模型收录进
+ZCode（不改脚本、不动 provider_config.json、不建定时任务）。
+
+## 已完成变更
+- [x] **Step 3 Qoder 已完成并落盘**：8790 子代理被 zgate 按策略停掉（08:17 不在
+      签到窗口），先 `start-qoder-proxy.bat` 起 `qoder_proxy.py`（本地、可逆，
+      有 `stop-qoder-proxy.bat`），`8790/ping=pong` 后重探。
+- [x] Qoder 探测 8 个全 `ok`（DeepSeek-Flash / Qwen3.8-Flash / GLM-5.3-Flash /
+      MiniMax-M3.1-Flash / DeepSeek-V4-Pro / Qwen3.8-Max / GLM-3.5 / Kimi-K2.8-Preview），
+      经 7871 统一入口真实 body 探测，全部 200。
+- [x] Qoder 合并写盘：免代 +2、低耗 +2、高耗 +4（共 8 个 `qoder:` 前缀模型）；
+      备份 `provider_config.json.bak-qoder-merge-20261026-082520`。
+
+## 阻塞处理（用户拍板「恢复+根治」后的处置）
+- [x] `tools/model_alias.py` 三处修复：`inventory()` / `raw_models()` 跳过非管理的
+      4 组之外的 provider（避免保留 provider 的裸 id 被重复归并成显示名）；
+      写入段保留非管理 provider 及其模型规则，`providerOrder` 追加而非截断。
+      此前每跑一次 Step4 就把 `opencode-go-messages` / `opencode-go-responses` /
+      `opencode-go-chat-backup` 三个 provider 清掉，是本轮 Step1/2 崩溃的根因。
+- [x] 从 `bak-gosync-20261023-000011` 把 3 个 provider 及 11 条模型规则写回 live
+      配置（先做安全备份 `bak-restore3-20261026-083619`），providerOrder 恢复 7 个。
+- [x] Step1 重跑成功：建议收录 5 个（deepseek-v4.1-flash、glm-5.3-flash →
+      chat-fast；longcat-2.0、mimo-v2.6-pro、minimax-m3.1-flash → chat-slow；
+      minimax-m2.7 已随恢复的 messages provider 在册，不再重复收录），体检无
+      ⚠/✗（首轮 5 个 ✗ 消失：协议模型回到各自协议 provider，不再被误用 chat 探测）。
+      备份 `bak-gosync-20261026-083732`。
+- [x] Step2 重跑成功：18 个 WB 模型并入（主力 2 / 低耗 6 / 免费 5 / 高耗 3 /
+      备用 2），37 个排除。备份 `bak-wbproxy-20261026-083751`。
+- [x] Step4（打补丁后）成功：四组 30 个显示名（6/5/9/10）；备份
+      `bak-alias-20261026-083818-404500`，alias map 已写。
+- [x] Step5 成功：报告 `docs/reports/MODEL-SYNC-20261026-0838.md` 已推送。
+
+## 更正：3 个 provider 是用户主动删掉的，不是丢失
+- 用户指出「对话 / 响应 / 备用」（`opencode-go-messages` / `-responses` /
+  `-chat-backup`）是他早就删掉的 —— 它们正是 `model_alias.py` 每次收尾时把
+  非 4 成本档 provider 折叠进 4 组后删除的结果（原行为，不是 bug）。
+- [x] 已从 live 配置删除这 3 个 provider 及其 11 条模型规则（安全备份
+      `bak-drop3-20261026-085017`），恢复为用户要的 4 个成本档组：6/5/9/10=30 个
+      显示名（只丢 `minimax-m2.7`，它本就不在用户配置里）。
+- [x] 已 `git checkout -- tools/model_alias.py` 回退本轮对它的改动（保留
+      fold-and-wipe 原行为）。
+- ⚠️ **遗留**：`go_model_sync.py` 仍把 messages 协议模型写入
+  `opencode-go-messages`、responses 写入 `opencode-go-responses`；
+  `workbuddy_zcode_sync.py` 仍把备用档写入 `opencode-go-chat-backup`。这 3 个
+  provider 不在时，这两个脚本下次 `--apply` 仍会 `provider not found` 崩溃。
+  要彻底去掉这 3 个 provider，需改这两个脚本的落点策略（跳过 messages/responses
+  协议、备用档并入 chat-slow 等），属独立改动，待用户决定。
+
+## 根治：脚本解耦 3 个 provider，全部按成本进 4 组（用户授权「符合分组理念去修」）
+- [x] `go_model_sync.py`：
+  - `CHAT_PROVIDER["备用"]` 与 `BACKUP_PROVIDER` 改为 `opencode-go-chat-slow`；
+    `reclassify_backup` 不再 `ensure_provider`/改 providerOrder，直接并入高耗。
+  - 新模型不再按协议分流：messages / responses 也走 `CHAT_PROVIDER[tier]`，
+    删除 `MESSAGES_PROVIDER` / `RESPONSES_PROVIDER` 及「响应」重命名分支。
+  - 体检按 alias map 的真实 `protocol` 探测（`probe_targets` 返回三元组 +
+    `_probe_protocol`），消除「用 chat 探 messages 模型」的假 ✗。
+  - 新增协议提示缓存 `providers/opencode-go/cache/go_protocols.json`
+    （`{model: chat|messages|responses}`，.gitignore 已排除），供 model_alias 兜底。
+  - 修潜伏 bug：`row` 在「按名含 free 兜底价格」前就捕获了 `price`，导致免费模型
+    打印时 `AttributeError: 'NoneType'`；把 `row` 创建挪到价格解析之后。
+- [x] `workbuddy_zcode_sync.py`：`UNIFIED_TARGETS["backup"]` → `opencode-go-chat-slow`；
+  `UNIFIED_ORDER` 只留 4 组；清理循环对重复 target 去重。
+- [x] `model_alias.py`：`classify()` 对无 alias 记录的裸 OC id 读协议提示缓存
+  （`protocol_hints()`），把 messages/responses 正确写进 alias map 供 zgate 桥接。
+  保留其 fold-and-wipe 原行为（REMOVE_PROVIDERS 未用，实际靠覆盖 4 组删除）。
+- [x] 验证：go 同步「建议收录 5」全部落进 4 组、体检零 ✗/⚠、无新建 provider；
+  WB 同步备用档 2 个并入高耗；model_alias 落盘 30 个显示名（6/5/9/10），
+  无裸 `cn:/global:` 残留、无残留 provider 引用。备份 `bak-gosync-20261026-091357`、
+  `bak-wbproxy-20261026-091428`、`bak-alias-20261026-091433-594900`。
+- [x] 端到端验证（经 7871）：messages（Claude-Haiku-5.5）、responses（GPT-6-Luna /
+  GPT-5.6-Luna / Muse-Spark1.2/1.3）、chat（LongCat-2.0 / Qwen-3.7-Plus）全部 200。
+  注：首次 responses 502 是测试参数 `max_tokens:8` 低于上游最小 16，非桥接 bug。
+- [x] 报告 `docs/reports/MODEL-SYNC-20261026-0916.md` 已推送（30 个模型，无变化）。
+- 说明：`minimax-m2.7` 在 `model_alias.py` 的 `OC_PRICES` 里是显式 `None`（无价），
+  故仍不收录（符合既有定价表意图）；如需收录给它定价即可。
+- 脚本改动（`.gitignore` / `go_model_sync.py` / `workbuddy_zcode_sync.py` /
+  `model_alias.py`）**未提交**（按仓库约定不擅自 commit）。
+
+## 补收 minimax-m2.7（用户问「为啥是 None」后修复）
+- 原因：`OC_PRICES["minimax-m2.7"]` 是 `None` 占位 —— 当时 OpenCode 未公布价格
+  （`docs/MODEL-ALIAS.md` 原文「没有公布价格，暂不收录」，`MODEL-PROVIDERS.md`
+  价格栏「未列/待补」），不是上游无价。
+- [x] 按锚点换算（1 credit = $3.409/M，输入输出 1:1）：($0.30+$1.20)/2 ÷ 3.409 ≈ 0.22，
+      与 longcat-2.0 同价 → 高耗。`OC_PRICES["minimax-m2.7"] = {"flat": 0.22}`。
+- [x] 文档同步：`docs/MODEL-ALIAS.md` 改为「价格已公布，2026-10-26 起收录」；
+      `docs/MODEL-PROVIDERS.md` 该行补 0.30/1.20、备注「仅 messages 协议」。
+- [x] 重跑 go 同步（`bak-gosync-20261026-092433`）+ model_alias
+      （`bak-alias-20261026-092443-232600`）：`MiniMax-M2.7` 进高耗组，四组 31 个
+      （6/5/9/11），alias `protocol=messages`、`price=0.22`。
+- [x] 端到端经 7871 实测 `MiniMax-M2.7` 200（messages 桥接正常）。
+- [x] 报告 `docs/reports/MODEL-SYNC-20261026-0924.md` 已推送（新增 1：MiniMax-M2.7）。
+
+## 状态: 已完成

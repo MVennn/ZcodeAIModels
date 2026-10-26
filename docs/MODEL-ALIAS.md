@@ -173,7 +173,8 @@ python tools/model_alias.py --slot auto --probe-file ~/.zcode/v2/model_probe.jso
 - 峰谷重写按 §4.1 的时段跑；不跑则分组停在最后一次生成的时段。
 - `no_healthy_account` / `400 model_unavailable`（WorkBuddy 池冷却或模型级限流）
   会触发下一跳；没有下一跳时才报 502。
-- `deepseek-v4-flash-vision-exp`、`minimax-m2.7` 没有公布价格，暂不收录。
+- `deepseek-v4-flash-vision-exp` 没有公布价格，暂不收录；`minimax-m2.7` 价格已公布
+  （$0.30/$1.20 → 积分 0.22），2026-10-26 起收录。
 - 桥接模型非流式上游；如果以后需要逐 token，再补 SSE 增量转换。
 - 别名表是本地活数据，不入库；`provider_config.json` 与备份同样不入库。
 - 榜单接口不可用时用本地缓存；缓存也没有就跳过扩充，人工 `MAIN_IDS` 仍生效。

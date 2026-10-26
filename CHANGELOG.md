@@ -15,7 +15,47 @@
 
 ---
 
-## [0.3.0] — 2026-10-23
+## [0.3.0] — 2026-10-26
+
+### 四组制收口与全仓审查修复（2026-10-26）
+
+- **四组制收口**：`备用` / `对话` / `响应` 三个 provider 不再由脚本创建或写入。
+  `go_model_sync.py` 的 `CHAT_PROVIDER["备用"]` 与 `BACKUP_PROVIDER` 都指向
+  `opencode-go-chat-slow`，messages / responses 模型也按成本进四组，协议差异交给
+  zgate 按 alias map 桥接；`workbuddy_zcode_sync.py` 的备用档并入高耗。
+  新增协议提示缓存 `providers/opencode-go/cache/go_protocols.json`（不入库），
+  `model_alias.py` 用它给裸 OC id 补 `protocol`。
+- 修复 `go_model_sync.py` 的免费模型打印崩溃 —— `row` 在价格兜底前就捕获了
+  `price`，命中「按名含 free」分支时 `NoneType` 报错；挪到价格解析之后。
+- 修复 报告目录漂移 —— 脚本移到 `providers/opencode-go/ops/` 后，`dirname` 三层
+  只到 `providers/`，报告落到 `providers/evidence/`；改为四层回到仓库根 `evidence/`。
+- 修复 价格源静默失败 —— 缓存读不到时整个渠道的模型会被无声剔除；现在 stderr 告警，
+  且整渠道无价时拒绝 `--apply`（`--force-unpriced` 可绕过）。
+- 修复 未公布价格被归零 —— 原来统一写 `0.0`，下游按「免费」分档；改为保留 `None`
+  （只有 `-f` 模型与纯路由别名补 0）。
+- 修复 `legacy-router` 跨渠道回退 —— fallback 链共用单一 base，WB → OC 的回退
+  会把 OC 模型名发到 WorkBuddy 网关；改为按 hop 自带的 base/channel 回退并换 key。
+- 修复 `protocol_bridge.js` —— 上游 4xx 一律映射成 502，探测脚本无法区分
+  「凭证失效 / 参数错误」；改为透传上游状态码。
+- 修复 WB 探测门控 —— `rate_limited` / `timeout` 等瞬态状态会直接把模型从配置里剔除，
+  而从未探测的模型反而保留；改为瞬态保留并留痕。
+- 修复 zgate 查询串转发 —— `RawQuery` 不含 `?`，带 query 的请求路径被拼成
+  `.../completionsstream=1`（移植自 JS 的 `url.search`，语义差一个字符）；
+  补 `?` 并新增 `TestQueryStringIsForwarded`
+- 修复 zgate 其余项 —— 错误体改为限长 `ReadAll`（单次 `Read` 会拿到不完整片段）；
+  转发前去掉 `Accept-Encoding`（transport 禁用了透明解压，压缩体让
+  `chainAccept` 看不到 `model_unavailable`）；bridge 保留上游状态码并接
+  `r.Context()`；`attemptBridge` 只对 5xx/429 回退、末跳透传真实错误；
+  `/admin/reload` 同步热加载 key；`startChild` 锁外读 cfg 的竞态；alias 热加载
+  同时比较 mtime 与 size；boot 改为后台执行（先起 monitor，`Stop` 加守卫）；
+  `stop:""` 不再变成 `[""]`、错误文本按 rune 截断；install 的 PowerShell 单引号转义
+- 修复 工具链 —— `providerConfigRules` list 形态写入崩溃；`check-secrets.py`
+  片段级豁免 + git 失败报错；`make_social_preview.py` 相对 `m` 参考点与 T/S
+  控制点复位；`sync_report.py` 按实际 `--out-dir` 提交；`check-docs.py` 锚点误报；
+  榜单缓存超过 24 小时告警；删除死常量 `REMOVE_PROVIDERS`
+- 验证 —— `go build ./...` / `go vet ./...` / `go test ./...` 全绿（含新回归测试）；
+  相关 Python `py_compile`、JS `node --check` 通过；zgate 重建后 7871 端到端
+  （chat / messages / responses）由四组制批次实测 200
 
 ### 运行架构整合：三个反代并成一个 Go 入口（破坏性：目录与启动方式变了）
 

@@ -93,6 +93,15 @@ def write_json(path: Path, payload: dict) -> None:
 def fetch_leaderboard(cache: Path, refresh: bool, timeout: int) -> tuple[dict, str]:
     cached = read_json(cache) if cache.exists() else None
     if cached and not refresh:
+        # refreshIntervalSeconds 只在缓存过期时才有意义；这里至少让"几天前的
+        # 榜单"在输出里可见，避免自动化长期拿旧榜选主力还标成 cache。
+        fetched = str(cached.get("_fetched_at") or "")
+        try:
+            age = time.time() - time.mktime(time.strptime(fetched, "%Y-%m-%d %H:%M:%S"))
+            if age > 24 * 3600:
+                print(f"warning: 榜单缓存已 {age / 3600:.0f} 小时未更新（{fetched}），建议加 --refresh", file=sys.stderr)
+        except (ValueError, OverflowError):
+            print("warning: 榜单缓存没有可用的时间戳，无法判断新鲜度", file=sys.stderr)
         return cached, "cache"
     try:
         request = urllib.request.Request(
