@@ -287,9 +287,16 @@ python -c "import json,os; json.load(open(os.path.expanduser('~/.zcode/v2/provid
 | 健康检查 | `curl http://127.0.0.1:7871/health`（含每个子进程的 `state` / `pid` / `idle_s`） |
 | 只重启 WorkBuddy 上游 | `taskkill /IM wb2api.exe /F`，下一次 WB 请求自动拉起 |
 | 只重启 Qoder 上游 | `taskkill /IM python.exe /F` 后用下面的 bat 兜底，或重启 zgate |
+| 重新构建 zgate | `go build -C gateways/zgate -ldflags "-H windowsgui" -o zgate.exe .` |
 
 自启方式是**启动文件夹快捷方式**（`%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\ZcodeAIModels zgate.lnk`）——
 `schtasks /create /sc ONLOGON` 在当前权限下会被拒绝（拒绝访问），快捷方式不需要管理员。
+
+zgate 按 **GUI 子系统**编译（上面的构建命令里 `-H windowsgui` 就是干这个的）：登录自启
+**零窗口、零乱码**，日志只落 `%LOCALAPPDATA%\ZCodeGateway\zgate.log`；在终端里跑
+`status` / `version` 时会把输出挂回当时的终端（管道与 `> 文件` 重定向不受影响）。
+**忘了带这个 flag 裸 `go build` 会退回控制台程序**：开机弹 cmd 窗口、中文乱码，
+而且关掉那个窗口等于杀掉网关。
 
 ### 8.2 配置项（`gateways/zgate/zgate.json`）
 

@@ -115,76 +115,6 @@
 
 ### 显示名 `Preview` 缩为 `Pre`（2026-10-23）
 
-### 追加：两个网关全部改按需 + 签到窗口 + 热加载（2026-10-23 晚）
-
-- **不再常驻任何上游**：Qoder 从 `always` 改成 `ondemand`；两个子进程都空闲 300 秒回收。
-  ZCode 启动后 7863 / 8790 都是空的，只有请求打到才拉起（WB 冷启动约 1.6 秒）。
-- **新增 `children.*.windows`**：本地时间 `HH:MM-HH:MM`，支持跨午夜；窗内按 `always` 处理。
-  默认 WB 四档（9 / 10 / 21 / 22 点前后）、Qoder 三档（9 / 21 / 22 点），保住签到与保活。
-- **新增 `zgate reload` / `POST /admin/reload`**：策略、空闲阈值、窗口可热加载；
-  新增 child、监听地址与上游 base 仍需重启。
-- **修复**：协议桥补 120s 超时；`Process.Release` 改 `sync.Once`（double CloseHandle）；
-  `external` 接管实例纳入 5 秒健康轮询；重启退避改成 1s→2s→…→60s；日志运行期按 5 MB 轮转；
-  `zgate status` 不再打开写句柄；`qoder:` 前缀大小写不敏感；删除 `WaitExit` / `Missing` /
-  `Redacted` 等死代码。
-- **修复 回退链**：WorkBuddy 把上游 6004 模型限流转成 `400 {"code":"model_unavailable"}`，
-  旧逻辑只在 429/502/503/504 上重试，导致 `global:` → `cn:` 的回退从未生效。现在这种 400
-  按「池故障」触发回退，普通 400（参数错误）仍然直通不重试。
-- **配置解析修正**：`args` 里以 `/` 开头的参数（如 `cmd /c`）不再被当成路径解析。
-- **验证**：旁路实例实测「启动不起、窗内起、reload 后回收」；`go test ./...` 24 个用例全绿。
-
-### 显示名 `Flash`/`-Free` + 按消耗排序 + 自动化同步报告（2026-10-23 晚）
-
-- **命名**：`Fs` 改回 `Flash`（`DeepSeek-4.1-Flash`、`GLM-5.3-Flash`、`MiMo-2.6-Flash`）；
-  免费重复条目的后缀 `-F` 改为 `-Free`（`HY3-Free`、`HY4-Pre-Free`、`DeepSeek-4-Flash-Free`）。
-- **排序**：组内按积分消耗从低到高；**同厂商粘成一块**，整块的位置按该厂商最便宜的那条排，
-  块内再按价格升序。名字里仍然不显示积分。
-- **自动化**：新增 `tools/sync_report.py` —— 对比上一轮快照
-  （`~/.zcode/v2/model-sync-state.json`），生成 `docs/reports/MODEL-SYNC-<时间>.md`
-  （新增 / 移除 / 分组变化 / 链路变化 + 当前清单），自动更新 `docs/reports/README.md` 索引；
-  `--write --push` 会再 `git add/commit/push`。日常自动化的最后一步加它。
-- 结果：28 个模型（主力 6 / 免费 5 / 低耗 8 / 高耗 9），排序与命名已线上生效。
-
-### 显示名只留型号 + 跨渠道合并链路（2026-10-23 晚，破坏性）
-
-- **命名**：显示名去掉渠道与积分，只剩型号 —— `W/0.03/DeepSeek-4.1-Fs` →
-  `DeepSeek-4.1-Fs`。版本号保留点号。
-- **跨渠道合并**：同型号同协议的所有渠道合成一条 `chain`，按价格升序尝试，
-  每一跳自带 `base` / `channel` / `upstream`。例：`DeepSeek-4.1-Fs` =
-  WB 免费 → WB sg → WB cn → OC。
-- **分组**：免费 = 链路最低价 0；低耗 = 0 < 最低价 ≤ **0.11**（DeepSeek OC 基准价）；
-  高耗 = > 0.11；主力仍由 `MAIN_IDS` + 榜单决定并优先于价格。
-- **免费重复**：同型号既有免费又有付费时，免费那条单独成条并加 `-F`
-  （`HY3-F`、`HY4-Pre-F`、`DeepSeek-4-Fs-F`）；`deepseek-v4.1-flash` 例外，
-  免费档并入付费条目并置顶（`MERGE_FREE_GB`）。
-- **router**：`alias.Target` 新增 `chain`，`routeChain` / `attemptBridge` 按跳切换
-  base、渠道与 key；旧的 `base` + `fallbacks` 仍兼容。
-- **生成器**：`family_entries()` 取代旧的按渠道命名 + `merge_inventory`；
-  链路写回 alias map 并可从 `chain` 还原，重复运行幂等；`legacy` 支持改名链传递。
-- 结果：28 个模型（主力 6 / 免费 5 / 低耗 8 / 高耗 9）。
-- 上线：新二进制 + 新配置 + 新 alias map 由一次性计划任务在 21:41 一起替换并重启。
-
-### 显示名恢复版本点号 + 免费 DeepSeek 进主力置顶（2026-10-23 晚）
-
-- **命名**：`model_alias.py` 的 `ABBR` 与兜底规则不再删版本点号 ——
-  `DeepSeek-41-Fs` → `DeepSeek-4.1-Fs`、`Qwen-38-Fs` → `Qwen-3.8-Fs`、
-  `MiMo-26-Fs` → `MiMo-2.6-Fs`、`GLM-53-Fs` → `GLM-5.3-Fs`、
-  `MiniMax-M31-Fs` → `MiniMax-M3.1-Fs`、`Claude-Haiku-55` → `Claude-Haiku-5.5`、
-  `Kimi-K28-Pre` → `Kimi-K2.8-Pre`、`GPT-56-Luna` → `GPT-5.6-Luna`、
-  `Muse-Spark12/13` → `Muse-Spark1.2/1.3`、`LongCat-20` → `LongCat-2.0`。
-  旧名全部进 alias map 的 `legacy`，老会话继续可路由。
-- **主力**：`W/0.03/DeepSeek-4.1-Fs` 固定在主力组**第一位**（`MAIN_FIRST`）。
-- **免费档并入付费条目**（`MERGE_FREE_GB`）：`deepseek-v4.1-flash` 的免费 GB 档不再单独成条，
-  折进 `W/0.03/DeepSeek-4.1-Fs`，条目内链路为
-  `global:deepseek-v4.1-flash`（免费）→ `global:deepseek-v4.1-flash-sg`（0.03）→
-  `cn:deepseek-v4.1-flash`，**免费优先**；显示价保留 0.03。
-- 合并时的价格档位**从 `wb_pricing.json` 重建**，不依赖上一次写进配置的条目，
-  因此重复跑 `--apply` 不会再退回 `W/0.00`（已实测两次幂等）。
-- 重新生成：35 个模型（主力 7 / 免费 4 / 低耗 13 / 高耗 11），
-  备份 `provider_config.json.bak-alias-20261023-212838-434500`。
-
-### 显示名 `Preview` 缩为 `Pre`（2026-10-23）
-
 - `model_alias.py` 的 `ABBR` 与后缀兜底规则把 `Preview` 缩成 `Pre`：
   `Kimi-K28-Pre`、`HY4-Pre`、`Step-5-Pre`、`LongCat-25-Pre`。
 - 重新生成四组与 alias map：37 个模型，旧显示名进 `legacy`，老会话仍可路由；
@@ -310,6 +240,22 @@
 - 文档：新增 `docs/QODER.md`，更新 `MODEL-PROVIDERS.md` §4.9/§5.2、`TOOLS.md`、
   `SECRETS.md`、`TROUBLESHOOTING.md` §14、`MAINTENANCE.md` §8.1、`README.md`、`NOTICE`
 - 边界：WorkBuddy2API 与 OpenCode-Go 不动；Agent2API 评估后暂不采用
+
+### 追加：登录自启零窗口落地（2026-10-26）
+
+- **zgate 改按 GUI 子系统构建**（`go build -ldflags "-H windowsgui"`，命令正本见
+  [docs/MAINTENANCE.md](docs/MAINTENANCE.md) §8.1）。此前发布的二进制实际是控制台程序，
+  登录自启会挂一个最小化 cmd 窗口：中文按 GBK 显示成乱码（日志本身是 UTF-8，没坏），
+  而且关掉该窗口等于杀掉网关。GUI 子系统下零窗口，日志只落
+  `%LOCALAPPDATA%\ZCodeGateway\zgate.log`。
+- **修复 `AttachParentConsole` 吞输出**：旧逻辑无条件把 stdout/stderr 重绑到父控制台，
+  在管道（mintty / CI / 脚本）与 `> 文件` 重定向下输出被吞进隐藏 conhost。现在先判断
+  继承句柄类型，管道/文件保留原样，只在句柄无效或本就是控制台时才接管 ——
+  `zgate status` 在 Git Bash、cmd、PowerShell 里都照常打印。
+- **顺带修复**：CHANGELOG 0.3.0 段落里四个小节整块重复的历史残留（并发写坏），
+  删去重复的 70 行。
+- **验证**：`go vet` / `gofmt` / `go test ./...` 全绿；GUI 构建下管道、cmd 重定向、
+  分离启动三场景输出正常；运行中进程 `MainWindowHandle=0`、`/health` 200、28 个 alias 模型。
 
 > 未发版，版本号不动（[docs/VERSIONING.md](docs/VERSIONING.md) §5）。
 

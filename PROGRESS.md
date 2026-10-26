@@ -1335,3 +1335,45 @@ provider 列表；Qoder hub 与 WorkBuddy/OpenCode 的现有链路保持不变�
 - 本轮改动尚未提交/推送；`--push` 的提交范围只有 `docs/reports/`
 
 ## 状态: 已完成
+
+---
+
+# 2026-10-26 第 N+18 轮：zgate 登录自启零窗口（GUI 子系统）+ 修管道吞输出
+
+## 任务目标
+用户反馈：开机弹 cmd 窗口、中文乱码；并问 zgate 为何不跟随 ZCode 启动。
+结论：设计本就要求 GUI 子系统无窗构建，但已发布的二进制是裸 `go build` 的
+控制台程序；乱码是 UTF-8 日志 tee 进 GBK 控制台；跟随 ZCode 的方案 0.3.0
+已按 [ARCHITECTURE.md](docs/ARCHITECTURE.md) §10.2 有意放弃（19 MB 常驻换
+签到窗口与 ZCode 解耦），维持登录自启。用户确认后按 GUI 子系统重编译落地。
+
+## 已完成变更
+- [x] `gateways/zgate/internal/winproc/console_windows.go`：`AttachParentConsole`
+      改为先判 `GetStdHandle`+`GetFileType` —— 管道/文件句柄保留原样（旧逻辑
+      无条件重绑 CONOUT$，mintty/CI/脚本/`> 文件` 场景输出被吞进隐藏 conhost），
+      仅句柄无效或本就是控制台时才 attach 父控制台
+- [x] 重编译 `zgate.exe`：`go build -C gateways/zgate -ldflags "-H windowsgui"
+      -o zgate.exe .`（`file` 验证为 GUI 子系统；exe 不入库）
+- [x] `zgate.json`、启动文件夹快捷方式零改动（GUI 下 WindowStyle 自然失效）
+- [x] 文档：`MAINTENANCE.md` §8.1 加「重新构建 zgate」命令行 + 无窗行为与
+      忘带 flag 的后果说明（构建命令正本）；`CHANGELOG.md` 0.3.0 追加
+      「登录自启零窗口落地」小节；`docs/release-notes/0.3.0.md` 补一行
+- [x] 顺带修复：`CHANGELOG.md` 0.3.0 段落四个小节整块重复的历史残留（并发写坏），
+      删 70 行（两块 diff 字节级一致，删任一份等价，保留带正文的 Pre 节）
+
+## 验收
+- `go vet` / `gofmt -l` / `go test ./...`（bridge/alias/router/supervisor）全绿
+- `zgate.exe version`/`status`：Git Bash 管道、cmd `> 文件` 重定向均正常输出
+- 分离启动后 `MainWindowHandle=0`（无任何窗口）、`/health` 200（28 个 alias 模型、
+  三上游 key 齐、两子进程按需未起 —— 不在签到窗口内，符合预期）
+- 日志文件 `%LOCALAPPDATA%\ZCodeGateway\zgate.log` UTF-8 正常，无控制台 tee
+- `python tools/check-docs.py`（27 篇）、`python tools/check-secrets.py`（125 文件）通过
+
+## 待解决 / 注意事项
+- 修复前那次启动（今早 07:40）的进程 07:47 被 terminated —— 用户关掉了弹出的
+  控制台窗口即杀网关，正是本轮要消除的故障路径；07:54 起新实例已无窗运行
+- `gateways/zgate/zgate-next.exe` 是 0.3.0 开发期被文件锁时的暂存产物（仍为
+  控制台程序、未被任何脚本引用），可手动删除
+- 0.3.0 尚未打 tag，本轮并入 0.3.0 段落；`zgate` 二进制内版本串仍是 0.3.0
+
+## 状态: 已完成
