@@ -128,12 +128,12 @@ func serve() error {
 	sup := supervisor.New(cfg.Children, log.Dir(), log)
 	client := &http.Client{
 		Transport: &http.Transport{
-			Proxy:                 nil, // same as the old Node router: no env proxy
-			DisableCompression:    true,
-			ForceAttemptHTTP2:     true,
-			MaxIdleConns:          100,
-			MaxIdleConnsPerHost:   32,
-			IdleConnTimeout:       90 * time.Second,
+			Proxy:               nil, // same as the old Node router: no env proxy
+			DisableCompression:  true,
+			ForceAttemptHTTP2:   true,
+			MaxIdleConns:        100,
+			MaxIdleConnsPerHost: 32,
+			IdleConnTimeout:     90 * time.Second,
 			// 8s: opencode.ai 经透明代理握手会抖（2026-10-27 实测坏节点下最长
 			// 7.7s，再往上就是死路）。15s 会把一次失败拖成 15s 的 502 长尾，
 			// 而链式回落只需要尽快拿到「这次不行」的结论。
