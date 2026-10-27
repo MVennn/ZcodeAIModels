@@ -134,7 +134,10 @@ func serve() error {
 			MaxIdleConns:          100,
 			MaxIdleConnsPerHost:   32,
 			IdleConnTimeout:       90 * time.Second,
-			TLSHandshakeTimeout:   15 * time.Second,
+			// 8s: opencode.ai 经透明代理握手会抖（2026-10-27 实测坏节点下最长
+			// 7.7s，再往上就是死路）。15s 会把一次失败拖成 15s 的 502 长尾，
+			// 而链式回落只需要尽快拿到「这次不行」的结论。
+			TLSHandshakeTimeout:   8 * time.Second,
 			ExpectContinueTimeout: time.Second,
 			DialContext:           (&net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
 		},

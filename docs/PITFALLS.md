@@ -369,3 +369,16 @@ prune。它同时也认不出这些模型已经配置过，会把整个 Go 目�
 - **验证**：`python gateways/zgate/build.py --check` 打印
   `Subsystem = 2 → WINDOWS_GUI（无窗）`；`--cross-check` 会在临时目录交叉编译一份
   windows/amd64 再校验，CI 用这条（Linux 上也能真跑起来）。
+
+## 21. 上游握手超时留 15s，会把一次失败拖成长尾 【通用】
+
+- **现象**：机器人调用 `opencode.ai` 偶发 502，单次回复 22–32s；zgate 日志里
+  `Post "https://opencode.ai/zen/go/v1/chat/completions": net/http: TLS handshake timeout`。
+- **根因**：本机到 `opencode.ai` 走 fake-IP 透明代理，链路握手会抖（同一节点实测成功
+  0.32s，坏窗口 0.6–7.7s，再往上就不返回了）。transport 的 `TLSHandshakeTimeout`
+  是 15s，且 `http.Client` 没有整体 `Timeout` —— 一次坏叫要等满 15s 才回落，
+  叠上 WorkBuddy 免费池的 429/503 再排队，回复就拖到 20 秒以上。
+- **解法**：`TLSHandshakeTimeout` 收到 8s。**不要**顺手给 `http.Client` 设 `Timeout`：
+  它覆盖整个响应体，流式（SSE）会被从中间截断，非流式的长推理也会被误杀。
+- **验证**：`grep TLSHandshakeTimeout gateways/zgate/main.go` 应为 8s；
+  坏窗口内单次失败的上限约为 8s，而不是 15s。
