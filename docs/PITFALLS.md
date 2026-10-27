@@ -345,3 +345,27 @@ prune。它同时也认不出这些模型已经配置过，会把整个 Go 目�
 - **解法**：价格源不可用必须 stderr 告警；整渠道 100% 无价时拒绝写入
   （提供显式 `--force-unpriced` 绕过），并把「因缺价未收录 N 个」打进摘要。
 - **验证**：临时改名价格缓存跑一次 `--apply`，确认退出码非零且配置未变。
+
+## 20. 裸 `go build` 会把无窗 zgate 覆盖成控制台程序 【通用】
+
+- **现象**：开机自启时弹出一个 cmd 控制台窗口，标题是快捷方式名
+  （「ZcodeAIModels zgate」）；关掉那个窗口等于杀掉网关，模型全挂。
+  有时窗口是「可见的」而不是最小化 —— 快捷方式里 `WindowStyle = 7`
+  只对**有窗口**的程序生效，对控制台子系统程序不等于隐藏。
+- **根因**：Windows PE 头里的 `Subsystem` 字段决定程序启动时要不要分配控制台。
+  - `2` = `WINDOWS_GUI` → 无窗（设计要求）
+  - `3` = `CONSOLE` → 一启动就分配一个真控制台窗口
+  `-H windowsgui` 是**链接期** flag，只在那一次编译里生效。事后从源码看不出来，
+  只能读产物的 PE 头。
+- **回退是怎么发生的**：`go build` 在**单包**模式下会把可执行文件写到当前目录，
+  所以在 `gateways/zgate/` 里跑一次裸 `go build .`，就把之前用
+  `-ldflags "-H windowsgui"` 编好的无窗版**原地覆盖**成控制台版。
+  （`go build ./...` 是多包模式，Go 只编译不落盘，**不会**覆盖 —— 实测确认。）
+  产物在 `.gitignore` 里（`/gateways/zgate/*.exe`），所以 `git checkout` 救不回来。
+- **为什么难发现**：覆盖发生在**编译期**，弹窗发生在**下次开机**，
+  中间隔着一次重启；日志、git 历史、进程列表都看不出因果。
+- **解法**：编译入口收口到 `gateways/zgate/build.py`（带 flag + 强制校验 PE 子系统）；
+  检查用 `go vet ./...`，别在 `gateways/zgate/` 里裸跑 `go build`。
+- **验证**：`python gateways/zgate/build.py --check` 打印
+  `Subsystem = 2 → WINDOWS_GUI（无窗）`；`--cross-check` 会在临时目录交叉编译一份
+  windows/amd64 再校验，CI 用这条（Linux 上也能真跑起来）。

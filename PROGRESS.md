@@ -1476,3 +1476,84 @@ ZCode（不改脚本、不动 provider_config.json、不建定时任务）。
 - [x] 报告 `docs/reports/MODEL-SYNC-20261026-0924.md` 已推送（新增 1：MiniMax-M2.7）。
 
 ## 状态: 已完成
+
+---
+
+# 2026-10-27 第 N+19 轮：zgate 无窗产物回退的根因定位 + 构建入口收口
+
+## 任务目标
+用户给了一份结论：现在跑的 `zgate.exe` 不是无窗版，被重新编译成控制台程序，
+根因是 10-26 10:50 的 `d508570` 那轮跑了裸 `go build` 覆盖了产物；
+并建议「在 `gateways/zgate/` 里用 `go vet ./...` 而不是裸 `go build ./...`」，
+必要时加一个构建后校验 Subsystem 的脚本防止再犯。
+本轮任务：**核实这份结论的真伪**，把服务恢复，并落地防再犯。
+
+## 已完成变更
+- [x] **核实结论：结论大方向对，但有两处偏差**
+  - 「裸 `go build ./...` 会覆盖产物」**不成立** —— 实测多包模式下 Go 只编译不落盘，
+        临时目录里跑 `go build ./...` 没有任何 `.exe` 产出。
+  - 真正的回退命令是**单包**的 `go build .` —— 实测产出 `Subsystem = 3`（CONSOLE）。
+        两者结论相同（产物被覆盖成控制台版），但归因要精确到单包命令。
+  - 「`-H windowsgui` 是正本命令」正确；但**光靠文档约束不够**，10-26 就是文档
+        写对了、手滑一次就回退。
+- [x] **现状核实（本轮开工时的真实状态，与用户结论不同）**
+  - `gateways/zgate/zgate.exe` 的 PE `Subsystem` **已是 2（WINDOWS_GUI）**，
+        文件时间 10-27 11:10:29 —— 已被用正确 flag 重编过，**弹窗问题已消失**。
+  - 但 **zgate 进程根本不在跑**：7871 / 7863 / 8790 三个端口全部无人监听；
+        `zgate.exe status` 自报「未运行（健康检查不可达，HTTP 0）」。
+  - 日志 `zgate.log` 给出完整故事：`11:08:50 收到 terminated`（旧的控制台版被停）
+        → `11:10:30 已启动`（GUI 版起来过）→ 此后再无日志、**连「已退出」都没有**
+        → 进程被强杀。ZCode app-server 新进程 PID 5960 建于 `11:10:51`，
+        与 zgate 死亡时间吻合 —— **上个 agent 会话结束时，Windows Job Object
+        把进程树一起回收了**。这是「11:10 起过一次、现在又没了」的真正原因。
+  - 快捷方式 `ZcodeAIModels zgate.lnk` 仍指向同一个 exe（未被改动），
+        下次登录会跑 GUI 版 → 零窗口。
+  - exe 在 `.gitignore`（`/gateways/zgate/*.exe`）里，**git 救不回来**，只能带 flag 重编。
+- [x] **恢复服务**：经 `explorer.exe` 拉起启动文件夹快捷方式
+      （与登录自启同一条路径，父进程是 explorer.exe，能存活）；
+      实测 `nohup` / `setsid` / `Start-Process` 三种方式起的进程都会随
+      agent 沙箱回收而消失，**只有 explorer 这条路活下来**。
+- [x] **新增 `gateways/zgate/build.py`**（构建入口收口 + 强制校验 PE 子系统）
+  - `--check`：只校验现有产物的 PE `Subsystem`（读 PE 头，不编译）
+  - `--cross-check`：交叉编译一份 windows/amd64 到临时目录再校验 ——
+        `-H windowsgui` 是 windows 链接器 flag，**交叉编译时同样生效**，
+        所以这条校验在 **Linux CI 上也能真跑起来**
+  - 默认：带 `-H windowsgui` 编译并校验，不合格非零退出
+- [x] **CI 加一步**（`.github/workflows/ci.yml`）：
+      `python3 gateways/zgate/build.py --cross-check` —— flag 丢了会在 CI 就红，
+        不用等下次开机才发现弹窗
+- [x] 文档（按单一正本原则分三处，机制/命令/排错各归其位）
+  - `docs/PITFALLS.md` §20（新增）：机制 —— PE `Subsystem` 决定要不要分配控制台、
+        `WindowStyle=7` 对控制台程序不等于隐藏、单包 vs 多包 `go build` 的落盘差异、
+        产物在 `.gitignore` 里所以 git 救不回来
+  - `docs/TROUBLESHOOTING.md` §16（新增）：排错 —— 现象→排查→原因/解法，
+        含「exe 被占用改不动怎么办」「怎么确认没有别的控制台窗口」
+  - `docs/MAINTENANCE.md` §8.1：构建命令正本改为 `python gateways/zgate/build.py`，
+        并写明**别在 `gateways/zgate/` 里裸跑 `go build .`**，检查用 `go vet ./...`
+
+## 验收
+- `python gateways/zgate/build.py --check` → `Subsystem = 2 → WINDOWS_GUI（无窗）`（exit 0）
+- `python gateways/zgate/build.py --cross-check` → 交叉编译产物同样 `Subsystem = 2`（exit 0）
+- `go build .`（临时目录副本）→ 产出 `Subsystem = 3`，确认单包命令确实是回退真凶
+- `go build ./...`（临时目录副本）→ 无 `.exe` 落盘，确认多包模式不覆盖
+- 服务恢复：`curl 127.0.0.1:7871/health` → `ok:true`、`alias.models=31`、
+      `uptime_s` 持续增长；进程 PID 21496 父级 `explorer.exe`
+- 端到端：`POST 127.0.0.1:7871/v1/chat/completions`（DeepSeek-4.1-Flash）→ 200，
+      内容 `OK`
+- 无控制台窗口：`Get-Process conhost | Where-Object { $_.MainWindowTitle }` → 无输出
+- `gofmt -l gateways/zgate` → 空；`go vet ./...` → exit 0
+- `python tools/check-docs.py` → 31 篇全过；`python tools/check-secrets.py` → 无泄露
+
+## 待解决 / 注意事项
+- ⚠️ **CI 的 Go 版本是 1.22**，本地是 1.26.0。`build.py` 用到的 `go build -C`
+  （Go ≥ 1.20）与交叉编译都没问题，但 `go.mod` 声明的是 `go 1.22`，
+  CI 与本机 Go 版本不一致这件事本轮没动。
+- ⚠️ 本轮新增文件 `gateways/zgate/build.py` 与三处文档改动**未提交**
+  （按仓库约定不擅自 commit）；`evidence/go-model-sync-20261026-120234.md`
+  是上一轮遗留的未跟踪文件，同样未动。
+- ⚠️ zgate 由 agent 会话启动仍会被回收。要长期驻留，**靠登录自启快捷方式**
+  （explorer 拉起，父进程 explorer.exe），不要靠 agent 起的进程。
+- 备注：仓库里还留着一个 `gateways/zgate/zgate-next.exe`（10-23 的产物），
+  与 `zgate.exe` 无关，本轮没动。
+
+## 状态: 已完成

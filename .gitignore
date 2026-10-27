@@ -90,3 +90,6 @@ desktop.ini
 # ---- zgate 产物 ----
 /gateways/zgate/*.exe
 /gateways/zgate/zgate.dev.json
+
+# ---- IDE 本地工作区（agent 记忆与索引，可再生；版本化记忆在 memories/）----
+.workbuddy/

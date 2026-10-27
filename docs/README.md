@@ -50,7 +50,7 @@
 | 仓库根 [third-party/](../third-party/README.md) | 随仓分发的上游文件：ZCode 规则数据与引擎源码、ZCodium 规则切片，各带来源凭证 |
 | 仓库根 [LICENSE](../LICENSE) | 许可证全文（**MIT**），与 [NOTICE](../NOTICE) 配套 |
 | [reports/](reports/README.md) | **同步报告索引**：每次自动化结束后的模型清单快照与变化（新增 / 移除 / 分组 / 链路），最新在最上面 |
-| [release-notes/](release-notes/README.md) | 面向使用者的 Release 说明，文件名 = `versionName`；格式规范在它的 README。已发布：[0.3.0.md](release-notes/0.3.0.md) / [0.2.0.md](release-notes/0.2.0.md) / [0.1.0.md](release-notes/0.1.0.md) |
+| [release-notes/](release-notes/README.md) | 面向使用者的 Release 说明，文件名 = `versionName`；格式规范在它的 README。已发布：[0.4.0.md](release-notes/0.4.0.md) / [0.3.0.md](release-notes/0.3.0.md) / [0.2.0.md](release-notes/0.2.0.md) / [0.1.0.md](release-notes/0.1.0.md) |
 | `../evidence/` | 证据快照：网关模型目录、自动收录报告、WorkBuddy 接入线历史台账（只读） |
 
 ---

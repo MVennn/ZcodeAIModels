@@ -41,6 +41,11 @@ jobs:
         working-directory: gateways/zgate
         run: go build ./... && go test ./...
 
+      - name: zgate 无窗产物校验（PE Subsystem 必须为 GUI）
+        # 交叉编译一份 windows/amd64 出来，校验 PE 头的 Subsystem = 2（WINDOWS_GUI）。
+        # 忘了 -H windowsgui 会退回 CONSOLE(3)，开机自启就弹 cmd 窗口。机制见 docs/PITFALLS.md §20。
+        run: python3 gateways/zgate/build.py --cross-check
+
       - name: Python 语法
         run: python3 -c "import ast,glob; [ast.parse(open(f,encoding='utf-8').read(), f) for f in glob.glob('**/*.py', recursive=True)]"
 

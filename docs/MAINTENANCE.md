@@ -287,16 +287,32 @@ python -c "import json,os; json.load(open(os.path.expanduser('~/.zcode/v2/provid
 | 健康检查 | `curl http://127.0.0.1:7871/health`（含每个子进程的 `state` / `pid` / `idle_s`） |
 | 只重启 WorkBuddy 上游 | `taskkill /IM wb2api.exe /F`，下一次 WB 请求自动拉起 |
 | 只重启 Qoder 上游 | `taskkill /IM python.exe /F` 后用下面的 bat 兜底，或重启 zgate |
-| 重新构建 zgate | `go build -C gateways/zgate -ldflags "-H windowsgui" -o zgate.exe .` |
+| 重新构建 zgate | `python gateways/zgate/build.py` |
 
 自启方式是**启动文件夹快捷方式**（`%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\ZcodeAIModels zgate.lnk`）——
 `schtasks /create /sc ONLOGON` 在当前权限下会被拒绝（拒绝访问），快捷方式不需要管理员。
 
-zgate 按 **GUI 子系统**编译（上面的构建命令里 `-H windowsgui` 就是干这个的）：登录自启
+zgate 按 **GUI 子系统**编译（`-H windowsgui` 就是干这个的）：登录自启
 **零窗口、零乱码**，日志只落 `%LOCALAPPDATA%\ZCodeGateway\zgate.log`；在终端里跑
 `status` / `version` 时会把输出挂回当时的终端（管道与 `> 文件` 重定向不受影响）。
 **忘了带这个 flag 裸 `go build` 会退回控制台程序**：开机弹 cmd 窗口、中文乱码，
 而且关掉那个窗口等于杀掉网关。
+
+所以**构建入口收口在 `gateways/zgate/build.py`**：它带 `-H windowsgui` 编译，
+并**强制校验产物的 PE `Subsystem` 必须是 2（GUI）**，不合格直接非零退出。
+三个用法：
+
+| 用法 | 命令 | 说明 |
+|---|---|---|
+| 构建（Windows） | `python gateways/zgate/build.py` | 编出 `gateways/zgate/zgate.exe` 并校验；exe 正被 zgate 占用时会提示先停进程 |
+| 只校验现有产物 | `python gateways/zgate/build.py --check` | 不编译，只读 PE 头；用于「现在到底是不是无窗版」 |
+| 交叉编译校验（CI） | `python gateways/zgate/build.py --cross-check` | 交叉编译一份 windows/amd64 到临时目录再校验；`-H windowsgui` 是 windows 链接器 flag，**在 Linux 上同样生效**，所以 CI 能真跑起来 |
+
+> ⚠️ **别在 `gateways/zgate/` 目录里裸跑 `go build .`** —— 单包模式会把可执行文件
+> **原地覆盖**到当前目录，把无窗版换成控制台版，且产物在 `.gitignore` 里，
+> `git checkout` 救不回来。检查用 `go vet ./...`（不落盘）。
+> 实测：`go build ./...`（多包）只编译不落盘、**不会**覆盖；`go build .`（单包）**会**。
+> 机制见 [PITFALLS.md](PITFALLS.md) §20，排错见 [TROUBLESHOOTING.md](TROUBLESHOOTING.md) §16。
 
 ### 8.2 配置项（`gateways/zgate/zgate.json`）
 

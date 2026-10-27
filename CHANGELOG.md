@@ -15,6 +15,59 @@
 
 ---
 
+## [0.4.0] — 2026-10-27
+
+### zgate 构建入口收口 + 无窗产物防回退（2026-10-27）
+
+- **新增 `gateways/zgate/build.py` —— zgate 的唯一构建入口**。带 `-H windowsgui`
+  编译（GUI 子系统 → 登录自启零窗口），并**强制校验产物的 PE `Subsystem` 必须是 2**，
+  不合格直接非零退出。三个用法：
+  - `python gateways/zgate/build.py` —— 构建（Windows）+ 校验；
+  - `python gateways/zgate/build.py --check` —— 只校验现有产物，不编译；
+  - `python gateways/zgate/build.py --cross-check` —— 交叉编译一份 windows/amd64
+    到临时目录再校验；`-H windowsgui` 是 windows 链接器 flag，**交叉编译时同样生效**，
+    所以这条校验在 Linux CI 上也能真跑起来。
+- **核实并订正「裸 `go build` 覆盖产物」的归因**：实测 `go build ./...`（**多包**模式）
+  Go 只编译不落盘，**不会**覆盖产物；真正的回退命令是**单包**的 `go build .` ——
+  它会把可执行文件原地写到当前目录，产出 `Subsystem = 3`（CONSOLE）的控制台程序，
+  静默顶掉无窗版。两者后果相同，但归因要精确到单包命令。
+- **补上「为什么会回退」的这一环**：`-H windowsgui` 是**链接期** flag，只在那一次编译里
+  生效，事后无法从源码判断，只能读产物的 PE 头 —— 所以光在文档里写对命令不够，
+  必须有工具在编译后当场校验。文档记对了、手滑一次就回退（10-26 即如此）。
+- **CI 增加一步** `python3 gateways/zgate/build.py --cross-check` —— flag 丢了在 CI 就红，
+  不用等下次开机才发现弹窗。
+- **文档按单一正本分三处补齐**：
+  - `docs/PITFALLS.md` §20（新增）—— 机制：PE `Subsystem` 决定要不要分配控制台、
+    快捷方式 `WindowStyle = 7` 对控制台程序**不等于隐藏**、单包 vs 多包 `go build`
+    的落盘差异、产物在 `.gitignore` 里所以 `git checkout` 救不回来；
+  - `docs/TROUBLESHOOTING.md` §16（新增）—— 排错：现象 → 排查 → 原因/解法；
+  - `docs/MAINTENANCE.md` §8.1 —— 构建命令正本改为 `python gateways/zgate/build.py`，
+    并写明**别在 `gateways/zgate/` 里裸跑 `go build .`**，检查用 `go vet ./...`；
+  - `docs/TOOLS.md` —— 把 `build.py` 登记进工具清单。
+- **`.gitignore` 排除 `.workbuddy/`** —— IDE 本地 agent 工作区（可再生）；
+  版本化记忆仍在本仓 `memories/`。
+- **本机状态核实（不入库）**：`gateways/zgate/zgate.exe` 的 `Subsystem` 已是 2；
+  但开工时 **zgate 进程根本没在跑**（7871 / 7863 / 8790 全部无人监听）。
+  根因是 **Windows Job Object 随 agent 会话结束回收整棵进程树** ——
+  日志里 `11:10:30 已启动` 之后连「已退出」都没有，进程被强杀；
+  而 ZCode app-server 新进程建于 `11:10:51`，与死亡时间吻合。
+  已用 explorer 拉起启动文件夹快捷方式恢复（父进程 explorer.exe，与登录自启同一条路径，
+  能存活；`nohup` / `setsid` / `Start-Process` 起的都会被回收）。
+  端到端实测：`/health` `ok:true`、31 个模型、`DeepSeek-4.1-Flash` 经 7871 返回 200、
+  `conhost` 无带标题窗口。
+
+### 破坏性变更
+
+无。原有 `go build -C gateways/zgate -ldflags "-H windowsgui" -o zgate.exe .`
+仍然可用，`build.py` 只是把它包起来并加上产物校验。
+
+### 回退
+
+删掉 `gateways/zgate/build.py` 与 CI 里那一步即可，其余改动（文档、`.gitignore`）
+无行为影响。已发布的 `zgate.exe` 不入库，回退不影响已装好的二进制。
+
+---
+
 ## [0.3.0] — 2026-10-26
 
 ### 四组制收口与全仓审查修复（2026-10-26）
