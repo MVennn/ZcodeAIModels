@@ -341,9 +341,10 @@ zgate 按 **GUI 子系统**编译（`-H windowsgui` 就是干这个的）：登�
 
 | 场景 | 命令 |
 |---|---|
-| 更新 WorkBuddy 上游 | `git -C gateways/upstream/workbuddy pull --ff-only`，再 `taskkill /IM wb2api.exe /F`（下次请求自动重启） |
+| 更新 WorkBuddy 上游 | `git -C gateways/upstream/workbuddy pull --ff-only`（当前分支 `misakano-base`，跟踪 `misakano/main`），再 `taskkill /IM wb2api.exe /F`（下次请求自动重启） |
 | 更新 Qoder 上游 | `git -C gateways/upstream/qoder pull --ff-only`，再重启 zgate |
-| 新机器重建 WorkBuddy | `git clone https://github.com/linguo2625469/workbuddy2api-panel.git gateways/upstream/workbuddy`，按 `config.example.json` 建 `config.json`、放 `auths/`，`go build -o wb2api.exe ./cmd/server` |
+| 新机器重建 WorkBuddy | `git clone https://github.com/misakano7545/workbuddy2api-panel.git gateways/upstream/workbuddy`，按 `config.example.json` 建 `config.json`、放 `auths/`，`go build -o wb2api.exe ./cmd/server`（`go.mod` 要求 Go ≥ 1.26.10，`GOTOOLCHAIN=auto` 会自动拉工具链） |
+| WorkBuddy 上游血缘与回滚 | 链路 `Sliverkiss/workbuddy2api`（已删库）→ `linguo2625469/workbuddy2api-panel`（2026-10-21 停更，末版 `73a7560` 已打 tag `panel-final-73a7560`）→ `misakano7545/workbuddy2api-panel`（现跟踪）。回滚：`git checkout panel-final-73a7560`（detached HEAD）后重编；本机另有停更版二进制备份，见 `.workbuddy/backup/`（不入库） |
 | 新机器重建 Qoder | 见 [QODER.md](QODER.md) §2 |
 
 > ⚠️ **WorkBuddy 的定时任务**（签到 9 / 21 点、活跃 10 点、token 保活 22 点、夜猫子、

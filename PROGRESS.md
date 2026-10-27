@@ -1557,3 +1557,38 @@ ZCode（不改脚本、不动 provider_config.json、不建定时任务）。
   与 `zgate.exe` 无关，本轮没动。
 
 ## 状态: 已完成
+
+# 2026-10-27 第 N+20 轮：WorkBuddy2API 停更后的接手与基线切换
+
+## 任务目标
+确认 WorkBuddy2API Panel 停更后有无接手项目，并把 `gateways/upstream/workbuddy` 切到可持续维护的基线上。
+
+## 已完成变更
+- [x] 核实停更事实：`linguo2625469/workbuddy2api-panel` 末次提交 `73a7560`（2026-10-21）即停更声明
+      （上游禁反代 / 精力有限 / 非法转卖）；原始上游 `Sliverkiss/workbuddy2api` 已删库（404）。
+- [x] 本地 clone 先快进 60 个提交到 `73a7560`，打 tag `panel-final-73a7560` 保回滚。
+- [x] 对比候选接手项目后切换基线到 `misakano7545/workbuddy2api-panel`（MIT，2026-10-26 仍在提交）：
+      新增 remote `misakano`，工作分支 `misakano-base` 跟踪 `misakano/main`。
+- [x] 重放本地补丁（仅两条仍必要）：`cmd/server/main.go` 首启不再打印生成的 `api_key`；
+      `.gitignore` 补 `.api_key_secret` / `server.log`。弱 key 告警由接手版自带
+      `insecureKeyWarning`（覆盖空 key 与 `test_key`），故旧补丁的 `CHANGE_ME` 改动不再需要。
+- [x] 构建 `wb2api.exe`（`go.mod` 要求 Go ≥ 1.26.10，`GOTOOLCHAIN=auto` 自动拉取工具链），
+      替换线上二进制，由 zgate 按需重启子进程。
+- [x] 文档对齐：`README.md` 鸣谢表、`docs/MAINTENANCE.md` §8.4（更新命令 / 新机器重建 / 血缘与回滚）。
+
+## 验收
+- `curl 127.0.0.1:7863/panel/` → 200；`/v1/models` 无 key → 401，带 key → 80 个模型
+- `GET /v1/capacity` → 400（旧版为 404）→ 确认线上跑的是接手版而非旧镜像
+- 真实上游：`POST /v1/chat/completions`（`global:deepseek-v4.1-flash`）→ 200
+- 端到端：`POST 127.0.0.1:7871/v1/chat/completions`（`DeepSeek-4.1-Flash`）→ 200，内容 `OK`
+
+## 待解决 / 注意事项
+- ⚠️ 接手版改了 `pool` 段的配置键：`account_order` / `strategy` → `account_priority` / `account_share`。
+  本仓 `config.json` 未使用这两个键（只有 `credit_floor` 等），当前无影响；以后要启用账号调度策略须按新键写。
+- ⚠️ 模型目录 56 → 80（接手版补了出图等条目）。要进 provider 分组需重跑
+  `workbuddy_fetch_pricing.py` → `workbuddy_zcode_sync.py --apply`，本轮未跑。
+- ⚠️ `misakano7545` 是个人分叉（作者自述「更新随缘」），非官方延续；回滚用
+  `git checkout panel-final-73a7560` 或 `.workbuddy/backup/wb2api-panel-final.exe`。
+- ⚠️ 上游自 2026-10-23 起收紧非官方客户端识别，该风险所有分支共享，换仓库解决不了。
+
+## 状态: 已完成

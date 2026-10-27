@@ -108,7 +108,7 @@ python tools/model_alias.py --slot auto --probe-file ~/.zcode/v2/model_probe.jso
 
 | 项目 | 用途 |
 |---|---|
-| [**WorkBuddy2API Panel**](https://github.com/linguo2625469/workbuddy2api-panel)（上游 [Sliverkiss/workbuddy2api](https://github.com/Sliverkiss/workbuddy2api)） | 腾讯 CodeBuddy 多账号网关，WorkBuddy 侧全部请求都发给它（MIT；本仓不含其源码，只通过 HTTP 调用） |
+| [**WorkBuddy2API Panel**](https://github.com/misakano7545/workbuddy2api-panel)（链路：`Sliverkiss/workbuddy2api` 已删库 → `linguo2625469/workbuddy2api-panel` 2026-10-21 停更 → 本仓现跟踪此分支） | 腾讯 CodeBuddy 多账号网关，WorkBuddy 侧全部请求都发给它（MIT；本仓不含其源码，只通过 HTTP 调用） |
 | [**qoder2api-hub**](https://github.com/shuishuipingan/qoder2api-hub) | Qoder 账号网关，Qoder 侧全部请求都发给它（MIT；本仓不含其源码，只通过 HTTP 调用） |
 | **Qoder**（qoder.com.cn / qoder.com） | Qoder 侧的模型服务与账号（商业服务） |
 | **OpenCode Zen / Go**（opencode.ai） | 模型套餐与 API 网关，OpenCode-Go 侧全部请求都发给它（商业服务） |
