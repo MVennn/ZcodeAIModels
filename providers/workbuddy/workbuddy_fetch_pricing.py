@@ -249,7 +249,7 @@ def main() -> int:
         rows.append(row)
     rows.sort(key=lambda r: r["id"])
 
-    priced = [r for r in rows if r["eff_rate"] > 0]
+    priced = [r for r in rows if isinstance(r["eff_rate"], (int, float)) and r["eff_rate"] > 0]
     print(f"   上游 {len(raw)} 条 → 归一化 {len(rows)} 条（跳过无 id 的 {skipped} 条）")
     print(f"   有价格的 {len(priced)} 条")
 
