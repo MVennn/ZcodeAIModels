@@ -230,6 +230,7 @@ python -c "import json,os; json.load(open(os.path.expanduser('~/.zcode/v2/provid
 | **每天 08:00 / 22:00 + 工作日 09:00 / 12:00 / 14:00 / 18:00** | `python providers/workbuddy/workbuddy_fetch_pricing.py` → `python tools/model_alias.py --slot auto --apply`（峰谷价切换，见 [MODEL-ALIAS.md](MODEL-ALIAS.md) §4.1） |
 | **每月** | 复核 [MODEL-PROVIDERS.md](MODEL-PROVIDERS.md) 里的价格 / 额度（`wb_pricing.json` 已由每日任务自动刷新） |
 | **换套餐 / 换账号池后** | 全量重探 WorkBuddy（`--sleep 20`）+ 重跑同步 |
+| **2026-11-30 前后** | 七牛 `qiniu/conatus-free` 的限时免费到期：`QN_FREE_UNTIL` 会让该跳自动消失，只需跑一次 `python tools/model_alias.py --slot auto --apply` 确认免费组只剩 4 条。想续用就换其它 `-free` 模型（[QINIU.md](QINIU.md) §3） | 详见 [QINIU.md](QINIU.md) |
 | **每月 / 千问额度到期前后** | 千问已被降级为「主力链尾跳」：集合体与单型号都已下线（2026-10-29，理由见 [QWEN.md](QWEN.md) §4.5）。只需确认主力链的 `QW` 尾跳还在（`model_alias.py --check` 无漂移即可）；¥300 预付额度到期（2027-10-28）后 `QW_CREDIT_UNTIL` 会让该跳自动消失 | 详见 [QWEN.md](QWEN.md) §3、§4.6.1 |
 | **每次接入新供应商** | 照 §1.1 的通用做法写一份取数脚本 + 在 [MODEL-PROVIDERS.md](MODEL-PROVIDERS.md) §0 的表里补一行；凭据按 [SECRETS.md](SECRETS.md) §2、§3.5 加环境变量 |
 | **每次改动脚本** | 同步 [TOOLS.md](TOOLS.md) 的工具表 |

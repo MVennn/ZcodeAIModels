@@ -8,6 +8,7 @@
 package bridge
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -38,6 +39,11 @@ type Options struct {
 	// Ctx is the inbound request context; cancellation stops the upstream
 	// call instead of pinning a connection after the client has gone away.
 	Ctx context.Context
+	// Stream 为 true 时，上行（客户端）请求了 SSE 流式；桥接器把上游的流式响应
+	// 逐 delta 转成 chat SSE 经 OnChunk 推给客户端，首字不再等到整段生成完才出现。
+	// OnChunk 为空（非流式调用方）时退化为原行为：整段合成一个 chunk（与旧版一致）。
+	Stream   bool
+	OnChunk func([]byte) error
 }
 
 // Result is what the router writes back.
@@ -54,7 +60,7 @@ func Forward(client *http.Client, opts Options) Result {
 	var url string
 	switch opts.Protocol {
 	case "messages":
-		payload = chatToAnthropic(opts.Body, opts.UpstreamModel)
+		payload = chatToAnthropic(opts.Body, opts.UpstreamModel, opts.Stream)
 		headers = map[string]string{
 			"content-type":       "application/json",
 			"user-agent":         "opencode-cli/1.0",
@@ -64,7 +70,7 @@ func Forward(client *http.Client, opts Options) Result {
 		}
 		url = strings.TrimRight(opts.Base, "/") + "/messages"
 	case "responses":
-		payload = chatToResponses(opts.Body, opts.UpstreamModel)
+		payload = chatToResponses(opts.Body, opts.UpstreamModel, opts.Stream)
 		headers = map[string]string{
 			"content-type":       "application/json",
 			"user-agent":         "opencode-cli/1.0",
@@ -86,6 +92,13 @@ func Forward(client *http.Client, opts Options) Result {
 	}
 	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
+
+	// 流式上行：把上游的流式响应逐 delta 经 OnChunk 推给客户端，首字不再等整段。
+	// 与旧版的区别：上游也按 stream=true 请求，桥接器边收边发，而不是收完再合成一个 chunk。
+	if opts.Stream && opts.OnChunk != nil {
+		return forwardStream(ctx, client, opts, url, headers, payload)
+	}
+
 	status, raw := postJSON(ctx, client, url, headers, payload)
 	if status < 200 || status >= 300 {
 		msg := upstreamMessage(raw, status)
@@ -156,6 +169,270 @@ func upstreamMessage(raw []byte, status int) string {
 		return truncate(text, 500)
 	}
 	return fmt.Sprintf("upstream HTTP %d", status)
+}
+
+// forwardStream 把上游的流式响应逐 delta 转成 chat SSE 经 OnChunk 推给客户端。
+// 上游按 stream=true 请求；收到第一个 content delta 即转发，首字不再等整段生成完。
+// 上游返回 4xx/5xx（或连接错误）时退回标准 Result，让路由按原逻辑回落 / 报真实状态码。
+func forwardStream(ctx context.Context, client *http.Client, opts Options, url string, headers map[string]string, payload any) Result {
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return jsonResult(502, errorBody("bridge request build failed: "+err.Error(), "proxy_error"))
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return jsonResult(502, errorBody("bridge request build failed: "+err.Error(), "proxy_error"))
+	}
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
+	// 关键：声明接受 SSE，让上游按事件流返回（Anthropic / OpenAI responses 都认）。
+	req.Header.Set("Accept", "text/event-stream")
+	resp, err := client.Do(req)
+	if err != nil {
+		return jsonResult(502, errorBody("bridge upstream error: "+err.Error(), "upstream_error"))
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		raw, _ := io.ReadAll(resp.Body)
+		msg := upstreamMessage(raw, resp.StatusCode)
+		return jsonResult(resp.StatusCode, errorBody("bridge upstream error: "+msg, "upstream_error"))
+	}
+
+	emit := func(delta map[string]any, finish any) error {
+		chunk := map[string]any{
+			"id":      "chatcmpl-" + longID(),
+			"object":  "chat.completion.chunk",
+			"created": time.Now().Unix(),
+			"model":   opts.DisplayModel,
+			"choices": []any{map[string]any{"index": 0, "delta": delta, "finish_reason": finish}},
+		}
+		line, _ := json.Marshal(chunk)
+		out := append([]byte("data: "), line...)
+		out = append(out, '\n', '\n')
+		return opts.OnChunk(out)
+	}
+
+	// 首块：role，让客户端先把对话占位建起来。
+	if err := emit(map[string]any{"role": "assistant"}, nil); err != nil {
+		return Result{Status: 200}
+	}
+
+	var sawTool bool
+	var streamErr error
+	if opts.Protocol == "responses" {
+		sawTool, streamErr = streamResponses(resp.Body, emit)
+	} else {
+		sawTool, streamErr = streamAnthropic(resp.Body, emit)
+	}
+	if streamErr != nil {
+		// 中途失败：发一个错误 delta（chat 客户端通常把它拼到正文里），再收尾。
+		_ = emit(map[string]any{"content": "\n[bridge stream error: " + streamErr.Error() + "]"}, "stop")
+		_ = opts.OnChunk([]byte("data: [DONE]\n\n"))
+		return Result{Status: 200}
+	}
+	// 收尾：空 delta + finish_reason，再发 [DONE]。有工具调用时必须是 tool_calls，
+	// 否则客户端会把这一轮当成「已说完、没有动作」而不是去执行工具。
+	finish := "stop"
+	if sawTool {
+		finish = "tool_calls"
+	}
+	if err := emit(map[string]any{}, finish); err != nil {
+		return Result{Status: 200}
+	}
+	_ = opts.OnChunk([]byte("data: [DONE]\n\n"))
+	return Result{Status: 200}
+}
+
+// streamAnthropic 解析 Anthropic Messages 的 SSE 流，把 text/thinking/tool_use
+// 三种增量都翻译成 chat SSE。返回本轮是否出现过工具调用（决定 finish_reason）。
+func streamAnthropic(r io.Reader, emit func(map[string]any, any) error) (bool, error) {
+	sc := bufio.NewScanner(r)
+	sc.Buffer(make([]byte, 1024*1024), 8*1024*1024)
+	var ev string
+	sawTool := false
+	toolIndex := -1
+	// Anthropic 的 content block index -> chat tool_calls 的连续序号
+	toolOf := map[int]int{}
+	for sc.Scan() {
+		line := sc.Text()
+		if line == "" {
+			// 一个 event 以空行结束；data 多行时这里只取最后一段，够用（单行 JSON）。
+			ev = ""
+			continue
+		}
+		if strings.HasPrefix(line, "event:") {
+			ev = strings.TrimSpace(line[len("event:"):])
+			continue
+		}
+		if !strings.HasPrefix(line, "data:") {
+			continue
+		}
+		data := strings.TrimSpace(line[len("data:"):])
+		if data == "[DONE]" {
+			continue
+		}
+		var obj map[string]any
+		if err := json.Unmarshal([]byte(data), &obj); err != nil {
+			continue
+		}
+		kind, _ := obj["type"].(string)
+		if kind == "" {
+			kind = ev
+		}
+		switch kind {
+		case "content_block_start":
+			block, _ := obj["content_block"].(map[string]any)
+			if block == nil {
+				continue
+			}
+			if bt, _ := block["type"].(string); bt == "tool_use" {
+				toolIndex++
+				toolOf[toInt(obj["index"])] = toolIndex
+				sawTool = true
+				id, _ := block["id"].(string)
+				if id == "" {
+					id = "call_" + shortID()
+				}
+				name, _ := block["name"].(string)
+				if name == "" {
+					name = "tool"
+				}
+				if err := emit(map[string]any{"tool_calls": []any{map[string]any{
+					"index":    toolIndex,
+					"id":       id,
+					"type":     "function",
+					"function": map[string]any{"name": name, "arguments": ""},
+				}}}, nil); err != nil {
+					return sawTool, err
+				}
+			}
+		case "content_block_delta":
+			delta, _ := obj["delta"].(map[string]any)
+			if delta == nil {
+				continue
+			}
+			switch delta["type"] {
+			case "text_delta":
+				if t, _ := delta["text"].(string); t != "" {
+					if err := emit(map[string]any{"content": t}, nil); err != nil {
+						return sawTool, err
+					}
+				}
+			case "thinking_delta":
+				if t, _ := delta["thinking"].(string); t != "" {
+					if err := emit(map[string]any{"reasoning_content": t}, nil); err != nil {
+						return sawTool, err
+					}
+				}
+			case "input_json_delta":
+				partial, _ := delta["partial_json"].(string)
+				if partial == "" {
+					continue
+				}
+				idx, ok := toolOf[toInt(obj["index"])]
+				if !ok {
+					continue
+				}
+				if err := emit(map[string]any{"tool_calls": []any{map[string]any{
+					"index":    idx,
+					"function": map[string]any{"arguments": partial},
+				}}}, nil); err != nil {
+					return sawTool, err
+				}
+			}
+		}
+	}
+	return sawTool, sc.Err()
+}
+
+// streamResponses 解析 OpenAI Responses 的 SSE 流：正文增量 + function_call 增量
+// 都翻译成 chat SSE。返回本轮是否出现过工具调用（决定 finish_reason）。
+func streamResponses(r io.Reader, emit func(map[string]any, any) error) (bool, error) {
+	sc := bufio.NewScanner(r)
+	sc.Buffer(make([]byte, 1024*1024), 8*1024*1024)
+	sawTool := false
+	toolIndex := -1
+	// item id / call_id -> chat tool_calls 的连续序号
+	toolOf := map[string]int{}
+	for sc.Scan() {
+		line := sc.Text()
+		if !strings.HasPrefix(line, "data:") {
+			continue
+		}
+		data := strings.TrimSpace(line[len("data:"):])
+		if data == "[DONE]" {
+			continue
+		}
+		var obj map[string]any
+		if err := json.Unmarshal([]byte(data), &obj); err != nil {
+			continue
+		}
+		switch typ, _ := obj["type"].(string); typ {
+		case "response.output_text.delta":
+			if delta, _ := obj["delta"].(string); delta != "" {
+				if err := emit(map[string]any{"content": delta}, nil); err != nil {
+					return sawTool, err
+				}
+			}
+		case "response.output_item.added":
+			item, _ := obj["item"].(map[string]any)
+			if item == nil {
+				continue
+			}
+			if it, _ := item["type"].(string); it != "function_call" {
+				continue
+			}
+			toolIndex++
+			id, _ := item["call_id"].(string)
+			if id == "" {
+				id, _ = item["id"].(string)
+			}
+			if id == "" {
+				id = "call_" + shortID()
+			}
+			name, _ := item["name"].(string)
+			if name == "" {
+				name = "tool"
+			}
+			if key, _ := item["id"].(string); key != "" {
+				toolOf[key] = toolIndex
+			}
+			if key, _ := item["call_id"].(string); key != "" {
+				toolOf[key] = toolIndex
+			}
+			sawTool = true
+			if err := emit(map[string]any{"tool_calls": []any{map[string]any{
+				"index":    toolIndex,
+				"id":       id,
+				"type":     "function",
+				"function": map[string]any{"name": name, "arguments": ""},
+			}}}, nil); err != nil {
+				return sawTool, err
+			}
+		case "response.function_call_arguments.delta":
+			partial, _ := obj["delta"].(string)
+			if partial == "" {
+				continue
+			}
+			idx, ok := toolOf[toString(obj["item_id"])]
+			if !ok {
+				continue
+			}
+			if err := emit(map[string]any{"tool_calls": []any{map[string]any{
+				"index":    idx,
+				"function": map[string]any{"arguments": partial},
+			}}}, nil); err != nil {
+				return sawTool, err
+			}
+		}
+	}
+	return sawTool, sc.Err()
+}
+
+func toString(v any) string {
+	s, _ := v.(string)
+	return s
 }
 
 func truncate(s string, n int) string {
@@ -319,7 +596,7 @@ func toolFunction(tool any) map[string]any {
 	return map[string]any{}
 }
 
-func chatToAnthropic(body []byte, model string) map[string]any {
+func chatToAnthropic(body []byte, model string, stream bool) map[string]any {
 	systemParts := []string{}
 	messages := []any{}
 	for _, raw := range messagesOf(body) {
@@ -423,7 +700,7 @@ func chatToAnthropic(body []byte, model string) map[string]any {
 		"model":      model,
 		"max_tokens": maxTokens,
 		"messages":   messages,
-		"stream":     false,
+		"stream":     stream,
 	}
 	if filtered := nonEmpty(systemParts); len(filtered) > 0 {
 		payload["system"] = strings.Join(filtered, "\n\n")
@@ -460,7 +737,7 @@ func chatToAnthropic(body []byte, model string) map[string]any {
 	return payload
 }
 
-func chatToResponses(body []byte, model string) map[string]any {
+func chatToResponses(body []byte, model string, stream bool) map[string]any {
 	systemParts := []string{}
 	input := []any{}
 	for _, raw := range messagesOf(body) {
@@ -536,7 +813,7 @@ func chatToResponses(body []byte, model string) map[string]any {
 	}
 
 	src := rawMap(body)
-	payload := map[string]any{"model": model, "input": input, "stream": false}
+	payload := map[string]any{"model": model, "input": input, "stream": stream}
 	if filtered := nonEmpty(systemParts); len(filtered) > 0 {
 		payload["instructions"] = strings.Join(filtered, "\n\n")
 	}

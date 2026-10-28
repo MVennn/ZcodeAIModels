@@ -6,7 +6,7 @@
 （通用方法见 [MODEL-PROVIDERS.md](MODEL-PROVIDERS.md) §0）。
 
 > **2026-10-23 起**：`tools/model_alias.py` 是 ZCode 配置的**唯一最终写入者**
-> （四组 + alias map）。下面旧的三个 sync / 两个 probe 只作为**数据采集与兼容**
+> （三组 + alias map）。下面旧的三个 sync / 两个 probe 只作为**数据采集与兼容**
 > 工具；先跑它们，再跑 `model_alias.py` 归一化。日常顺序还多一步：
 > `arena_leaderboard.py --refresh --write` 更新主力候选。命名、积分与榜单扩充规则见
 > [MODEL-ALIAS.md](MODEL-ALIAS.md)、[BENCHMARKS.md](BENCHMARKS.md) §8。
@@ -29,10 +29,10 @@
 | `gateways/zgate/` | **统一入口（Go）**：监听 `127.0.0.1:7871`，按 `model-alias-map.json` 分流；无 map 时回退旧前缀（`cn:`/`global:`/`qoder:`）；messages/responses 模型内置协议桥；同时按策略拉起/回收两个上游子进程（WB `ondemand`、Qoder `always`）。子命令 `serve` / `status` / `reload` / `install` / `uninstall` / `version`；子进程默认全部 `ondemand`，签到/保活用 `windows` 定时窗口兜底；改策略后 `zgate reload` 热加载。策略与配置见 [MAINTENANCE.md](MAINTENANCE.md) §8 | 日志 `%LOCALAPPDATA%\ZCodeGateway\zgate.log`（5 MB 轮转）；子进程输出同目录 `workbuddy.*` / `qoder.*` | ✅ 长期 |
 | `gateways/zgate/build.py` | **zgate 构建入口**：带 `-H windowsgui` 编译（GUI 子系统 → 登录自启零窗口），并**强制校验产物的 PE `Subsystem` 必须为 2**；`--check` 只校验现有产物，`--cross-check` 交叉编译一份 windows/amd64 到临时目录再校验（CI 用，Linux 上也生效） | `gateways/zgate/zgate.exe`（`.gitignore` 排除）；临时目录里的交叉编译产物 | ✅ 长期 |
 | `gateways/zgate/smoke_test.py` | 冒烟测试：四条通道 + 两种桥 + 流式各打一发微小请求，断言 200 / `chat.completion` / `[DONE]` | 只打印 PASS/FAIL；`ZGATE_BASE` 可改目标 | ✅ 长期（每次改路由后跑） |
-| `tools/model_alias.py` | **最终写入者**：把当前配置里的模型归一成纯型号名，同型号跨渠道合并成按价格升序的 `chain`，按「免费 / ≤0.11 / >0.11」分四组（主力另由人工 + 榜单决定），生成 alias map；**价格每轮从源重算、不继承旧值**（死跳直接剔除）；`--probe-file` 只保留 ok（或曾 ok 的瞬时限流，超过 `--probe-max-age-hours` 默认 72h 视为未知）；`--check` 只做漂移检测（有差异退出码 1）；`--arena-main` 读榜单候选扩充主力，`--no-arena` 回到纯人工 | `provider_config.json.bak-alias-<时间戳>`；`~/.zcode/v2/model-alias-map.json` | ✅ 长期 |
+| `tools/model_alias.py` | **最终写入者**：把当前配置里的模型归一成纯型号名，同型号跨渠道合并成按价格升序的 `chain`，按人工有序名单分**三组**（主力 `MAIN_ORDER` / 免费按 0 价 / 省钱 `LOW_ORDER` 严格白名单），组内顺序也按名单下标，生成 alias map；**价格每轮从源重算、不继承旧值**（死跳直接剔除）；`--probe-file` 只保留 ok（或曾 ok 的瞬时限流，超过 `--probe-max-age-hours` 默认 72h 视为未知）；`--check` 只做漂移检测（有差异退出码 1）；`--arena-main` 读榜单候选扩充主力，`--no-arena` 回到纯人工 | `provider_config.json.bak-alias-<时间戳>`；`~/.zcode/v2/model-alias-map.json` | ✅ 长期 |
 | `tools/arena_leaderboard.py` | **主力扩充取数**：拉 ArenaGalleri 榜单接口，按 DeepSeek 基准（分数 ≥95%、积分 ≤0.11、非临时名次、≥50 局、不含 0 积分）从**已配置模型**里筛候选；候选集合或规则变化才触发重写。`--refresh` 联网重拉、`--write` 落候选、`--apply` 接着调 `model_alias.py`、`--status` 看已保存候选 | `~/.zcode/v2/arena-leaderboard.json`（榜单缓存）、`~/.zcode/v2/arena-main.json`（主力候选） | ✅ 长期 |
 | `tools/sync_report.py` | **同步报告**：对比上一轮快照（`~/.zcode/v2/model-sync-state.json`），写出本次新增 / 移除 / 分组变化 / 链路变化；`--write` 落 `docs/reports/MODEL-SYNC-<时间>.md` 并更新索引，`--push` 再 `git add/commit/push`。自动化最后一步跑它 | 报告 `docs/reports/*.md`、索引 `docs/reports/README.md`、快照 `model-sync-state.json` | ✅ 长期 |
-| `tools/model_probe.py` | 用 **ZCode 真实 body**（`zcode_effective_body.js` + provider id）探测四组模型；经 7871，含桥接模型；结果带 `ever_ok` | `~/.zcode/v2/model_probe.json`（活数据） | ✅ 长期 |
+| `tools/model_probe.py` | 用 **ZCode 真实 body**（`zcode_effective_body.js` + provider id）探测三组模型；经 7871，含桥接模型；结果带 `ever_ok` | `~/.zcode/v2/model_probe.json`（活数据） | ✅ 长期 |
 | `gateways/legacy-router/protocol_bridge.js` | chat ↔ Anthropic Messages / OpenAI Responses 转换（旧 Node 实现，已由 zgate 内置桥取代） | 由 `unified-router.js` require | ⚠️ 回退用（保留一个版本） |
 | `providers/workbuddy/workbuddy_fetch_pricing.py` | 拉网关目录接口 → 归一化 → 写价格表（打印倍率变化 / 新增 / 下架摘要） | `providers/workbuddy/cache/wb_pricing.json`（写前自动备份） | ✅ 长期 |
 | `providers/workbuddy/workbuddy_probe_zcode.py` | 用 **ZCode 真实 body** 探测网关模型可用性，可断点续跑 | `providers/workbuddy/cache/wb_zcode_probe.json`；`workbuddy/logs/wb_zcode_probe.log` | ✅ 长期 |
@@ -55,7 +55,7 @@
 | `providers/workbuddy/cache/wb_pricing.json` | 网关 56 个模型的倍率 / 上下文 / 输出上限 / effort 档位快照 | 由 `workbuddy_fetch_pricing.py` 生成 | ⚠️ 活数据 |
 | `providers/workbuddy/cache/wb_zcode_probe.json` | 探测结果缓存（status / variant / http / detail / rate） | 被 `workbuddy_zcode_sync.py` 读取 | ⚠️ 活数据 |
 | `providers/qoder/qoder_probe.json` | Qoder 模型探测结果（status / variant / http / detail） | 被 `qoder/qoder_zcode_sync.py --probe-file` 读取；`.gitignore` 排除 | ⚠️ 活数据 |
-| `~/.zcode/v2/model_probe.json` | 四组统一探测结果（status / http / provider / ever_ok） | 被 `tools/model_alias.py --probe-file` 读取 | ⚠️ 活数据 |
+| `~/.zcode/v2/model_probe.json` | 三组统一探测结果（status / http / provider / ever_ok） | 被 `tools/model_alias.py --probe-file` 读取 | ⚠️ 活数据 |
 | `~/.zcode/v2/arena-leaderboard.json` | ArenaGalleri 榜单原始响应 + `_fetched_at` | 榜单接口不可用时的缓存；`--refresh` 覆盖 | ⚠️ 活数据 |
 | `~/.zcode/v2/arena-main.json` | 主力候选（基准分 / 窗口规则 / 每个候选的 channel、upstream、分数、积分） | 由 `tools/arena_leaderboard.py` 生成，被 `model_alias.py` 读取 | ⚠️ 活数据 |
 | `~/.zcode/v2/model-alias-map.json` | 显示名 → 上游模型/base/protocol 的映射 | 由 `tools/model_alias.py` 生成，路由按 mtime 热加载 | ⚠️ 活数据（不含凭据） |
@@ -67,7 +67,7 @@
 
 ## 2. 统一模式与分离模式
 
-> **2026-10-23 起**：ZCode 只有四组（主力 / 免费 / 低耗 / 高耗），由
+> **2026-10-28 起**：ZCode 只有三组（主力 / 免费 / 省钱，2026-10-29 起低耗与高耗合并为省钱组），由
 > `tools/model_alias.py` 生成；下面的统一/分离模式是 WorkBuddy 旧数据采集口径，
 > 只作历史参考。当前命名与分组见 [MODEL-ALIAS.md](MODEL-ALIAS.md)。
 
@@ -75,7 +75,7 @@
 
 | 模式 | 怎么触发 | 结果 |
 |---|---|---|
-| 统一模式（默认） | 不带 `--separate` | WorkBuddy 模型并进 OpenCode 的四组，四组的 `baseUrl` 指向统一入口 `gateways/zgate`（`127.0.0.1:7871`） |
+| 统一模式（默认） | 不带 `--separate` | WorkBuddy 模型并进 OpenCode 的三组，三组的 `baseUrl` 指向统一入口 `gateways/zgate`（`127.0.0.1:7871`） |
 | 分离模式 | `--separate` | 重建四个独立的 `workbuddy-*` provider（免代 / 低代 / 高代 / 备用），`baseUrl` 直指网关 |
 
 统一入口按 alias map 分流：`W/…` → WorkBuddy 网关（`127.0.0.1:7863`），

@@ -92,11 +92,17 @@ QW_BASE = "https://maas.qianwenaiapi.com/apps/anthropic/v1"
 # 路由的 hopFatal + 冷却会把这跳摘掉，不需要有人回来改配置。
 QW_CREDIT_UNTIL = "2027-10-28"
 
+# 七牛云 `qiniu/conatus-free` 是限时免费（到 2026-11-30）。过期后 price_of 返回 None，
+# 这一跳自动消失 —— 和限免到期同一条机制，不需要人工回来删配置。
+QN_FREE_UNTIL = "2026-11-30"
+
 # Hand-picked core. `~/.zcode/v2/arena-main.json` can add more (see
 # tools/arena_leaderboard.py); `--no-arena` restores this list only.
 # 键一律 `<协议>:<上游 id>`：同一型号会以 chat / messages 两种形态出现
 # （千问桥接版是 messages），只写型号名会把两条一起吸进主力。
-MAIN_IDS = {
+# 主力顺序：组内按此顺序排（DeepSeek 置顶，Qwen 贵备份次之，千问尾跳最后）。
+# 组内排序的权威来源；MAIN_IDS 由它派生，避免"按厂商最低价排序把便宜厂商顶到前面"。
+MAIN_ORDER = [
     # 日常主力：唯一的付费心智负担
     "chat:cn:deepseek-v4.1-flash",
     "chat:deepseek-v4.1-flash",
@@ -104,24 +110,32 @@ MAIN_IDS = {
     # #44 vs #56），只在 DeepSeek 两跳同时不可用时手动切。
     "chat:Qwen3.8-Max",
     # 免费 DeepSeek（千问渠道，messages 协议）：¥300 预付额度先烧这一条。
-    # 协议不同不能并进 chat 那条链，所以它单独成一个显示名。
+    # 它由 MERGE_ACROSS_PROTOCOL 并进上一条的链尾（同一显示名、按跳派发协议），
+    # 这里仍列出是为了让排序与「链路覆盖」自解释。
     "messages:deepseek-v4.1-flash",
-}
-# 省钱组：每个厂商留一个。价格上限 = LOW_MAX（0.11，DeepSeek 的 OC 价）。
-# 命中这里才进组，未命中的付费模型直接不收录 —— 组里不会出现用不上的模型。
-LOW_PICKS = {
+]
+MAIN_IDS = set(MAIN_ORDER)
+# 省钱组：每个厂商留 1–2 个特色型号（用户 2026-10-28 口径：前旗舰/旧版本全砍，
+# 只留"最能代表这家、日常会用"的）。命中这里才进组，未命中的模型直接不收录 ——
+# 组里不会出现用不上的模型。
+# ⚠️ 这是**严格有序白名单**：组内顺序由 LOW_ORDER 决定（不是按厂商最低价，
+# 否则便宜厂商会顶到前面把列表打乱）；命中这里即进组，不受 LOW_MAX 价格上限约束，
+# 所以小米 MiMo-2.6-Pro（0.19）也能留在省钱组当厂商旗舰。
+# 省钱组排列顺序（唯一权威来源）：总价档无关，按"厂商代表型号"排。
+# 价格随价格源走，不写死。LOW_PICKS 由它派生，避免两份名单各自维护而漂移。
+# 各行尾注释说明「为什么这家留这个型号」：
+LOW_ORDER = [
     "messages:qwen3.8-flash",        # Qwen：中文 / 长输出（AA 基准附近）
     "chat:cn:glm-5.3-flash",         # 智谱：工具调用稳（AA 993）
     "chat:cn:minimax-m3.1-flash",    # MiniMax：1M 上下文
     "chat:mimo-v2.6-flash",          # 小米：每积分最耐用（AA 1087）
+    "chat:mimo-v2.6-pro",            # 小米：旗舰（0.19，厂商代表型号）
     "chat:cn:hy3-x",                 # 腾讯：最便宜（0.05）
     "messages:claude-haiku-5-5",     # Anthropic：子代理 / 小改动（AA 1026）
     "responses:gpt-6-luna",          # OpenAI：responses 协议（AA 992）
     "chat:cn:space-bunny",           # Space：AA 1074，性价比最高之一
-}
-# Sorted first inside 主力 regardless of channel/region. Keyed by upstream id,
-# so it must track whichever hop actually survives in the chain.
-MAIN_FIRST = {"cn:deepseek-v4.1-flash", "deepseek-v4.1-flash"}
+]
+LOW_PICKS = set(LOW_ORDER)
 
 # Base models whose free GB tier is folded into the paid entry instead of being
 # listed separately: the paid entry tries the free upstream first, then the paid
@@ -177,6 +191,9 @@ QD_PRICES = {
 }
 
 ABBR = {
+    # 七牛云网关的 id 形如 `qiniu/conatus-free`：去掉 `qiniu/` 前缀，Conatus 自成系列。
+    "qiniu/conatus-free": "Conatus",
+    "moonshotai/kimi-k3-free": "Kimi-K3",
     "deepseek-v4.1-flash": "DeepSeek-4.1-Flash",
     "deepseek-v4.1-flash-sg": "DeepSeek-4.1-Flash",
     "deepseek-v4-flash": "DeepSeek-4-Flash",
@@ -236,7 +253,7 @@ ABBR = {
     "muse-spark-1.2-contributor": "Muse-Spark1.2",
 }
 VENDOR_ORDER = ("DSP", "QW", "GLM", "MM", "KIMI", "HY", "MIMO", "LONG", "BEAM",
-                "CL", "GPT", "MUSE", "STEP", "SPB", "OTHER")
+                "CL", "GPT", "MUSE", "STEP", "SPB", "CONATUS", "OTHER")
 
 
 def config_path(explicit: str | None) -> Path:
@@ -452,6 +469,12 @@ def price_of(channel: str, upstream: str, wb: dict[str, dict],
              qd: dict[str, dict], slot: str) -> float | None:
     if channel == "QW":
         return 0.0 if qw_credit_active() else None
+    if channel == "QN":
+        # 七牛限免只覆盖带 -free 后缀的模型（2026-11-30 前）。渠道级一律返 0
+        # 会把将来播种的付费模型也误标成免费，所以必须按上游 id 判定。
+        if not str(upstream).endswith("-free"):
+            return None
+        return 0.0 if datetime.now().strftime("%Y-%m-%d") <= QN_FREE_UNTIL else None
     if channel == "WB":
         record = wb.get(upstream)
         if not record:
@@ -491,7 +514,11 @@ def abbreviate(model: str) -> str:
     key = model.lower()
     if key in ABBR:
         return ABBR[key]
-    text = re.sub(r"^[Vv](?=\d)", "", model)
+    # 厂商前缀（`qiniu/` `moonshotai/`）与 `-free` / `-f` 标记都不进显示名：
+    # 「免费」由分组表达，只有同型号同时存在免费与付费档时才加 `-Free`。
+    text = re.sub(r"^[a-z0-9_-]+/", "", model, flags=re.IGNORECASE)
+    text = re.sub(r"(?i)[-_]free$", "", text)
+    text = re.sub(r"^[Vv](?=\d)", "", text)
     text = re.sub(r"(?i)flash\b", "Fs", text)
     text = re.sub(r"(?i)preview\b", "Pre", text)
     text = re.sub(r"[^A-Za-z0-9.-]+", "-", text).strip("-")
@@ -502,7 +529,7 @@ VENDOR_PREFIXES = (
     ("DeepSeek", "DSP"), ("Qwen", "QW"), ("QwQ", "QW"), ("GLM", "GLM"), ("MiniMax", "MM"),
     ("Kimi", "KIMI"), ("HY", "HY"), ("MiMo", "MIMO"), ("LongCat", "LONG"),
     ("Beam", "BEAM"), ("Claude", "CL"), ("GPT", "GPT"), ("Muse", "MUSE"),
-    ("Step", "STEP"), ("Space", "SPB"),
+    ("Step", "STEP"), ("Space", "SPB"), ("Conatus", "CONATUS"),
 )
 
 
@@ -634,6 +661,20 @@ def classify(model: str, protocol: str, alias_models: dict, legacy: dict) -> dic
             "fallbacks": [],
             "legacy_ids": [model],
         }
+    if model.startswith("qn:"):
+        upstream = model[len("qn:"):]
+        return {
+            "raw": model,
+            "original": model,
+            "channel": "QN",
+            "region": "CN",
+            "upstream": upstream,
+            "base_model": upstream,
+            # 七牛云 AI 网关同样只有 Anthropic Messages 端点。
+            "protocol": "messages",
+            "fallbacks": [],
+            "legacy_ids": [model],
+        }
     if model.startswith(("WB:", "OC:", "QD:")):
         # A renamed id that is not in the alias map: refuse to guess.
         return None
@@ -758,7 +799,8 @@ def raw_models(cfg: dict, alias_models: dict, legacy: dict) -> list[dict]:
     return out
 
 
-CHANNEL_BASE = {"WB": WB_BASE, "QD": QD_BASE, "OC": OC_BASE, "QW": QW_BASE}
+QN_BASE = "https://api.qnaigc.com/v1"
+CHANNEL_BASE = {"WB": WB_BASE, "QD": QD_BASE, "OC": OC_BASE, "QW": QW_BASE, "QN": QN_BASE}
 
 
 def base_of(channel: str) -> str:
@@ -940,7 +982,9 @@ def entry_group(entry: dict, arena_targets: dict[tuple[str, str], dict]) -> tupl
     price = entry["price"]
     if price <= 0:
         return "free", ""
-    if price <= LOW_MAX and any(_picked(entry, hop, LOW_PICKS) for hop in entry["chain"]):
+    if any(_picked(entry, hop, LOW_PICKS) for hop in entry["chain"]):
+        # 严格白名单命中即进省钱组，不受 LOW_MAX 价格上限约束
+        # （小米 MiMo-2.6-Pro 0.19 也借此留在组里当厂商旗舰）。
         return "low", ""
     return "drop", ""
 
@@ -1113,7 +1157,7 @@ def main() -> int:
             # 只继承「同名去冲突」后缀（-Msg / -Resp / -2）；-Free 是状态后缀，
             # 跟着价格走，不能从上一版继承。
             if prev == entry["name"] or re.fullmatch(
-                re.escape(entry["name"]) + r"-(Msg|Resp|\d+)(?:-\d+)?", prev
+                re.escape(entry["name"]) + r"-\d+(?:-\d+)?", prev
             ):
                 new_id = prev
                 break
@@ -1131,20 +1175,27 @@ def main() -> int:
         entry.update({"group": group, "new_id": new_id, "main_reason": main_reason})
         grouped[group].append(entry)
 
+    # 组内顺序由人工白名单决定，不按"厂商最低价"排 —— 否则便宜厂商会顶到前面
+    # 把列表打乱（HY 0.05 / MiMo 0.06 会抢在 DeepSeek 之前，正是用户看到 mimo
+    # 排到最后的反例：那时 raw id 没归并进厂商块）。主力按 MAIN_ORDER、省钱按
+    # LOW_ORDER；不在名单里的模型（理论上不会进组）排末尾。
+    def _pick_rank(row: dict, order: list[str]) -> int:
+        """条目命中的名单序号；没命中的排末尾。组内顺序由人工名单决定。"""
+        for hop in row["chain"]:
+            for j, name in enumerate(order):
+                if f"{row.get('protocol')}:{hop.get('upstream')}" == name or \
+                   f"{row.get('protocol')}:{hop.get('base_model')}" == name:
+                    return j
+        return len(order)
+
     for group, rows in grouped.items():
-        # Vendor blocks are ordered by that vendor's cheapest model; inside a
-        # block models go from cheap to expensive.
-        vendor_min: dict[str, float] = {}
-        for row in rows:
-            vendor = vendor_of(row["abbr"])
-            vendor_min[vendor] = min(vendor_min.get(vendor, row["price"]), row["price"])
-        rows.sort(key=lambda r: (
-            0 if any(h["original"] in MAIN_FIRST for h in r["chain"]) else 1,
-            vendor_min[vendor_of(r["abbr"])],
-            vendor_rank(r["abbr"]),
-            r["price"],
-            r["new_id"],
-        ))
+        if group == "main":
+            rows.sort(key=lambda r: (_pick_rank(r, MAIN_ORDER), r["new_id"]))
+        elif group == "low":
+            rows.sort(key=lambda r: (_pick_rank(r, LOW_ORDER), r["price"], r["new_id"]))
+        else:
+            # 免费组：常用优先（HY3 > HY4 > 其它），再按价格
+            rows.sort(key=lambda r: (0 if r["new_id"].startswith("HY") else 1, r["price"], r["new_id"]))
 
     transient_kept: list[str] = []
     if args.probe_file:

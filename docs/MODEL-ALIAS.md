@@ -1,15 +1,15 @@
 # 统一模型命名与分组
 
-> **一句话**：模型 ID 只用型号名（如 `DeepSeek-4.1-Fs`），同一型号跨渠道合并成一条
+> **一句话**：模型 ID 只用型号名（如 `DeepSeek-4.1-Flash`），同一型号跨渠道合并成一条
 > 按价格升序的链路；**2026-10-28 起只保留三组**——主力（人工两条）、免费、
-> 省钱（每厂商一个），高于 0.11 且不在名单里的模型**不收录**。
+> 省钱（每厂商 1–2 个代表作），未进人工名单的模型**不收录**。
 
 ---
 
 ## 1. 为什么需要 alias map
 
-显示名不再带渠道和积分，路由无法从名字反推上游（`DeepSeek-4.1-Fs` 对应四个渠道的
-四个上游 id）。因此同步脚本同时写两份：
+显示名不再带渠道和积分，路由无法从名字反推上游（`DeepSeek-4.1-Flash` 对应三个渠道的
+三个上游跳）。因此同步脚本同时写两份：
 
 | 文件 | 作用 |
 |---|---|
@@ -24,7 +24,7 @@ WorkBuddy（7863）、Qoder（8790）、千问（远程 Messages）和 OpenCode-
 `Arrearage` / `AllocationQuota` / `FreeTierOnly`（额度耗尽）、以及 402，都会立即换
 下一跳，并把该跳放进 **30 分钟冷却**（内存态，重启清零，`/health` 的 `cooling`
 是当前数量）。没有这条，几十跳的集合体每轮都要先把死跳撞一遍。
-集合体（池子）的定义见 [QWEN.md](QWEN.md) §4.5。
+集合体（池子）的定义见 [QWEN.md](QWEN.md) §4.5；当前 `pools.json` 为空，集合体已停用。
 
 alias map **不含凭据**；上游 key 仍由路由按渠道从 `provider_config.json` /
 `gateways/upstream/workbuddy/config.json` / `providers/qoder/.env.local` 读取。
@@ -37,7 +37,7 @@ alias map **不含凭据**；上游 key 仍由路由按渠道从 `provider_confi
 <型号>
 ```
 
-例：`DeepSeek-4.1-Fs`、`GLM-5.3-Fs`、`Qwen-3.8-Max`、`Claude-Haiku-5.5`。
+例：`DeepSeek-4.1-Flash`、`GLM-5.3-Flash`、`Qwen-3.8-Max`、`Claude-Haiku-5.5`。
 
 - **不再带渠道**（原 `W/` `O/` `Q/`）**和积分**（原 `/0.03/`）。
 - 版本号保留点号（`4.1` / `3.8` / `2.6` / `5.3`），`Flash` 与 `Preview` 不再缩写（`DeepSeek-4.1-Flash`、`HY4-Pre`）。
@@ -49,7 +49,7 @@ alias map **不含凭据**；上游 key 仍由路由按渠道从 `provider_confi
 
 | 情况 | 做法 |
 |---|---|
-| 同型号既有免费档又有付费档 | 免费那条单独成条，名字加 `-Free`（如 `HY3-Free`、`HY4-Pre-Free`、`DeepSeek-4-Flash-Free`）；付费那条用原名 |
+| 同型号既有免费档又有付费档 | **先合并**：免费档并入付费条目当第一跳（见 §3）。只有协议不同无法合并时才单独成条，且**真重名**才给免费那条加 `-Free`（当前无此情况） |
 | 同名但协议不同（chat / messages / responses） | 桥接那条加 `-Msg` / `-Resp`（2026-10-28 首次触发：千问桥接版） |
 
 `deepseek-v4.1-flash` 是唯一例外：免费档**并入**付费条目并放在链路第一跳，见 §3。
@@ -62,11 +62,10 @@ alias map **不含凭据**；上游 key 仍由路由按渠道从 `provider_confi
 CN 优先于其它渠道。以 DeepSeek 为例：
 
 ```
-DeepSeek-4.1-Fs
-  1. WB  global:deepseek-v4.1-flash      0.00   ← 免费，优先
-  2. WB  global:deepseek-v4.1-flash-sg   0.03
-  3. WB  cn:deepseek-v4.1-flash          0.11
-  4. OC  deepseek-v4.1-flash             0.11
+DeepSeek-4.1-Flash
+  1. WB  cn:deepseek-v4.1-flash          0.11   ← 面板现价
+  2. OC  deepseek-v4.1-flash             0.11
+  3. QW  deepseek-v4.1-flash             0.00   ← 一年期预付额度，钉在链尾
 ```
 
 - 实际扣费看命中哪一跳；显示名不再体现价格。
@@ -105,8 +104,8 @@ token 里 86% 是 `DeepSeek-4.1-Flash` 一个模型，高耗组 16 条全部零�
 | 组（providerId） | 装什么 | 判定 |
 |---|---|---|
 | **主力** `opencode-go-chat` | 两条：`DeepSeek-4.1-Flash`（三跳链：WB → OC → 千问兜底）+ `Qwen-3.8-Max`（贵备份） | `MAIN_IDS`，键是 `<协议>:<上游 id>`，**不受价格上限约束** |
-| **免费** `opencode-go-chat-free` | 真免费 + 千问试用额度 + 2 个集合体 | 链路最低价 = 0 |
-| **省钱** `opencode-go-chat-fast` | 每个厂商一个特色型号（8 条，0.05–0.09） | `LOW_PICKS` 命中且价格 ≤ `LOW_MAX`(0.11) |
+| **免费** `opencode-go-chat-free` | 真免费条目（当前 8 条） | 链路最低价 = 0；组内 `HY` 前缀置顶，其余按价格升序 |
+| **省钱** `opencode-go-chat-fast` | **每个厂商 1–2 个最具代表性的现行产品**（当前 9 条）；前旗舰/上一代一律不收录 | 命中 `LOW_PICKS` 即进组，**不受 `LOW_MAX` 价格上限约束**（所以 MiMo-2.6-Pro 0.19 能在组里） |
 | ~~高耗~~ | 已删除 | 不在两个名单里且价格 > 0.11 → **不收录** |
 
 为什么这么切：用户的实际选择只有「DeepSeek」和「免费」。按价格四档会让
@@ -120,14 +119,21 @@ token 里 86% 是 `DeepSeek-4.1-Flash` 一个模型，高耗组 16 条全部零�
   `deepseek-v4.1-flash`）把 chat 与 messages 跳并成一条链，每跳自带 `protocol`，
   路由逐跳派发。`TAIL_HOPS` 再把指定跳钉到链尾，实现「先把月度额度用完，再用
   一年期预付额度」。
-- **主力豁免价格上限**：贵备份 `Qwen-3.8-Max` 是 0.43，其余超限模型一律不收录，
+- **主力豁免价格上限**：贵备份 `Qwen-3.8-Max` 现价 0.17，其余超限模型一律不收录，
   所以 `--max-price` 只对非主力生效。
 - **榜单不再自动扩主力**：`arena_leaderboard.py` 仍能产候选，但
   `model_alias.py` 默认忽略，要 `--arena` 才生效。
+- **顺序由人工名单决定，不按价格**：主力按 `MAIN_ORDER`、省钱按 `LOW_ORDER`
+  的书写顺序排。旧实现按「厂商最低价」排序，会把便宜厂商顶到前面、把 MiMo 之类
+  挤到列表末尾 —— 用户明确要求常用型号在最前，所以排序权收归名单。
+- **省钱组只留各厂代表作**：每厂 1–2 个（小米是 Flash + Pro），旧代旗舰
+  （如 MiMo-2.5、GLM-5.2、Qwen-3.7）不进组；不在名单里的模型直接不收录。
 
-改名单 = 改 `tools/model_alias.py` 的 `MAIN_IDS` / `LOW_PICKS`，然后
-`python tools/model_alias.py --slot auto --apply`。**收缩名单要跑两次**：第一次
-落新分组，第二次才收敛名字（`-Free` / `-Msg` 后缀取决于同型号还有没有别的形态）。
+改名单/改顺序 = 改 `tools/model_alias.py` 的 **`MAIN_ORDER` / `LOW_ORDER`**，
+然后 `python tools/model_alias.py --slot auto --apply`。`MAIN_IDS` / `LOW_PICKS`
+由这两个有序列表派生，不要再单独维护（两份字面量会漂移）。
+**收缩名单要跑两次**：第一次落新分组，第二次才收敛名字（`-Msg` / `-Free`
+后缀取决于同型号还有没有别的形态）。
 
 ### 4.1 峰谷价（早晚不同）
 
@@ -181,10 +187,17 @@ python tools/model_alias.py --no-arena --apply        # 回到纯人工主力（
 - Anthropic Messages（`/v1/messages`，`x-api-key` + `anthropic-version`）
 - OpenAI Responses（`/v1/responses`，Bearer）
 
-上游用**非流式**调用，桥接器再合成 chat SSE。工具调用会双向转换
-（`tools` / `tool_calls` / `tool_use` / `function_call`）。
-代价：桥接模型的首字不是逐 token 到达，而是整段返回；chat 模型仍是原生流式。
-链路里的桥接跳失败（5xx / 429 / 503）会自动换下一跳。
+上游按 **`stream: true`** 调用，桥接器边收边转成 chat SSE（2026-10-29 起）：
+文本、`thinking` 推理、以及**工具调用增量**都是逐块转发，首字不再等整段生成完。
+
+- 工具调用双向转换：`tools` / `tool_calls` / `tool_use` / `function_call`；
+  流式下 `content_block_start`(tool_use) → `input_json_delta` → chat
+  `tool_calls` 增量，收尾 `finish_reason` 为 `tool_calls`。
+- **只有链尾跳走流式**：前面某跳失败还要能回落，已写出的半截 SSE 收不回来，
+  所以非尾跳仍整段缓冲后一次写出。
+- 上游在写出任何 chunk 前就报错（4xx/5xx）时，桥接器把真实错误码经 JSON
+  回给客户端，不会留下一个挂起的空流。
+- 链路里的桥接跳失败（5xx / 429 / 503）会自动换下一跳。
 
 ---
 
@@ -226,10 +239,13 @@ python tools/model_alias.py --check
   会触发下一跳；没有下一跳时才报 502。
 - `deepseek-v4-flash-vision-exp` 没有公布价格，暂不收录；`minimax-m2.7` 价格已公布
   （$0.30/$1.20 → 积分 0.22），2026-10-26 起收录。
-- 桥接模型非流式上游；如果以后需要逐 token，再补 SSE 增量转换。
+- 桥接模型已改为流式（§5）；**非链尾跳**仍是整段缓冲，这是为回落安全付出的代价。
+- 上游自己不流式时（实测 Qoder 渠道整段缓冲，首字 ~32s），桥接器无法改变，
+  只能等上游；这类慢模型不要放进主力。
 - 别名表是本地活数据，不入库；`provider_config.json` 与备份同样不入库。
 - 榜单接口不可用时用本地缓存；缓存也没有就跳过扩充，人工 `MAIN_IDS` 仍生效。
-- 同名不同协议的条目靠 `-Msg` / `-Resp` 区分；同名免费条目靠 `-Free` 区分。
+- 同名不同协议的条目靠 `-Msg` / `-Resp` 区分；免费条目默认不加后缀，只有与
+  付费条目**真重名且无法合并**时才加 `-Free`。
 
 ---
 

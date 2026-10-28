@@ -480,3 +480,72 @@ prune。它同时也认不出这些模型已经配置过，会把整个 Go 目�
   否则视为陈旧映射（否则一个旧 key 会把新模型静默指到别的条目上）。
 - **验证**：连续跑两次 `model_alias.py --slot auto --apply`，alias map 条目数
   稳定在 52；`--check` 退出码 0。
+
+## 27. 桥接模型整段缓冲 → 首字像卡死；改成流式后又必须保住回落安全 【通用】
+
+- **现象**：走协议桥（Messages / Responses）的模型首字要等整段生成完才一次性
+  吐出来（实测 Conatus 12.06s 才收到唯一一个 chunk，Qwen-3.8-Flash-Msg 5.07s
+  单块），而原生 chat 模型 0.98s 就开始逐 token；用户体感是「很多模型首字很慢」。
+- **根因**：`bridge.Forward` 调上游时写死 `stream: false`，收完整段 JSON 后才用
+  `sseOf()` 合成一个 chat SSE chunk。上游完整生成的时间全被算进了首字。
+- **解法**：`Options` 增加 `Stream` / `OnChunk`，`bridge.Forward` 在客户端要求
+  流式时改调 `forwardStream`——上游按 `stream: true` 请求，边解析 SSE 边通过
+  `OnChunk` 抛出 chat chunk。文本、`thinking`、`tool_use`（`input_json_delta`）、
+  Responses 的 `function_call` 增量都要各自翻译。
+- **代价与边界**：**只有链尾跳走流式**。前面某跳一旦写出半截 SSE 就收不回来、
+  无法再回落；非尾跳仍整段缓冲。另外上游在写出任何 chunk 前报错时，必须把
+  真实错误码经 JSON 回给客户端（`finishBridge` 用 `cw.written` 判断），否则
+  客户端会挂在一个空流上。
+- **上游自己不流式就没办法**：Qoder 渠道直连实测首字 32.6s（`stream: true` 也
+  一样），这是上游整段缓冲，桥接器改不了——这类模型别放主力。
+- **验证**：`go test ./internal/bridge/...`（含流式文本、流式工具调用、上游报错
+  三条用例）；实测 `claude-haiku-5-5` / `gpt-6-luna` 工具调用流式返回
+  `finish_reason: tool_calls` 且参数完整。
+
+## 28. zgate 停掉后忘了拉起来 = 全站模型不可用；启动必须带 `serve` 【通用】
+
+- **现象**：为了让新二进制生效 `taskkill` 掉 zgate，之后用
+  `start "" zgate.exe` 启动，进程立刻消失，`/health` 不通，ZCode 里所有模型
+  一起报错。直接前台跑，报 `panic: slice bounds out of range [2:1]`
+  （`main.loadConfig` 里的 `os.Args[2:]`）。
+- **根因**：zgate 没有默认子命令，`usage()` 要求显式 `serve`；`os.Args[2:]`
+  在只有 1 个参数时越界。另外 `zgate.exe` 是 GUI 子系统，用 `start` 时的参数
+  传递方式容易被 shell 吞掉。
+- **解法**：停旧进程 → `python gateways/zgate/build.py` 重新构建（会校验 PE
+  子系统是 WINDOWS_GUI）→ 用显式参数列表启动：
+
+  ```powershell
+  Start-Process -FilePath 'F:\Project\ZcodeAIModels\gateways\zgate\zgate.exe' `
+    -ArgumentList 'serve' `
+    -WorkingDirectory 'F:\Project\ZcodeAIModels\gateways\zgate' -WindowStyle Hidden
+  ```
+
+  起来后必须验证：`netstat -ano | grep 7871` 有 LISTENING，且
+  `curl http://127.0.0.1:7871/health` 返回 `"ok":true`。
+- **教训**：**这是单点故障**。重启网关属于「会切断用户所有模型」的操作，
+  停机窗口要压到最短，重建失败就立刻回退旧二进制，不能停着慢慢查。
+
+## 29. 渠道级「一律免费」定价会把将来的付费模型也记成 0 【通用】
+
+- **现象**：`price_of()` 对 `QN`（七牛）渠道无条件返回 0（只判 `QN_FREE_UNTIL`
+  日期），不校验模型 id 是不是 `-free`。当前只收了两个限免模型所以看不出问题，
+  一旦将来播种任何七牛付费模型，它会以 0 价进免费组，扣费完全不可见。
+- **根因**：把「这家渠道现在有免费活动」当成了「这家渠道的一切都免费」。
+- **解法**：按 **模型 id** 判定优惠，不按渠道。`QN` 分支先检查
+  `upstream.endswith("-free")`，不是就返回 `None`（缺价 → 剔除）。千问的
+  预付额度仍是渠道级（整账号共用一份 ¥300），所以 `QW` 保持渠道级。
+- **验证**：`tests/test_model_alias_price.py` 的价格派生用例；`--check` 零漂移。
+
+## 30. 组内排序交给「厂商最低价」会把常用模型挤到列表末尾 【通用】
+
+- **现象**：省钱组按 `vendor_min`（每个厂商的最低价）排序后，MiMo 这类价格
+  不是最低但最常用的模型被排到列表最后，用户要在选择器里翻到底才能点到。
+- **根因**：排序键选了「价格」这个与使用频率无关的量，还按厂商聚合，等于让
+  便宜厂商永久霸占前排。`set` 本身更是无序的，两次运行顺序还可能不同。
+- **解法**：**顺序权收归人工有序列表**。`MAIN_ORDER` / `LOW_ORDER` 是唯一权威，
+  `MAIN_IDS` / `LOW_PICKS` 由它们派生（`set(...)`），组内按列表下标排，未命中
+  名单的排最后。这样「常用的在最前」是写死的，不受价格波动影响。
+- **配套规则**：省钱组只留**各厂 1–2 个代表作**（小米留 Flash + Pro），前旗舰 /
+  上一代（MiMo-2.5、GLM-5.2、Qwen-3.7 等）不进组；不在名单里的模型直接不收录，
+  而不是「收进来排在后面」。
+- **验证**：`--check` 零漂移；`/v1/models` 里组内顺序与 `LOW_ORDER` 逐项一致。

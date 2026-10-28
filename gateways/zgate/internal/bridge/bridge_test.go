@@ -36,7 +36,7 @@ func TestChatToAnthropicMovesSystemAndTools(t *testing.T) {
 		"tools":[{"type":"function","function":{"name":"f","description":"d","parameters":{"type":"object"}}}],
 		"tool_choice":"auto"
 	}`)
-	payload := decode(t, chatToAnthropic(body, "claude-upstream"))
+	payload := decode(t, chatToAnthropic(body, "claude-upstream", false))
 	if payload["model"] != "claude-upstream" {
 		t.Fatalf("model not rewritten: %v", payload["model"])
 	}
@@ -113,7 +113,7 @@ func TestChatToResponses(t *testing.T) {
 		],
 		"tools":[{"type":"function","function":{"name":"g","parameters":{"type":"object"}}}]
 	}`)
-	payload := decode(t, chatToResponses(body, "resp-upstream"))
+	payload := decode(t, chatToResponses(body, "resp-upstream", false))
 	if payload["instructions"] != "sys" || payload["max_output_tokens"] != float64(32) {
 		t.Fatalf("responses payload wrong: %v", payload)
 	}
@@ -195,5 +195,63 @@ func TestForwardTimesOut(t *testing.T) {
 	}
 	if !strings.Contains(string(res.Body), "upstream_error") {
 		t.Fatalf("unexpected body: %s", res.Body)
+	}
+}
+func TestForwardStreamAnthropicToolCall(t *testing.T) {
+	// 流式路径必须把 tool_use 翻译成 chat tool_calls，并以 tool_calls 收尾。
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		fl, _ := w.(http.Flusher)
+		write := func(s string) {
+			w.Write([]byte(s))
+			if fl != nil {
+				fl.Flush()
+			}
+		}
+		write(`event: content_block_start
+data: {"type":"content_block_start","index":0,"content_block":{"type":"tool_use","id":"toolu_1","name":"read_file"}}
+
+`)
+		write(`event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{\"path\":"}}
+
+`)
+		write(`event: content_block_delta
+data: {"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"\"/tmp/x\"}"}}
+
+`)
+		write(`event: message_stop
+data: {"type":"message_stop"}
+
+`)
+	}))
+	defer up.Close()
+
+	var chunks []string
+	res := Forward(up.Client(), Options{
+		Protocol:      "messages",
+		Base:          up.URL,
+		Key:           "k",
+		Body:          []byte(`{"model":"m","messages":[{"role":"user","content":"hi"}]}`),
+		UpstreamModel: "m",
+		DisplayModel:  "Display-M",
+		Stream:        true,
+		OnChunk: func(b []byte) error {
+			chunks = append(chunks, string(b))
+			return nil
+		},
+	})
+	if res.Status != 200 {
+		t.Fatalf("status=%d", res.Status)
+	}
+	joined := strings.Join(chunks, "")
+	if !strings.Contains(joined, "tool_calls") {
+		t.Fatalf("tool_calls missing from stream: %q", joined)
+	}
+	if !strings.Contains(joined, "read_file") {
+		t.Fatalf("tool name missing: %q", joined)
+	}
+	if !strings.Contains(joined, `"finish_reason":"tool_calls"`) {
+		t.Fatalf("finish_reason should be tool_calls: %q", joined)
 	}
 }

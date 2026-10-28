@@ -80,7 +80,9 @@ LOW_COST_MIN_M = 80.0
 # 备用档：以 deepseek-v4.1-flash 为 100 基准、性价比 < 1 的模型。
 # 依据见 docs/BENCHMARKS.md §5.4；新增模型不要自动进这里，必须人工确认。
 # 四组制：备用档并入高耗，不再单独建 opencode-go-chat-backup。
-BACKUP_PROVIDER = "opencode-go-chat-slow"
+# 2026-10-29 起只有三组（主力/免费/省钱）：高耗与备用都落到省钱组，
+# 最终分组由 tools/model_alias.py 按 MAIN_IDS / LOW_PICKS + 价格重算。
+BACKUP_PROVIDER = "opencode-go-chat-fast"
 BACKUP_MODEL_IDS = {"minimax-m3"}
 
 # 四组制：messages / responses 协议的模型也按成本进这 4 组，不再单独建
@@ -89,7 +91,7 @@ BACKUP_MODEL_IDS = {"minimax-m3"}
 CHAT_PROVIDER = {
     "免费": "opencode-go-chat-free",
     "低耗": "opencode-go-chat-fast",
-    "高耗": "opencode-go-chat-slow",
+    "高耗": "opencode-go-chat-fast",
     "备用": BACKUP_PROVIDER,
 }
 
@@ -447,20 +449,30 @@ def display_alias():
 def probe_targets(conf, alias):
     """把已配置模型映射成 (上游裸 id -> (显示名, providerId))。
 
-    `model_alias.py` 会把配置重写成 `W/O/Q/积分/型号` 显示名，Go 上游不认识
-    这些 id，直接拿显示名探测会 404 后被误判成「已下架」。这里按 alias map
-    还原上游名，非 Go 渠道（WB / QD）跳过；没有映射的裸 id 原样处理。
+    `model_alias.py` 会把配置重写成显示名，Go 上游不认识这些 id，直接拿显示名
+    探测会 404 后被误判成「已下架」。这里按 alias map 还原上游名，只管 OpenCode-Go
+    （OC）渠道的模型；其它渠道（WB / QD / QN / qwen 等）由各自脚本或别名表管理，
+    **不能拿去当 Go 模型探测**，否则会出现「把 qn: 种子探成 400 后误删」这类事故
+    （2026-10-29 Conatus / Kimi-K3 被清即此因：probe_targets 没排除 QN 渠道）。
     """
     targets, skipped = {}, 0
     for display, pid in conf.items():
-        entry = alias.get(display) or {}
-        channel = str(entry.get("channel") or "")
-        if channel in ("WB", "QD") or is_non_go_id(display):
+        # 已知非 Go 前缀（cn:/global:/qoder:/wb:/oc:/qd:）归各自渠道
+        if is_non_go_id(display):
             skipped += 1
             continue
-        targets[str(entry.get("upstream") or display)] = (
-            display, pid, entry.get("protocol"),
-        )
+        entry = alias.get(display) or {}
+        channel = str(entry.get("channel") or "")
+        # 有别名且别名指向非 OC 渠道（WB / QD / QN / qwen）→ 不归本脚本管
+        if channel and channel != "OC":
+            skipped += 1
+            continue
+        upstream = str(entry.get("upstream") or display)
+        # 即便别名缺失（原始 qn: 种子未归一化），裸上游带前缀也归对应渠道
+        if upstream.startswith(("qn:", "qwen:", "qoder:", "cn:", "global:", "wb:", "oc:", "qd:")):
+            skipped += 1
+            continue
+        targets[upstream] = (display, pid, entry.get("protocol"))
     return targets, skipped
 
 

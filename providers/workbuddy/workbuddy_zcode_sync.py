@@ -115,16 +115,18 @@ UNIFIED_TARGETS = {
     "main": "opencode-go-chat",
     "free": "opencode-go-chat-free",
     "low": "opencode-go-chat-fast",
-    "high": "opencode-go-chat-slow",
-    # 四组制：备用档并入高耗，不再单独建 opencode-go-chat-backup。
-    "backup": "opencode-go-chat-slow",
+    # 四组制已精简为三组（主力/免费/省钱）：原高耗档与备用档都并进省钱组，
+    # 由 tools/model_alias.py 按 MAIN_IDS / LOW_PICKS + 价格重算最终归属
+    # （不在白名单里的高价模型会被筛掉）。这里必须有真实存在的 providerId，
+    # 否则 apply_unified 会因 target provider not found 崩溃。
+    "high": "opencode-go-chat-fast",
+    "backup": "opencode-go-chat-fast",
 }
 ROUTER_BASE = os.environ.get("UNIFIED_ROUTER_BASE", "http://127.0.0.1:7871/v1")
 UNIFIED_ORDER = (
     "opencode-go-chat",
     "opencode-go-chat-free",
     "opencode-go-chat-fast",
-    "opencode-go-chat-slow",
 )
 
 GROUP = "standard-personal"

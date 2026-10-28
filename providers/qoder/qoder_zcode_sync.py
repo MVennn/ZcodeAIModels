@@ -7,8 +7,7 @@ Qoder models are merged into the same five chat providers the WorkBuddy sync
 already uses, with a `qoder:` prefix on every model id:
 
     price_factor == 0        -> opencode-go-chat-free
-    0 < price_factor <= 0.2  -> opencode-go-chat-fast
-    price_factor > 0.2       -> opencode-go-chat-slow
+    0 < price_factor         -> opencode-go-chat-fast（省钱组；最终分组由 model_alias 重算）
 
 The prefix is required because Qoder and WorkBuddy/OpenCode share names such as
 `GLM-5.3-Flash`, `MiniMax-M3.1-Flash` and `GLM-5.3`. `tools/unified-router.js`
@@ -67,10 +66,13 @@ PREFIX = "qoder:"
 # Merge targets by Qoder's own relative price. The WorkBuddy tiers use a credit
 # multiplier, so the two scales are not comparable; these thresholds only split
 # Qoder's free / cheap-flash / rest bands.
+# 2026-10-29 起分组只剩三组（主力 / 免费 / 省钱），`opencode-go-chat-slow` 已删除。
+# 高耗档统一落到省钱组：最终分组由 tools/model_alias.py 按 MAIN_IDS / LOW_PICKS +
+# 价格重算，这里只负责把 `qoder:` 种子写进一个存在的 provider。
 MERGE_TARGETS = {
     "free": "opencode-go-chat-free",
     "low": "opencode-go-chat-fast",
-    "high": "opencode-go-chat-slow",
+    "high": "opencode-go-chat-fast",
 }
 LOW_MAX = 0.2
 # Qoder's routing aliases resolve to another model and have no own price.
@@ -294,9 +296,10 @@ def merge_models(cfg: dict, models: list[dict]) -> tuple[list[tuple[str, str, st
     remove_merged_models(cfg)
     remove_separate_provider(cfg)
     by_id = {rule.get("providerId"): rule for rule in provider_rules(cfg)}
-    for target_id in MERGE_TARGETS.values():
-        if target_id not in by_id:
-            raise SystemExit(f"provider 不存在：{target_id}（先跑 Go/WorkBuddy 同步建立五个 chat 组）")
+    missing = sorted({tid for tid in MERGE_TARGETS.values() if tid not in by_id})
+    if missing:
+        raise SystemExit(
+            f"provider 不存在：{', '.join(missing)}（先跑 Go/WorkBuddy 同步建立三组）")
 
     entries = model_rules(cfg)
     added: list[tuple[str, str, str, float]] = []

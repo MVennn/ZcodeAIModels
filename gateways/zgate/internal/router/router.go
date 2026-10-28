@@ -159,7 +159,7 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	isChat := path == "/chat/completions"
-	if !isChat && (isQoder(model) || isWorkBuddy(model) || isQwen(model)) {
+	if !isChat && (isQoder(model) || isWorkBuddy(model) || isQwen(model) || isQiniu(model)) {
 		writeJSON(w, 400, errorBody("WorkBuddy/Qoder/Qwen models only support chat/completions", "invalid_request_error"))
 		return
 	}
@@ -197,6 +197,8 @@ func (s *Server) routeAlias(w http.ResponseWriter, r *http.Request, body []byte,
 			return
 		}
 		s.log.Infof("%s %s%s model=%s -> %s:%s", r.Method, path, search, model, channel, protocol)
+		streaming := wantsStream(body)
+		cw := newBridgeChunkWriter(w)
 		result := bridge.Forward(s.client, bridge.Options{
 			Protocol:      protocol,
 			Base:          t.Base,
@@ -205,8 +207,10 @@ func (s *Server) routeAlias(w http.ResponseWriter, r *http.Request, body []byte,
 			UpstreamModel: t.Upstream,
 			DisplayModel:  model,
 			Ctx:           r.Context(),
+			Stream:        streaming,
+			OnChunk:       cw.write,
 		})
-		writeResult(w, result)
+		finishBridge(w, cw, result)
 		return
 	}
 
@@ -261,6 +265,8 @@ func (s *Server) routeFallback(w http.ResponseWriter, r *http.Request, body []by
 			return
 		}
 		s.log.Infof("%s %s%s model=%s -> QW:messages", r.Method, path, search, model)
+		streaming := wantsStream(body)
+		cw := newBridgeChunkWriter(w)
 		result := bridge.Forward(s.client, bridge.Options{
 			Protocol:      "messages",
 			Base:          base,
@@ -269,8 +275,35 @@ func (s *Server) routeFallback(w http.ResponseWriter, r *http.Request, body []by
 			UpstreamModel: trimPrefixFold(model, "qwen:"),
 			DisplayModel:  model,
 			Ctx:           r.Context(),
+			Stream:        streaming,
+			OnChunk:       cw.write,
 		})
-		writeResult(w, result)
+		finishBridge(w, cw, result)
+		return
+	case isChat && isQiniu(model):
+		// 七牛云 AI 网关：同样只认 Anthropic Messages，裸 `qn:` id 还没进 alias map
+		// 时（播种后、归一化前）也要能落到正确上游。
+		channel, label, key = "QN", "qiniu", ks.QN
+		base = cfg.Upstreams["QN"].Base
+		if key == "" {
+			writeJSON(w, 502, errorBody("Qiniu key not configured", "configuration_error"))
+			return
+		}
+		s.log.Infof("%s %s%s model=%s -> QN:messages", r.Method, path, search, model)
+		streaming := wantsStream(body)
+		cw := newBridgeChunkWriter(w)
+		result := bridge.Forward(s.client, bridge.Options{
+			Protocol:      "messages",
+			Base:          base,
+			Key:           key,
+			Body:          body,
+			UpstreamModel: trimPrefixFold(model, "qn:"),
+			DisplayModel:  model,
+			Ctx:           r.Context(),
+			Stream:        streaming,
+			OnChunk:       cw.write,
+		})
+		finishBridge(w, cw, result)
 		return
 	case isChat && isWorkBuddy(model):
 		channel, label, key = "WB", "workbuddy", ks.WB
@@ -460,6 +493,7 @@ func (s *Server) health(w http.ResponseWriter) {
 		"workbuddy": upstreamView("WB"),
 		"qoder":     upstreamView("QD"),
 		"qwen":      upstreamView("QW"),
+		"qiniu":     upstreamView("QN"),
 		"alias": map[string]any{
 			"path":   s.aliases.Path(),
 			"models": s.aliases.Count(),
@@ -521,6 +555,10 @@ func (s *Server) attemptChain(w http.ResponseWriter, r *http.Request, body []byt
 		// 尾巴这一跳走 Messages 桥，失败照样换下一跳。
 		s.log.Infof("%s %s%s model=%s -> %s:%s [%s] (%d/%d)", r.Method, path, search,
 			model, hop.Channel, hop.Upstream, proto, index+1, len(t.Chain))
+		// 只有「链尾跳」才走流式：一旦前面某跳失败才能安全回落；非尾跳若先写了半截 SSE
+		// 就没法再换下一跳了（整段缓冲后一次性写出，与旧版一致）。
+		streaming := wantsStream(body) && index == len(t.Chain)-1
+		cw := newBridgeChunkWriter(w)
 		result := bridge.Forward(s.client, bridge.Options{
 			Protocol:      proto,
 			Base:          hop.Base,
@@ -529,6 +567,8 @@ func (s *Server) attemptChain(w http.ResponseWriter, r *http.Request, body []byt
 			UpstreamModel: hop.Upstream,
 			DisplayModel:  model,
 			Ctx:           r.Context(),
+			Stream:        streaming,
+			OnChunk:       cw.write,
 		})
 		if hopFatal(result.Status, result.Body) {
 			s.markCooling(hop)
@@ -541,7 +581,7 @@ func (s *Server) attemptChain(w http.ResponseWriter, r *http.Request, body []byt
 			s.attemptChain(w, r, body, model, t, path, search, index+1)
 			return
 		}
-		writeResult(w, result)
+		finishBridge(w, cw, result)
 		return
 	}
 	rewritten, ok := rewriteModel(body, hop.Upstream)
@@ -585,6 +625,9 @@ func (s *Server) attemptBridge(w http.ResponseWriter, r *http.Request, body []by
 		return
 	}
 	s.log.Infof("%s %s%s model=%s -> %s:%s (%d/%d)", r.Method, path, search, model, hop.Channel, hop.Upstream, index+1, len(t.Chain))
+	// 只有「链尾跳」才走流式：前面某跳失败时需要安全回落，不能先写半截 SSE。
+	streaming := wantsStream(body) && index == len(t.Chain)-1
+	cw := newBridgeChunkWriter(w)
 	result := bridge.Forward(s.client, bridge.Options{
 		Protocol:      protocol,
 		Base:          hop.Base,
@@ -593,6 +636,8 @@ func (s *Server) attemptBridge(w http.ResponseWriter, r *http.Request, body []by
 		UpstreamModel: hop.Upstream,
 		DisplayModel:  model,
 		Ctx:           r.Context(),
+		Stream:        streaming,
+		OnChunk:       cw.write,
 	})
 	// Retry only on server-side failures; a 4xx (bad request, bad key) would
 	// fail identically on every hop. The last hop's real error is passed
@@ -610,6 +655,9 @@ func (s *Server) attemptBridge(w http.ResponseWriter, r *http.Request, body []by
 	if (result.Status >= 500 || result.Status == 429) && index+1 < len(t.Chain) {
 		s.log.Infof("[router] %s -> HTTP %d, fallback %s", hop.Upstream, result.Status, nextHopName(t.Chain, index))
 		s.attemptBridge(w, r, body, model, t, protocol, path, search, index+1)
+		return
+	}
+	if streaming {
 		return
 	}
 	writeResult(w, result)
@@ -678,7 +726,7 @@ func (s *Server) reload(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 400, errorBody("配置读取失败: "+err.Error(), "configuration_error"))
 		return
 	}
-	ks := keys.Load(next.ProviderConfig, next.WBGatewayConfig, next.QoderEnvFile, next.QwenEnvFile)
+	ks := keys.Load(next.ProviderConfig, next.WBGatewayConfig, next.QoderEnvFile, next.QwenEnvFile, next.QiniuEnvFile)
 	applied, stale, added := s.sup.ApplyConfig(next.Children)
 	s.setRuntime(next, ks)
 	s.aliases.Reload()
@@ -737,6 +785,18 @@ func rewriteModel(body []byte, upstream string) ([]byte, bool) {
 	return out, true
 }
 
+// wantsStream 返回客户端（ZCode）是否请求了 SSE 流式输出。桥接模型上游也按流式请求，
+// 让首字即时到达；非流式时桥接器退化为「整段合成一个 chunk」。
+func wantsStream(body []byte) bool {
+	var probe struct {
+		Stream bool `json:"stream"`
+	}
+	if err := json.Unmarshal(body, &probe); err != nil {
+		return false
+	}
+	return probe.Stream
+}
+
 func copyHeaders(dst, src http.Header) {
 	for name, values := range src {
 		if hopByHop[strings.ToLower(name)] {
@@ -761,6 +821,48 @@ func writeResult(w http.ResponseWriter, r bridge.Result) {
 	w.Header().Set("Content-Length", itoa(len(r.Body)))
 	w.WriteHeader(r.Status)
 	_, _ = w.Write(r.Body)
+}
+
+// bridgeChunkWriter 把桥接流式响应的每个 chat SSE chunk 直接写给客户端并 flush，
+// 让首字随上游 delta 即时到达（不再等整段生成完）。首次写入时落 SSE 头。
+type bridgeChunkWriter struct {
+	w       http.ResponseWriter
+	flusher http.Flusher
+	once    bool
+	written bool
+}
+
+func (b *bridgeChunkWriter) write(chunk []byte) error {
+	if !b.once {
+		b.w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
+		b.w.Header().Set("Cache-Control", "no-cache")
+		b.w.Header().Set("Connection", "keep-alive")
+		b.w.WriteHeader(200)
+		b.once = true
+	}
+	if _, err := b.w.Write(chunk); err != nil {
+		return err
+	}
+	b.written = true
+	if b.flusher != nil {
+		b.flusher.Flush()
+	}
+	return nil
+}
+
+func newBridgeChunkWriter(w http.ResponseWriter) *bridgeChunkWriter {
+	f, _ := w.(http.Flusher)
+	return &bridgeChunkWriter{w: w, flusher: f}
+}
+
+// finishBridge 收口桥接响应：流式且已写出过 chunk 时，SSE 已结束，无需再写；
+// 流式但尚未写出任何 chunk（上游直接返回错误）时，仍要把真实错误码经 writeResult 透出，
+// 否则客户端会一直挂起。非流式则一律走 writeResult（与旧行为一致）。
+func finishBridge(w http.ResponseWriter, cw *bridgeChunkWriter, result bridge.Result) {
+	if cw.written {
+		return
+	}
+	writeResult(w, result)
 }
 
 func writeJSON(w http.ResponseWriter, status int, payload any) {
@@ -791,6 +893,10 @@ func isQoder(model string) bool {
 
 func isQwen(model string) bool {
 	return strings.HasPrefix(strings.ToLower(model), "qwen:")
+}
+
+func isQiniu(model string) bool {
+	return strings.HasPrefix(strings.ToLower(model), "qn:")
 }
 
 func orDash(s string) string {

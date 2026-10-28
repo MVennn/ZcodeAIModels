@@ -1637,3 +1637,83 @@ ZCode（不改脚本、不动 provider_config.json、不建定时任务）。
   现在有 TTL 保护，但建议定期全量重探。
 
 ## 状态: 已完成
+
+
+# 2026-10-29 第 N 轮：桥接流式（首字慢根因）+ 组内排序收归人工名单 + 省钱组收紧
+
+## 任务目标
+
+用户三条诉求：①「很多模型首字都很慢，看看有没有优化的空间」；②「排序都有问题，
+mimo 甚至到后面去了」；③「省钱里面应该留下的都是各公司最特色的 1–2 个产品，
+前旗舰都可以去掉」；并「今天晚上改的东西都写一下文档避免以后出问题」。
+
+## 已完成变更
+
+- [x] **定位首字慢根因**：`bridge.Forward` 上游写死 `stream: false`，整段生成完
+      才合成一个 chunk。实测 Conatus 12.06s 单块、Qwen-3.8-Flash-Msg 5.07s 单块，
+      原生 chat（DeepSeek）0.98s 开始逐 token。
+- [x] **桥接改成真流式**：`bridge.Options` 增加 `Stream` / `OnChunk`；
+      `forwardStream` 按 `stream:true` 请求上游、边解析 SSE 边发 chat chunk；
+      `streamAnthropic` / `streamResponses` 翻译文本、`thinking`、
+      `tool_use`（`input_json_delta`）、Responses `function_call` 增量。
+- [x] **回落安全**：只有**链尾跳**走流式（非尾跳先写半截 SSE 就无法再回落）；
+      上游在任何 chunk 前报错时用 JSON 回真实错误码（`finishBridge` 按
+      `bridgeChunkWriter.written` 判定），不留挂起的空流。
+- [x] **测试**：新增流式文本、流式工具调用（`finish_reason: tool_calls`）、
+      上游报错不吐 chunk 三条 bridge 用例；`go test ./...` 全绿。
+- [x] **排序收归人工名单**：`MAIN_ORDER` / `LOW_ORDER` 为唯一权威，
+      `MAIN_IDS` / `LOW_PICKS` 由 `set(...)` 派生；组内按名单下标排，
+      不再按「厂商最低价」（旧逻辑把便宜厂商顶到前面、MiMo 挤到末尾）。
+- [x] **省钱组收紧到 9 条**：每厂 1–2 个代表作（小米 = MiMo-2.6-Flash + Pro），
+      命中 `LOW_PICKS` 即进组、豁免 `LOW_MAX`；前旗舰/上一代不再收录。
+- [x] **修 `price_of` 的 QN 渠道级 0 价**：只对 id 以 `-free` 结尾的模型返 0，
+      避免将来播种七牛付费模型被误记免费。
+- [x] **修 `go_model_sync.py` 误删七牛模型**：`probe_targets` 跳过任何非 `OC` 渠道
+      条目（原先把 `qn:` 种子当 Go 模型探测 → 400 → 当死模型删除）。
+- [x] 删死代码 `MAIN_FIRST`；修正 `MAIN_ORDER` 与 `MERGE_ACROSS_PROTOCOL`
+      矛盾的注释。
+- [x] 修 `workbuddy_zcode_sync.py`：`UNIFIED_TARGETS` 仍指向已删除的
+      `opencode-go-chat-slow` → 改到 `-fast`，`UNIFIED_ORDER` 截到三组。
+- [x] 文档：`MODEL-ALIAS.md` §2/§3/§4/§5/§7 按代码真实口径重写；
+      `QINIU.md` 改为 2 个模型且显示名不带 `-Free`；`PITFALLS.md` 新增 §27–§30；
+      `CHANGELOG.md` 新增本轮段落；`README.md` / `TOOLS.md` / `MODEL-PROVIDERS.md`
+      的四组口径改为三组。
+- [x] **运维事故并修复**：改二进制时 `taskkill` 掉 zgate 后没拉起，导致 ZCode
+      全部模型不可用（用户临时拉 opencode 顶上）。根因：zgate 无默认子命令，
+      裸启动 `os.Args[2:]` 越界 panic。已用 `Start-Process ... 'serve'` 恢复，
+      并写进 `PITFALLS.md` §28。
+
+## 验收
+
+- `go build ./...` + `go test ./...`（gateways/zgate）全绿；新增 3 条流式用例。
+- `python -m unittest discover -s tests -v` → 10 passed。
+- `python tools/model_alias.py --check` → **无漂移**，退出码 0。
+- `python tools/check-docs.py` → 40 篇全部通过。
+- zgate 重启后：`/health` `"ok":true`、`alias.models=19`、7871 LISTENING。
+- **实测首字（经 7871，流式）**：`claude-haiku-5-5` 0.95–1.05s、
+  `gpt-6-luna` 1.09s、`qwen3.8-flash` 1.26s、`Kimi-K3` 0.46s、`HY3` 0.57s、
+  `Conatus` 1.82s（改前 12.06s 单块）；**均已是逐 chunk 到达**。
+- **桥接工具调用**：`claude-haiku-5-5` → `finish_reason: tool_calls`
+  `get_weather{"city":"Paris"}` 2.09s；`gpt-6-luna` → `{"city":"Tokyo"}` 1.58s。
+- 全 19 模型 TTFT 基线已测（见下方注意事项）。
+
+## 待解决 / 注意事项
+
+- ⚠️ **Qoder 渠道首字 ~32s**：直连 8790 用 `stream:true` 实测 32.61s 才出首块，
+  是上游整段缓冲，桥接器无法改善。`Qwen-3.8-Max`（主力贵备份）与
+  `Qwen-3.8-Flash` / `DeepSeek-4-Flash`（免费组）都受影响 —— 这类模型别放主力。
+- ⚠️ `DeepSeek-4-Flash` 实测 93.75s 后返回 `RESOURCE_LIMIT`（Qoder 侧排队）；
+  `Iceman` 偶发空 choices；`GPT-6-Luna` 短 `max_tokens` 下可能只有 role+finish
+  两块（无正文）。三者都属上游行为，已记录，未改配置。
+- ⚠️ **zgate 是单点**：重启窗口内全站不可用。以后改二进制应「先构建到临时文件 →
+  确认成功 → 再停机切换」，或至少停机后立刻拉起并验 `/health`。
+- ⚠️ `providerOrder` 里还有第 4 个 provider（`opencode-go-chat-2`，15 个 raw id），
+  不在三组内但在配置里；它会作为第 4 个 provider 出现在 ZCode。是否删除待用户决定
+  （本轮不动，避免误删用户手建条目）。
+- ⚠️ 文档仍有历史口径残留（`MODEL-PROVIDERS.md` 的七 provider 表、
+  `QWEN.md` 的 14 模型旧表、`QODER.md` 的 8→9 模型），本轮只改了三组/命名相关
+  的硬冲突，其余留待下一轮。
+- ⚠️ `wb_pricing.json` 只有 49 条 `cn:*`，15 个 `global:*` 无当前价源；
+  `global:deepseek-v4.1-flash` 若本应免费，这条免费首跳目前是丢的，需复核面板。
+
+## 状态: 已完成

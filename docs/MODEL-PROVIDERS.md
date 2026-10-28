@@ -11,7 +11,12 @@
 数据快照：**2026-10-20**（§4 WorkBuddy 的倍率与分档于 **2026-10-22** 复核，倍率 / 分档无变化；
 §4.9 Qoder 的模型与价格于 **2026-10-23** 实测）。
 
-> **2026-10-23 起 provider 结构统一为四组**（主力 / 免费 / 低耗 / 高耗），模型 ID 改为
+> **2026-10-29 起为三组**（主力 / 免费 / 省钱），且新增 `QN`（七牛云）渠道；
+> 四组口径保留作历史；**2026-10-28 起现行口径是三组**（主力 / 免费 / 省钱），
+> 分组正本见 [MODEL-ALIAS.md](MODEL-ALIAS.md) §4。
+
+> **2026-10-23 起 provider 结构统一为四组**（主力 / 免费 / 低耗 / 高耗；2026-10-28
+> 起压缩为三组，低耗与高耗合并为省钱组），模型 ID 改为
 > 型号名（如 `DeepSeek-4.1-Fs`），跨渠道与跨协议由本地入口桥接。**当前分组与命名以
 > [MODEL-ALIAS.md](MODEL-ALIAS.md) 为准**；本文 §2 / §4 的价格、协议与思考参数仍是
 > 数据来源，旧的七组 provider 口径保留作历史。
@@ -129,7 +134,8 @@ python providers/qoder/qoder_zcode_sync.py                   # 只打印 Qoder �
 > OpenCode-Go 与 WorkBuddy；路由按 model 前缀分流。`对话` / `响应` 仍直连 OpenCode。
 > 分离模式（`workbuddy_zcode_sync.py --separate`）见 §4.2。
 >
-> **ZCode 里仍然只有 7 个 provider**：Qoder 模型以 `qoder:` 前缀并入五个 chat 组（见 §4.9）。
+> **现行 ZCode 只有 3 个 chat provider**（`opencode-go-chat` / `-free` / `-fast`）：
+> Qoder / 千问 / 七牛模型都按成本并入这三组（见 §4.9）。下面的七 provider 表是历史口径。
 
 > 「额度可撑输出」= **月额度 ÷ 输出单价**，是分档与排序的依据（每个模型额度独立，
 > 换模型 = 换一份独立额度）。

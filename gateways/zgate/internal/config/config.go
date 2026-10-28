@@ -48,6 +48,7 @@ type Config struct {
 	WBGatewayConfig string              `json:"wbGatewayConfig"`
 	QoderEnvFile    string              `json:"qoderEnvFile"`
 	QwenEnvFile     string              `json:"qwenEnvFile"`
+	QiniuEnvFile    string              `json:"qiniuEnvFile"`
 	Session         string              `json:"session"`
 	Log             Log                 `json:"log"`
 	Upstreams       map[string]Upstream `json:"upstreams"`
@@ -120,6 +121,9 @@ func (c *Config) applyDefaults() {
 	if c.QwenEnvFile == "" {
 		c.QwenEnvFile = "../../providers/qwen/.env.local"
 	}
+	if c.QiniuEnvFile == "" {
+		c.QiniuEnvFile = "../../providers/qiniu/.env.local"
+	}
 	if c.Session == "" {
 		c.Session = os.Getenv("OPENCODE_SESSION")
 	}
@@ -163,6 +167,16 @@ func (c *Config) applyDefaults() {
 		u.KeyEnv = "QWEN_API_KEY"
 		c.Upstreams["QW"] = u
 	}
+	// 七牛云 AI 网关（api.qnaigc.com）同样只提供 Anthropic Messages。
+	if u, ok := c.Upstreams["QN"]; !ok {
+		c.Upstreams["QN"] = Upstream{
+			Base:   "https://api.qnaigc.com/v1",
+			KeyEnv: "QINIU_API_KEY",
+		}
+	} else if u.KeyEnv == "" {
+		u.KeyEnv = "QINIU_API_KEY"
+		c.Upstreams["QN"] = u
+	}
 	for name, child := range c.Children {
 		if child.Policy == "" {
 			child.Policy = "ondemand"
@@ -185,6 +199,16 @@ func (c *Config) resolvePaths() error {
 		u.Base = strings.TrimRight(expandEnv(u.Base), "/")
 		c.Upstreams[name] = u
 	}
+	// 七牛云 AI 网关（api.qnaigc.com）同样只提供 Anthropic Messages。
+	if u, ok := c.Upstreams["QN"]; !ok {
+		c.Upstreams["QN"] = Upstream{
+			Base:   "https://api.qnaigc.com/v1",
+			KeyEnv: "QINIU_API_KEY",
+		}
+	} else if u.KeyEnv == "" {
+		u.KeyEnv = "QINIU_API_KEY"
+		c.Upstreams["QN"] = u
+	}
 	for name, child := range c.Children {
 		child.Exe = c.resolveExe(child.Exe)
 		child.Cwd = c.resolve(child.Cwd)
@@ -200,6 +224,7 @@ func (c *Config) resolvePaths() error {
 	c.WBGatewayConfig = c.resolve(c.WBGatewayConfig)
 	c.QoderEnvFile = c.resolve(c.QoderEnvFile)
 	c.QwenEnvFile = c.resolve(c.QwenEnvFile)
+	c.QiniuEnvFile = c.resolve(c.QiniuEnvFile)
 	c.Log.Dir = c.resolve(c.Log.Dir)
 	return nil
 }

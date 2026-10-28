@@ -12,9 +12,10 @@
 | 文档 | 一句话定位 |
 |---|---|
 | [MODEL-PROVIDERS.md](MODEL-PROVIDERS.md) | **provider 与模型参数正本**：接供应商的四步方法、ZCode 配置落点、三组 provider（OpenCode-Go / WorkBuddy / Qoder）的分组 / 协议 / 工具调用 / 关思考参数 |
-| [MODEL-ALIAS.md](MODEL-ALIAS.md) | **统一命名与分组正本**：纯型号名、跨渠道合并链路（chain）、免费 `-Free`、主力/免费/省钱三组与 0.11 分界、alias map 与协议桥接 |
+| [MODEL-ALIAS.md](MODEL-ALIAS.md) | **统一命名与分组正本**：纯型号名（真重名才加后缀）、跨渠道合并链路（chain）、主力/免费/省钱三组、组内顺序由 `MAIN_ORDER`/`LOW_ORDER` 决定、alias map 与流式协议桥接 |
 | [QODER.md](QODER.md) | **Qoder 接入正本**：qoder2api-hub 的 8790 进程、OAuth/签到、`qoder` provider 的模型与同步/探测命令、边界与故障处理 |
 | [QWEN.md](QWEN.md) | **千问（qianwenai）接入正本**：只提供 Anthropic Messages 的直连上游、`QW` 渠道与协议桥、506 条免费额度四道漏斗筛到 14 个、用完即停与桥接非流式的边界 |
+| [QINIU.md](QINIU.md) | **七牛云 AI 网关接入正本**：`QN` 渠道、只认 Anthropic Messages、`qiniu/conatus-free` 限免到 2026-11-30、同网关其它免费模型的实测结论 |
 | [MODEL-QUICK-REF.md](MODEL-QUICK-REF.md) | 早期速查（2026-10-20）：价格、额度与实测首字。**结论已并入 MODEL-PROVIDERS.md**，本篇保留作历史快照 |
 | [archive/OPENCODE-GO-ANALYSIS.md](archive/OPENCODE-GO-ANALYSIS.md) | 2026-10-19 的阶段性分析（归档只读）：协议归属实测、价格带筛选、出口方案 |
 

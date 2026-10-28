@@ -17,6 +17,53 @@
 
 ## [未发布]
 
+### 桥接全链路流式 + 组内排序收归人工名单（2026-10-29）
+
+- **首字慢的根因修复**：`zgate` 协议桥调上游时写死 `stream: false`，整段生成完
+  才合成一个 chat SSE chunk —— 实测 Conatus 12.06s 才收到第一个（也是唯一的）
+  chunk，而原生 chat 模型 0.98s 就开始逐 token。现在客户端要求流式时，桥接器
+  按 `stream: true` 请求上游、边收边转（文本 / `thinking` / `tool_use` /
+  Responses `function_call` 增量都各自翻译）
+- 只有**链尾跳**走流式：前面某跳失败还要能回落，写出的半截 SSE 收不回来；
+  非尾跳仍整段缓冲。上游在任何 chunk 之前报错时，用 JSON 把真实错误码回给
+  客户端（`finishBridge` 按 `cw.written` 判定），不再留下挂起的空流
+- 新增桥接测试：流式文本、流式工具调用（`finish_reason: tool_calls`）、
+  上游报错不吐 chunk 三条用例
+- **组内排序改由人工有序名单决定**：`MAIN_ORDER` / `LOW_ORDER` 是唯一权威，
+  `MAIN_IDS` / `LOW_PICKS` 由它们派生（原来两份字面量各自维护，易漂移）；
+  旧实现按「厂商最低价」排序，把便宜的顶到前面、把 MiMo 挤到列表末尾
+- **省钱组收紧**：每厂只留 1–2 个代表作（小米 = MiMo-2.6-Flash + Pro），
+  前旗舰 / 上一代（MiMo-2.5、GLM-5.2、Qwen-3.7 等）不再收录；命中 `LOW_PICKS`
+  即进组、不再受 `LOW_MAX` 上限约束
+- **修 `price_of` 的七牛渠道级 0 价**：原来整个 `QN` 渠道一律返 0，将来播种任何
+  付费模型都会被误当免费；现在只对 id 以 `-free` 结尾的模型返 0
+- **修 `go_model_sync.py` 误删七牛模型**：`probe_targets` 原来只跳过 WB/QD，
+  把 `qn:` 种子当 OpenCode 模型探测 → 400 → 被当死模型删掉（Conatus / Kimi-K3
+  曾被整条清掉）。现在跳过任何非 `OC` 渠道的条目
+- 删除死代码 `MAIN_FIRST`；修正 `MAIN_ORDER` 里与 `MERGE_ACROSS_PROTOCOL`
+  矛盾的注释（messages 版 DeepSeek 实际并入同一条链，不是独立显示名）
+- 文档：`MODEL-ALIAS.md` §2/§3/§4/§5/§7 按代码真实口径重写（省钱组原写成
+  「每厂商一个、8 条、≤0.11」，与代码的 1–2 个、9 条、白名单豁免不符）；
+  `QINIU.md` 改为 2 个模型、显示名不带 `-Free`；`PITFALLS.md` 新增 §27–§30
+
+
+### 接入七牛云网关，免费组 +1（2026-10-29）
+
+- 新渠道 `QN`：`https://api.qnaigc.com/v1`（只提供 Anthropic Messages），
+  经 `zgate` 协议桥接入，`qn:` 前缀裸 id 也能直接落对上游
+- `qiniu/conatus-free` → 显示名 **`Conatus`**（后于 2026-10-29 去掉 `-Free` 后缀），进免费组；
+  限时免费到 **2026-11-30**（`QN_FREE_UNTIL`），到期后该跳自动剔除
+- 把用户在 ZCode 界面手建的独立 `new-provider` 收编：模型改由 `qn:` 种子进
+  免费组，指纹 key 迁到 `providers/qiniu/.env.local`（gitignored），
+  `providerOrder` 回到三组
+- 同网关另测了 3 个免费模型：`kimi-k3-free` 可用（首字约 0.5–1.3s），
+  后于 2026-10-29 收录为 **`Kimi-K3`**；`nemotron-3-ultra-free` 502、
+  `glm-4.5-air-free` 已退役
+- 顺带修 `providers/qoder/qoder_zcode_sync.py`：它还在找已删除的
+  `opencode-go-chat-slow`，定时任务第三步会直接退出；现统一落到省钱组
+- 新增 [docs/QINIU.md](docs/QINIU.md)
+
+
 ### 千问集合体下线，只留主力链尾跳（2026-10-29）
 
 - **起因**：千问每模型 1M 免费 tokens，实测用量 18.6 亿/天 → 一个模型 30 秒烧完。
