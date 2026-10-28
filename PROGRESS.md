@@ -1592,3 +1592,48 @@ ZCode（不改脚本、不动 provider_config.json、不建定时任务）。
 - ⚠️ 上游自 2026-10-23 起收紧非官方客户端识别，该风险所有分支共享，换仓库解决不了。
 
 ## 状态: 已完成
+
+# 2026-10-28 第 N+21 轮：修复价格冻结（派生量回读）+ 漂移自检
+
+## 任务目标
+查清 WorkBuddy 的 Step-5-Pre 限免到期后仍显示「免费 0.00」的原因，并修掉这类
+「派生数据落盘后又当输入」的复发模式。
+
+## 已完成变更
+- [x] 根因定位：`tools/model_alias.py` 的 `expand_hops()` 把 alias map 里
+      `chain[].price` 原样带回，`family_entries()` 又优先用 `item["price"]`，
+      `price_of()` 只在 `None` 时执行 → 一次写入等于永久冻结。
+- [x] 修复：`expand_hops()` 的 `price` 置 `None`，价格每轮从源重算；源里没有的
+      hop 直接剔除（不再靠旧价赖在清单里）。
+- [x] 新增 `--check` 漂移检测（重算 vs 现有 alias map；有差异退出码 1，不写盘）。
+- [x] 新增 `--probe-max-age-hours`（默认 72h）：过期探测结论按「未知」处理。
+- [x] 价格表 >48h 未刷新时 stderr 告警。
+- [x] 命名稳定性：同一 hop 沿用上一版名字；只继承 `-Msg`/`-Resp`/`-2` 去冲突后缀，
+      `-Free` 跟价格走（避免配置混入原始 id 时改名翻转）。
+- [x] 新增 `tests/test_model_alias_price.py`（9 用例）。
+- [x] 已 `--apply` 写盘：四组 6/4/11/16（共 37 个显示名），配置里无残留原始 id；
+      备份 `provider_config.json.bak-alias-20261028-121228-710000`。
+- [x] 文档：`docs/MODEL-ALIAS.md` §3.1 + §6 验证步骤；`docs/PITFALLS.md` 第 22 条；
+      `docs/TOOLS.md` 工具行；`CHANGELOG.md` [未发布]。
+
+## 验收
+- `python tools/model_alias.py --check` → `无漂移`，退出码 0（写盘后幂等）
+- `python -m unittest discover -s tests -v` → 9 passed
+- `python tools/check-docs.py` → 38 篇全部通过
+- 实际写盘结果：Step-5-Pre 由「免费 @0.00」变为「高耗 @0.33」；
+  MiMo-2.6-Pro 0.18 → 0.13；DeepSeek-4-Flash 由 WB 0.17 改为 QD 0.09 优先（高耗→低耗）；
+  `DeepSeek-4-Flash-Free` 消失（原为 Qoder 源故障时吃静态回退的 0.0）。
+- 上游实测：`cn:step-5-preview` 一次 43+16 tokens 调用 `usage.credit=0.01`；
+  `cn:space-bunny` 同轮三次调用 `credit=0`（面板标价 x0.08，暂不扣积分）。
+
+## 待解决 / 注意事项
+- ⚠️ 结构性问题未做：`workbuddy_zcode_sync.py` 与 `model_alias.py` 都写
+  `provider_config.json`，两个写入者互读对方产物。本轮实测到配置里混进了
+  `cn:*` 原始 id（与显示名并存），加重启才归一。正解是收口成单一写入者，
+  或让采集脚本只写 cache。
+- ⚠️ 价格表刷新频率仍是「每月 + 峰谷边界」，限免到期只能靠下一次 fetch 发现；
+  `workbuddy_fetch_pricing.py` 已能打印倍率变化，但没有自动触发重算。
+- ⚠️ `wb_zcode_probe.json` 里仍有 38 条 10-20 的旧记录（含 13 条 unavailable）；
+  现在有 TTL 保护，但建议定期全量重探。
+
+## 状态: 已完成

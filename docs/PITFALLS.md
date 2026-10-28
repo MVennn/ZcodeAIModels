@@ -382,3 +382,21 @@ prune。它同时也认不出这些模型已经配置过，会把整个 Go 目�
   它覆盖整个响应体，流式（SSE）会被从中间截断，非流式的长推理也会被误杀。
 - **验证**：`grep TLSHandshakeTimeout gateways/zgate/main.go` 应为 8s；
   坏窗口内单次失败的上限约为 8s，而不是 15s。
+
+## 22. 派生数据落盘又回读 → 上游改价永久不生效 【通用】
+
+- **现象**：上游限免到期/调价后，ZCode 里的积分和分组纹丝不动，同步报告也一直写
+  「分组变化 0、链路变化 0」。2026-10-28 的 Step-5-Pre 就是这样：面板已是 x0.33、
+  真实调用也在扣积分，配置里仍挂在「免费 @0.00」。
+- **根因**：两层叠加。`expand_hops()` 把 alias map 里 `chain[].price` 原样带回，
+  `family_entries()` 又优先用 `item["price"]`，`price_of()` 只在它是 `None` 时才跑；
+  而 alias map 本身就是上一轮的输出。**输出成了下一轮的输入，一次写入等于永久冻结**。
+- **为什么难发现**：`sync_report.py` 比的是「上一版产物 vs 这一版」，两边都来自同一份
+  缓存时，稳定存在的偏差永远是「无变化」——报告越正常，越说明不了问题。
+- **解法**：派生量（价格、分组、链路顺序）每轮从源重算，alias map 只存推不出来的
+  身份信息；源里没有的 hop 直接剔除。另加 `--check`（重算 vs 现有 alias map，
+  有漂移退出码 1）挂进定时任务。探测结论同理：超过 TTL 的 `ok` / `blocked` 一律
+  按「未知」处理——过期的 ok 会留住死模型，过期的 blocked 会删掉活模型。
+- **验证**：`python tools/model_alias.py --check` 退出码 0（幂等）；
+  `python -m unittest discover -s tests -v` 里
+  `test_chain_price_is_not_inherited` / `test_dead_hop_is_dropped` 通过。

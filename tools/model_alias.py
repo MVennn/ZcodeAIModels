@@ -39,6 +39,14 @@ Usage
     python tools/model_alias.py                  # dry run, prints the full table
     python tools/model_alias.py --apply          # backup + write config + alias map
     python tools/model_alias.py --max-price 2.0  # widen the high tier (0 = no cap)
+    python tools/model_alias.py --check          # drift check only; exit 1 on drift
+
+Prices are derived, never inherited: every run recomputes each hop's price from
+the current source (WB pricing cache / Qoder live / OC price table). The alias
+map stores identity only (what the model is called and which upstreams it maps
+to); a hop whose upstream no longer prices is dropped. `--check` compares the
+recomputed result against the existing alias map so a frozen price shows up as
+drift instead of silently staying in the config.
 """
 from __future__ import annotations
 
@@ -278,12 +286,56 @@ def _warn_price_once(channel: str, detail: str) -> None:
     print(f"WARN: {channel} 价格源不可用（{detail}），该渠道模型将无法定价", file=sys.stderr)
 
 
+def _warn_stale_cache(path: Path, label: str, refresh_hint: str,
+                      max_age_hours: float = 48.0) -> None:
+    """价格表是活数据：过期了还照用，分档就会停在旧价上（限免到期尤其如此）。"""
+    try:
+        age_hours = (time.time() - path.stat().st_mtime) / 3600.0
+    except OSError:
+        return
+    if age_hours <= max_age_hours:
+        return
+    print(
+        f"WARN: {label} 已 {age_hours:.0f} 小时未刷新（> {max_age_hours:.0f}h），"
+        f"分档可能已过期；先跑 {refresh_hint}",
+        file=sys.stderr,
+    )
+
+
+def _fresh_probe(probe: dict, max_age_hours: float) -> tuple[dict, list[str]]:
+    """丢掉过期的探测结论。
+
+    过期的 ok 会留住已经下架的模型，过期的 blocked/unavailable 会删掉还能用的
+    模型 —— 两个方向都错，所以过期条目一律按「未知」处理（未知不删除）。
+    """
+    if max_age_hours <= 0:
+        return probe, []
+    cutoff = datetime.now() - timedelta(hours=max_age_hours)
+    fresh: dict = {}
+    stale: list[str] = []
+    for model_id, record in probe.items():
+        raw = str((record or {}).get("checked_at") or "")
+        try:
+            checked = datetime.fromisoformat(raw)
+        except ValueError:
+            stale.append(model_id)
+            continue
+        if checked.tzinfo is not None:
+            checked = checked.astimezone().replace(tzinfo=None)
+        if checked >= cutoff:
+            fresh[model_id] = record
+        else:
+            stale.append(model_id)
+    return fresh, stale
+
+
 def wb_prices() -> dict[str, dict]:
     try:
         rows = json.loads(WB_PRICING.read_text(encoding="utf-8"))
     except Exception as exc:
         _warn_price_once("WB", f"{WB_PRICING}: {exc}")
         return {}
+    _warn_stale_cache(WB_PRICING, "WB 价格表", "providers/workbuddy/workbuddy_fetch_pricing.py")
     out = {}
     for row in rows:
         model = str(row.get("id") or "")
@@ -567,7 +619,10 @@ def expand_hops(item: dict) -> list[dict]:
                 "upstream": hop.get("upstream") or item["upstream"],
                 "base_model": hop.get("base_model") or item["base_model"],
                 "original": hop.get("original") or hop.get("upstream") or item["upstream"],
-                "price": hop.get("price"),
+                # 价格一律由 price_of() 从当轮价格源重算：继承上一版 alias map
+                # 里的 price 会把上游改价/限免到期永久冻结在旧值上
+                # （2026-10-28 Step-5-Pre 限免结束仍显示 0.00 即此因）。
+                "price": None,
                 "fallbacks": [],
             })
             out.append(sub)
@@ -714,9 +769,89 @@ def entry_group(entry: dict, arena_targets: dict[tuple[str, str], dict]) -> tupl
     return "high", ""
 
 
+_GROUP_LABELS = {"main": "主力", "free": "免费", "low": "低耗", "high": "高耗"}
+
+
+def _hop_label(hop: dict) -> str:
+    return f"{hop.get('channel')}:{hop.get('upstream')}@{hop.get('price')}"
+
+
+def _entry_signature(entry: dict) -> dict:
+    chain = entry.get("chain") or []
+    hops = [_hop_label(h) for h in chain] if chain else [_hop_label(entry)]
+    return {
+        "group": str(entry.get("group") or ""),
+        "price": round(float(entry.get("price") or 0.0), 2),
+        "chain": hops,
+    }
+
+
+def proposed_signature(grouped: dict[str, list[dict]]) -> dict[str, dict]:
+    out: dict[str, dict] = {}
+    for group, rows in grouped.items():
+        for row in rows:
+            entry = dict(row)
+            entry["group"] = _GROUP_LABELS[group]
+            out[row["new_id"]] = _entry_signature(entry)
+    return out
+
+
+def drift_report(grouped: dict[str, list[dict]], existing_models: dict) -> dict[str, list]:
+    """重算结果与现有 alias map 的差异。
+
+    `sync_report.py` 比的是「上一版 alias map」和「这一版」——两边都来自同一份
+    缓存时，一个稳定存在的偏差永远不会显示成变化。这里比的是「现有产物」和
+    「按当前价格源重算的结果」，是唯一能抓到价格冻结这类 bug 的检查。
+    """
+    proposed = proposed_signature(grouped)
+    current = {name: _entry_signature(entry) for name, entry in (existing_models or {}).items()}
+    added = sorted(set(proposed) - set(current))
+    removed = sorted(set(current) - set(proposed))
+    group_changed, price_changed, chain_changed = [], [], []
+    for name in sorted(set(proposed) & set(current)):
+        old, new = current[name], proposed[name]
+        if old["group"] != new["group"]:
+            group_changed.append((name, old["group"], new["group"]))
+        if old["price"] != new["price"]:
+            price_changed.append((name, old["price"], new["price"]))
+        if old["chain"] != new["chain"]:
+            chain_changed.append((name, old["chain"], new["chain"]))
+    return {
+        "added": added,
+        "removed": removed,
+        "group_changed": group_changed,
+        "price_changed": price_changed,
+        "chain_changed": chain_changed,
+    }
+
+
+def print_drift(drift: dict[str, list]) -> None:
+    total = sum(len(v) for v in drift.values())
+    if total == 0:
+        print("\n无漂移：现有 alias map 与按当前价格源重算的结果一致")
+        return
+    print(f"\n发现漂移 {total} 处（现有 alias map vs 当前价格源重算）：")
+    if drift["added"]:
+        print("  新增：", ", ".join(drift["added"]))
+    if drift["removed"]:
+        print("  消失：", ", ".join(drift["removed"]))
+    for name, old, new in drift["price_changed"]:
+        print(f"  价格：{name}  {old:g} -> {new:g}")
+    for name, old, new in drift["group_changed"]:
+        print(f"  分组：{name}  {old or '-'} -> {new}")
+    for name, old, new in drift["chain_changed"]:
+        print(f"  链路：{name}")
+        print(f"    旧：{' -> '.join(old)}")
+        print(f"    新：{' -> '.join(new)}")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--apply", action="store_true", help="写入 provider_config.json 与 alias map")
+    parser.add_argument("--check", action="store_true",
+                        help="只做漂移检测：把重算结果与现有 alias map 比对，有差异退出码 1，不写盘")
+    parser.add_argument("--probe-max-age-hours", type=float, default=72.0,
+                        help="探测结果超过该小时数视为未知（默认 72；0 = 不设限）")
     parser.add_argument("--config", help="provider_config.json 路径")
     parser.add_argument("--alias-map", help="alias map 路径")
     parser.add_argument("--max-price", type=float, default=0.0,
@@ -763,19 +898,42 @@ def main() -> int:
     grouped: dict[str, list[dict]] = {key: [] for key in ("main", "free", "low", "high")}
     skipped: list[str] = []
     used: set[str] = set()
+    # 上一版的名字按 (渠道, 上游, 协议) 记下来：同一个 hop 继续用旧名，
+    # 否则配置里混进原始 id 时同名模型的命名会按出现顺序翻转，
+    # 用户会话里选的 "MiniMax-M2.7" 会悄悄换到另一个上去游。
+    prev_names: dict[tuple[str, str, str], str] = {}
+    for prev_name, prev_entry in existing_models.items():
+        for hop in prev_entry.get("chain") or [prev_entry]:
+            key = (
+                str(hop.get("channel") or prev_entry.get("channel") or ""),
+                str(hop.get("upstream") or prev_entry.get("upstream") or ""),
+                str(prev_entry.get("protocol") or ""),
+            )
+            prev_names.setdefault(key, prev_name)
     for entry in entries:
         group, main_reason = entry_group(entry, arena_targets)
         if args.max_price > 0 and entry["price"] > args.max_price:
             skipped.append(f"{entry['name']} (price {entry['price']:g} > {args.max_price:g})")
             continue
         new_id = entry["name"]
+        for hop in entry["chain"]:
+            prev = prev_names.get((hop["channel"], hop["upstream"], entry["protocol"]))
+            if not prev or prev in used:
+                continue
+            # 只继承「同名去冲突」后缀（-Msg / -Resp / -2）；-Free 是状态后缀，
+            # 跟着价格走，不能从上一版继承。
+            if prev == entry["name"] or re.fullmatch(
+                re.escape(entry["name"]) + r"-(Msg|Resp|\d+)(?:-\d+)?", prev
+            ):
+                new_id = prev
+                break
         if new_id in used:
             # Same name, different protocol (e.g. a bridged variant).
             suffix = "-Msg" if entry["protocol"] == "messages" else "-Resp" if entry["protocol"] == "responses" else "-2"
-            candidate = new_id + suffix
+            candidate = entry["abbr"] + suffix
             counter = 2
             while candidate in used:
-                candidate = f"{new_id}{suffix}-{counter}"
+                candidate = f"{entry['abbr']}{suffix}-{counter}"
                 counter += 1
             new_id = candidate
         used.add(new_id)
@@ -804,6 +962,15 @@ def main() -> int:
         if not probe_path.exists():
             raise SystemExit(f"找不到探测结果：{probe_path}")
         probe = json.loads(probe_path.read_text(encoding="utf-8"))
+        probe, stale_probe = _fresh_probe(probe, args.probe_max_age_hours)
+        if stale_probe:
+            print(
+                f"WARN: {len(stale_probe)} 条探测结果超过 "
+                f"{args.probe_max_age_hours:g} 小时，按「未知」处理"
+                f"（不会据此删除模型）：{', '.join(sorted(stale_probe)[:5])}"
+                + (" …" if len(stale_probe) > 5 else ""),
+                file=sys.stderr,
+            )
         transient = {"queued", "timeout", "rate_limited"}
         reverse_legacy: dict[str, list[str]] = {}
         for old_id, new_id in legacy.items():
@@ -865,6 +1032,11 @@ def main() -> int:
             file=sys.stderr,
         )
         return 1
+
+    if args.check:
+        drift = drift_report(grouped, existing_models)
+        print_drift(drift)
+        return 1 if any(drift.values()) else 0
 
     if not args.apply:
         print("\ndry run；加 --apply 写入 provider_config.json 与 alias map")

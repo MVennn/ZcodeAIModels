@@ -69,6 +69,25 @@ DeepSeek-4.1-Fs
 - 生成器**幂等**：链路会写回 alias map 的 `chain`，下一次运行从 `chain` 还原全部跳，
   不会因为配置里只剩一个条目而丢掉其它渠道。
 
+### 3.1 价格是派生量，不继承
+
+`chain` 里存的是「有哪些跳、怎么路由」；`chain[].price` 只是上一轮的记录，
+**每轮都从价格源重算**（WB 价格表 / Qoder 在线接口 / OC 静态价表），永不沿用旧值。
+
+- 上游已下架/被封的跳：源里查不到价 → 该跳直接剔除，不靠旧价赖在清单里。
+- 价格源不可用（整渠道无价）：拒绝 `--apply`，除非显式 `--force-unpriced`。
+- WB 价格表超过 **48 小时**未刷新会打 WARN；`--probe-file` 的探测结果默认超过
+  **72 小时**按「未知」处理（`--probe-max-age-hours` 可调，0 = 不设限）。
+  过期的 `ok` 会留住已下架的模型，过期的 `blocked` 会删掉还能用的模型，两个方向都错。
+- `--check`：把重算结果与现有 alias map 比对，有漂移就以退出码 1 结束，不写盘。
+  建议挂进定时任务 —— `sync_report.py` 比的是「上一版产物 vs 这一版」，
+  一个稳定存在的偏差在它眼里永远是「无变化」。
+
+> 事故背景（2026-10-28）：Step-5-Pre 的「独家限免」10-25 到期后已按 x0.33 计费，
+> 配置里却一直挂在免费档 0.00，就是因为链路继承了 alias map 里的旧价。
+> 同轮还抓出 MiMo-2.6-Pro（0.18 应为 0.13）和一条 Qoder 源故障时吃静态回退
+> 留下的 0.0 假免费条目。
+
 ---
 
 ## 4. 四组规则
@@ -155,15 +174,22 @@ python tools/model_probe.py
 
 # 2. 生成四组 + alias map；只保留探测 ok（或曾 ok 的瞬时限流）的模型
 python tools/model_alias.py --slot auto --probe-file ~/.zcode/v2/model_probe.json --apply
+
+# 3. 漂移自检：重算结果应与刚落盘的 alias map 完全一致（退出码 0）
+python tools/model_alias.py --check
 ```
 
 - 只预演：去掉 `--apply`。
 - 备份：`provider_config.json.bak-alias-<时间戳>`。
+- 回归测试：`python -m unittest discover -s tests -v`（价格派生、死跳剔除、漂移检测、
+  探测过期）。
 - 旧 ID（`cn:` / `global:` / `qoder:` / 裸 OC，以及旧的 `W/0.03/…` 显示名）会进
   alias map 的 `legacy`，老会话仍可路由；改名链会自动追到最终名字。
 - 旧的 `workbuddy_zcode_sync.py` / `go_model_sync.py` / `qoder_zcode_sync.py`
   现在只当**数据采集器**：它们写旧 ID，随后由 `model_alias.py` 归一化。不要
-  在 `model_alias.py` 之后单独跑它们的 `--apply`，否则会临时把旧 ID 写回去。
+  在 `model_alias.py` 之后单独跑它们的 `--apply`，否则会临时把旧 ID 写回去
+  （实测会把 `cn:*` 原始 id 混进四组的 `personalModelIds`，下一次生成的命名顺序
+  也会跟着变）。
 
 ---
 

@@ -17,6 +17,25 @@
 
 ## [未发布]
 
+### 模型价格改为每轮重算，不再继承 alias map（2026-10-28）
+
+- 修复 `tools/model_alias.py` —— `expand_hops()` 不再把 `chain[].price` 原样带回，
+  价格一律由 `price_of()` 从当轮价格源重算。此前一次写入即永久冻结，导致
+  Step-5-Pre 限免 10-25 到期后仍挂「免费 @0.00」（实测已在扣 x0.33）、
+  MiMo-2.6-Pro 停在 0.18（实为 0.13），以及一条 Qoder 源故障时吃静态回退留下的
+  0.0 假免费条目。源里查不到价的跳现在直接剔除
+- 新增 `--check` —— 重算结果与现有 alias map 比对（新增 / 消失 / 价格 / 分组 / 链路），
+  有漂移退出码 1，不写盘；补上 `sync_report.py` 看不见「稳定偏差」的盲区
+- 新增 `--probe-max-age-hours`（默认 72h）—— 过期探测结论按「未知」处理，
+  避免过期的 `ok` 留住死模型、过期的 `blocked` 删掉活模型
+- 价格表超过 48h 未刷新时 stderr 告警
+- 命名稳定性：同一 hop 继续沿用上一版名字（只继承 `-Msg` / `-Resp` / `-2` 这类
+  去冲突后缀，`-Free` 跟着价格走），避免配置里混入原始 id 时同名模型改名翻转
+- 新增 `tests/test_model_alias_price.py`（9 个用例：价格派生、死跳剔除、
+  限免到期换组、漂移检测、探测过期），跑法 `python -m unittest discover -s tests -v`
+- 现象 / 根因 / 验证见 `docs/PITFALLS.md` 第 22 条；规则正本见
+  `docs/MODEL-ALIAS.md` §3.1
+
 ### zgate 上游握手超时 15s → 8s（2026-10-27）
 
 - 调整 `gateways/zgate/main.go` —— `http.Transport.TLSHandshakeTimeout` 由 15s 收到 8s。
