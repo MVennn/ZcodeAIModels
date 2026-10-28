@@ -81,15 +81,15 @@ OC_BASE = "https://opencode.ai/zen/go/v1"
 # tools/arena_leaderboard.py); `--no-arena` restores this list only.
 MAIN_IDS = {
     "cn:deepseek-v4.1-flash",
-    "global:deepseek-v4.1-flash-sg",  # 合并了免费档，见 MERGE_FREE_GB
     "deepseek-v4.1-flash",
     "mimo-v2.6-pro",
     # 2026-10-23: benchmark #4 (372.95) at 0.09 credits, vs DeepSeek V4.1
     # Flash #11 (342.40) at 0.11; higher intelligence and cheaper.
     "qwen3.8-flash",
 }
-# Sorted first inside 主力 regardless of channel/region.
-MAIN_FIRST = {"global:deepseek-v4.1-flash-sg"}
+# Sorted first inside 主力 regardless of channel/region. Keyed by upstream id,
+# so it must track whichever hop actually survives in the chain.
+MAIN_FIRST = {"cn:deepseek-v4.1-flash", "deepseek-v4.1-flash"}
 
 # Base models whose free GB tier is folded into the paid entry instead of being
 # listed separately: the paid entry tries the free upstream first, then the paid
@@ -117,6 +117,8 @@ OC_PRICES = {
     "minimax-m3": {"flat": 0.22},
     "minimax-m3.1-flash": {"flat": 0.11},
     "beam-free": {"flat": 0.00},
+    # 2026-10-28 实测：上游 usage 自带 cost=0 / list_cost=0，按免费档收录。
+    "iceman-contributor-free": {"flat": 0.00},
     "claude-haiku-5-5": {"flat": 0.09},
     "qwen3.8-flash": {"flat": 0.09},
     "qwen3.7-plus": {"flat": 0.29},
@@ -182,6 +184,7 @@ ABBR = {
     "longcat-2.0": "LongCat-2.0",
     "longcat-2.5-preview-free": "LongCat-2.5-Pre",
     "beam-free": "Beam",
+    "iceman-contributor-free": "Iceman",
     "claude-haiku-5-5": "Claude-Haiku-5.5",
     "gpt-6-luna": "GPT-6-Luna",
     "gpt-5.6-luna": "GPT-5.6-Luna",
