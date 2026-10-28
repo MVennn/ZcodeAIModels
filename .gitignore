@@ -87,6 +87,11 @@ desktop.ini
 # ---- Qoder 活数据（探测结果，可重跑再生）----
 /providers/qoder/qoder_probe.json
 
+# ---- 千问活数据（控制台快照 / 探测结果 / 生成的池子，都可重跑再生）----
+/providers/qwen/cache/
+/providers/qwen/qwen_pool_probe.json
+/providers/qwen/pools.json
+
 # ---- zgate 产物 ----
 /gateways/zgate/*.exe
 /gateways/zgate/zgate.dev.json

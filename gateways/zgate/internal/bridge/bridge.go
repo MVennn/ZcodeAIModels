@@ -18,6 +18,9 @@ import (
 	"time"
 )
 
+// maxUpstreamTokens 是桥接上游接受的 max_tokens 上限（Anthropic Messages 约定）。
+const maxUpstreamTokens = 65536
+
 // DefaultTimeout bounds one upstream bridge call. The JS bridge used 120s; a
 // bridge call is a single non-streaming round trip, so a hard ceiling is safe
 // and stops a hung upstream from pinning the request forever.
@@ -408,8 +411,13 @@ func chatToAnthropic(body []byte, model string) map[string]any {
 	if maxTokens == 0 {
 		maxTokens = toInt(src["max_tokens"])
 	}
-	if maxTokens == 0 {
+	if maxTokens <= 0 {
 		maxTokens = 4096
+	}
+	// 上游对区间有硬校验（千问：`Range of max_tokens should be [1, 65536]`）。
+	// ZCode 会按客户端设置发 128000 这类值，不夹住就是硬 400，整条链都过不去。
+	if maxTokens > maxUpstreamTokens {
+		maxTokens = maxUpstreamTokens
 	}
 	payload := map[string]any{
 		"model":      model,

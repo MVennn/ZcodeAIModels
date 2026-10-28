@@ -47,6 +47,7 @@ type Config struct {
 	ProviderConfig  string              `json:"providerConfig"`
 	WBGatewayConfig string              `json:"wbGatewayConfig"`
 	QoderEnvFile    string              `json:"qoderEnvFile"`
+	QwenEnvFile     string              `json:"qwenEnvFile"`
 	Session         string              `json:"session"`
 	Log             Log                 `json:"log"`
 	Upstreams       map[string]Upstream `json:"upstreams"`
@@ -116,6 +117,9 @@ func (c *Config) applyDefaults() {
 	if c.QoderEnvFile == "" {
 		c.QoderEnvFile = "../../providers/qoder/.env.local"
 	}
+	if c.QwenEnvFile == "" {
+		c.QwenEnvFile = "../../providers/qwen/.env.local"
+	}
 	if c.Session == "" {
 		c.Session = os.Getenv("OPENCODE_SESSION")
 	}
@@ -148,6 +152,16 @@ func (c *Config) applyDefaults() {
 	} else if u.KeyEnv == "" {
 		u.KeyEnv = "QD_API_KEY"
 		c.Upstreams["QD"] = u
+	}
+	// 千问平台只提供 Anthropic Messages 协议，无本地进程；模型经协议桥转发。
+	if u, ok := c.Upstreams["QW"]; !ok {
+		c.Upstreams["QW"] = Upstream{
+			Base:   "https://maas.qianwenaiapi.com/apps/anthropic/v1",
+			KeyEnv: "QWEN_API_KEY",
+		}
+	} else if u.KeyEnv == "" {
+		u.KeyEnv = "QWEN_API_KEY"
+		c.Upstreams["QW"] = u
 	}
 	for name, child := range c.Children {
 		if child.Policy == "" {
@@ -185,6 +199,7 @@ func (c *Config) resolvePaths() error {
 	c.ProviderConfig = c.resolve(c.ProviderConfig)
 	c.WBGatewayConfig = c.resolve(c.WBGatewayConfig)
 	c.QoderEnvFile = c.resolve(c.QoderEnvFile)
+	c.QwenEnvFile = c.resolve(c.QwenEnvFile)
 	c.Log.Dir = c.resolve(c.Log.Dir)
 	return nil
 }

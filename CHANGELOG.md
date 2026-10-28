@@ -17,6 +17,95 @@
 
 ## [未发布]
 
+### 千问集合体下线，只留主力链尾跳（2026-10-29）
+
+- **起因**：千问每模型 1M 免费 tokens，实测用量 18.6 亿/天 → 一个模型 30 秒烧完。
+  114 个模型全存活也只值约 1.5 小时；实测只剩 30 个存活（约 23 分钟）。
+  维持池子需每天探测 114 个上游 + 重建跳序，而池子天天在烂
+- **单跳条目是错的设计**：`MiniMax-M2.5` / `GLM-5.3` / `Kimi-K3` / `DeepSeek-4-Pro-Msg`
+  都是单跳，额度一烧完就硬 `403 auth failed`，没有下一跳可退。用户点一下就报错
+- 处置：`POOL_SPECS` 清空（`Qwen-Pool-Max` / `Qwen-Pool-Fast` 下线），千问单型号种子
+  只留 `deepseek-v4.1-flash`；分组因此收缩到 **14 条**（主力 2 / 免费 4 / 省钱 8）
+- 保留主力链尾跳：零维护，WB/OC 都挂时才轮到，用来消耗一年期 ¥300
+- 顺带修两个真 bug：
+  - `expand_hops` 把条目级协议覆盖到每一跳，把千问尾跳的 `messages` 冲成 `chat`
+    （路由会按 chat 直转 Messages 上游 → 404）。新增 `CHANNEL_PROTOCOL`，QW 跳一律钉 messages
+  - `chatToAnthropic` 不校验 `max_tokens`，ZCode 发 128000 这类值会被上游拒绝
+    （`Range of max_tokens should be [1, 65536]`），现夹到 65536
+- 新增 `providers/qwen/qwen_pool_probe.py`（手动工具，定时任务不跑）：需要重新启用池子时，
+  先探测再 `--write-pools --probe-file` 剔死跳
+
+
+### 主力合并免费 DeepSeek：一条链混协议 + 千问预付额度（2026-10-28 续）
+
+- `DeepSeek-4.1-Flash` 从两个显示名合并成**一条三跳链**：`WB cn 0.11 → OC 0.11 →
+  千问 messages 0.00`。第三跳用 `TAIL_HOPS` 钉在链尾（OC 月度额度先用完，¥300 一年期兜底）
+- `gateways/zgate`：链路支持**混协议**——`alias.Hop` 增加 `protocol` 字段，
+  `attemptChain` 按每跳自己的协议派发（chat 直转 / messages·responses 过桥）
+- `hopFatal` 增加 **403 配额类**判定：实测千问额度用尽返回
+  `403 AccessDenied` + `Free quota exhausted`，此前只认 400/402，会硬失败不回落；
+  普通 401/403 鉴权错误不受影响（新增 6 个用例的单测）
+- `model_alias.py`：`QW_TRIAL_UNTIL` 改为 `QW_CREDIT_UNTIL = 2027-10-28`（¥300 预付额度
+  一年有效，边际单价为 0）；新增 `MERGE_ACROSS_PROTOCOL`；千问自家单型号不再播种，
+  免费组从 21 条收缩到 11 条
+
+### 分组从四组收缩到三组：主力两条 + 免费 + 省钱（2026-10-28）
+
+- 起因：4 天 74.6 亿 token 的用量统计里 86% 是 `DeepSeek-4.1-Flash` 一个模型
+  （5 个历史 id 是同一链路的老名字），高耗组 16 条零使用、主力 6 条里 5 条是榜单自动塞的
+- `tools/model_alias.py`：`PROVIDER_*` 改为三组（主力 / 免费 / 省钱），删除
+  `opencode-go-chat-slow`；分组改为「人工名单 + 价格兜底」——
+  `MAIN_IDS` = DeepSeek 两跳 + 贵备份 `Qwen-3.8-Max`（AA 1122 高于基准 1093），
+  `LOW_PICKS` = 每厂商一个（Qwen / 智谱 / MiniMax / 小米 / 腾讯 / Anthropic / OpenAI / Space），
+  两者之外的超价模型**直接不收录**；名单键改为 `<协议>:<上游 id>`（防止 chat 与桥接版同名互吸）；
+  榜单扩充改为 `--arena` 显式开启
+- 结果：52 → 31 条（主力 2 / 免费 21 / 省钱 8），`--check` 零漂移，主力与省钱 8 条实测 200
+- 副作用：`opencode-go-chat-slow` provider 消失，选过高耗模型的会话需重选；
+  4 个免费条目因同型号付费版被移出而改回不带 `-Free` 的原名
+- 踩到的坑：收缩名单要跑两次 `--apply`，第一次落分组、第二次才收敛 `-Free` / `-Msg` 后缀
+
+
+### 接入千问 AI 平台：`QW` 渠道 + 协议桥 + 免费额度漏斗（2026-10-28）
+
+- 新增 `providers/qwen/` —— `qwen_zcode_sync.py`（把 `qwen:<id>` 播种进免费组，
+  支持 `--only` / `--all-chat` / `--probe-file`）、`cache/freetier_20261028.txt`
+  （118 个家族的控制台快照）、`.env.local`（`QWEN_API_KEY`，gitignored）
+- 新增 `QW` 渠道：`gateways/zgate` 的 `config.go` / `keys.go` / `router.go` /
+  `main.go` / `zgate.json` —— 上游只提供 **Anthropic Messages**（`/v1/models` 与
+  OpenAI 兼容路径均 404），经既有协议桥转发；`/health` 增 `qwen` 视图
+- `tools/model_alias.py` —— 新增 `QW_BASE`、`QW_TRIAL_UNTIL = 2026-12-15`、
+  `price_of` 的 QW 分支（窗口内 0、窗口外缺价自动剔除）、`classify` 的 `qwen:`
+  分支（**协议钉死 messages**）、`base_of()` 替换原先硬编码三渠道的 base 选择、
+  以及「桥接条目让出原型名、`-Msg` 归桥接条目」的命名修正
+  （修复前桥接条目会抢走原型名，把聊天条目挤成 `-2`，老会话会静默换渠道）
+- 整理方法：控制台 506 条额度 → 294 条 token 计量 → 209 个可对话 → 118 家族
+  → 人工收口 18 → 真实体探测 **14 个 200**；控制台列了但 API 不存在的三个
+  （`qwen3-max` / `qwen3-coder-plus` / `qwq-plus`）已剔除
+- 边界：桥接非真流式（首字≈整段生成）、思考关不掉（桥不转发思考字段）、
+  「用完即停」开启后额度耗尽即报错。正本见 `docs/QWEN.md`
+- 副作用：手工添加的 `new-provider` 被 `model_alias.py --apply` 整份替换掉（设计如此）
+- 集合体（2026-10-28 续）：`providers/qwen/pools.json` + `qwen_zcode_sync.py --write-pools`
+  把 117 个对话家族编成长链路 —— `Qwen-Pool-Max`（旗舰 + 代码，23 跳）/
+  `Qwen-Pool-Fast`（91 跳）；2026-10-29 三池合两池，池内按「档位 → 版本」降序再用厂商轮转打散；
+  `tools/model_alias.py --pools/--no-pools` 负责把池子写成合成条目（`kind: pool`）；
+  `gateways/zgate` 新增**死跳判定与 30 分钟冷却**（`Model not exist` / 额度耗尽 / 402
+  一律换下一跳，并记住该跳，`/health` 暴露 `cooling`）
+
+### Qoder 排队耗尽不再崩线程：429 + Retry-After（2026-10-28）
+
+- 修复 `gateways/upstream/qoder/qoder_proxy.py` —— `RateLimited` 补上
+  `status=429` / `retry_after`。此前排队重试耗尽后，流式请求的 pump 错误处理读
+  `exc.status` 抛 `AttributeError`，**整个请求线程崩掉、客户端连错误帧都收不到**
+  （2026-10-28 11:47:58 实测）；`/ping` 仍 200，监控看不出异常
+- chat / responses / anthropic 三条非流式路径显式捕获 `RateLimited`，走
+  `_rate_limited()`（429 + Retry-After），不再落进通用 `except Exception` 的 502
+- 流式错误帧附带 `retry_after`，客户端可按上游 `retryAfterSeconds` 退避
+- 新增 `tests/_test_issue71_queue_error_paths.py`（7 项：异常契约 + 源码守卫）；
+  全量 71 套件 / 1946 项通过
+- 实测：`Qwen3.8-Flash` 排队 4 轮共 94.9s 后返回 `HTTP 429`
+  （修复前同场景为 502 或 AttributeError 断流）
+- 现象 / 根因 / 验证见 `docs/PITFALLS.md` 第 23 条
+
 ### 模型价格改为每轮重算，不再继承 alias map（2026-10-28）
 
 - 修复 `tools/model_alias.py` —— `expand_hops()` 不再把 `chain[].price` 原样带回，

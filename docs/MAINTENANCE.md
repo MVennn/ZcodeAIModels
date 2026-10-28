@@ -6,6 +6,9 @@
 模型清单与参数口径的正本在 [MODEL-PROVIDERS.md](MODEL-PROVIDERS.md)；
 出问题的排查在 [TROUBLESHOOTING.md](TROUBLESHOOTING.md)。
 
+> **2026-10-28 起为三组**（主力 / 免费 / 省钱）：高耗组已删除，只收 `MAIN_IDS`
+> 与 `LOW_PICKS` 里的模型，其余超价模型不收录。下文出现的「四组」是 10-23 的历史口径。
+>
 > **2026-10-23 起**：ZCode 统一为四组（主力 / 免费 / 低耗 / 高耗），最终写入者是
 > `tools/model_alias.py`。旧的 Go / WorkBuddy / Qoder sync 只作数据采集；日常顺序是
 > `arena_leaderboard.py --refresh --write` → `model_probe.py` →
@@ -108,7 +111,7 @@ curl -s http://127.0.0.1:7863/panel/api/models \
 | OpenCode-Go 新模型收录 | **每天一次** | `python providers/opencode-go/ops/go_model_sync.py --apply` |
 | 已配置模型体检 | 跟上面同一次 | 同上（默认会体检；`--no-existing` 可跳过） |
 | 外部榜单 → 主力候选 | **每天一次**（随 08:00 / 22:00 与工作日时段） | `python tools/arena_leaderboard.py --refresh --write` |
-| 候选变化 → 重写四组 | 随上一步；候选没变脚本会跳过 | `python tools/model_alias.py --slot auto --probe-file ~/.zcode/v2/model_probe.json --apply` |
+| 候选变化 → 重写分组 | 随上一步；候选没变脚本会跳过 | `python tools/model_alias.py --slot auto --probe-file ~/.zcode/v2/model_probe.json --apply` |
 | WorkBuddy 可用性复探 | **换套餐 / 换账号池后**才需要全量重探 | `python providers/workbuddy/workbuddy_probe_zcode.py --sleep 20` |
 | 某个模型单独复探 | 按需 | `python providers/workbuddy/workbuddy_probe_zcode.py --only <前缀> --sleep 20 --force` |
 
@@ -222,11 +225,12 @@ python -c "import json,os; json.load(open(os.path.expanduser('~/.zcode/v2/provid
 
 | 周期 | 动作 |
 |---|---|
-| **每天 12:00（定时任务 `automation-3e2f8a53-b408-4bf8-90ff-4a331a721f5c`）** | 四段顺序：① `python providers/opencode-go/ops/go_model_sync.py --apply`；② WorkBuddy（`workbuddy_fetch_pricing.py` → `workbuddy_probe_zcode.py --max-rate 0.3 --sleep 20` → `workbuddy_zcode_sync.py --max-rate 0.3 --apply`）；③ Qoder（`qoder_probe_zcode.py --timeout 90 --sleep 3` → `qoder_zcode_sync.py --probe-file providers/qoder/qoder_probe.json --apply`）；④ `python tools/model_alias.py --slot auto --apply` 归一化四组与 alias map；⑤ `python tools/sync_report.py --write --push` 生成 `docs/reports/MODEL-SYNC-<时间>.md`（写明新增 / 移除 / 分组 / 链路变化）、更新报告索引并提交推送。手动补跑也按这个顺序；**不要在 ④ 之后单独跑旧 sync 的 `--apply`** |
+| **每天 12:00（定时任务 `automation-3e2f8a53-b408-4bf8-90ff-4a331a721f5c`）** | 四段顺序：① `python providers/opencode-go/ops/go_model_sync.py --apply`；② WorkBuddy（`workbuddy_fetch_pricing.py` → `workbuddy_probe_zcode.py --max-rate 0.3 --sleep 20` → `workbuddy_zcode_sync.py --max-rate 0.3 --apply`）；③ Qoder（`qoder_probe_zcode.py --timeout 90 --sleep 3` → `qoder_zcode_sync.py --probe-file providers/qoder/qoder_probe.json --apply`）；④ `python tools/model_alias.py --slot auto --apply` 归一化三组与 alias map；⑤ `python tools/sync_report.py --write --push` 生成 `docs/reports/MODEL-SYNC-<时间>.md`（写明新增 / 移除 / 分组 / 链路变化）、更新报告索引并提交推送。手动补跑也按这个顺序；**不要在 ④ 之后单独跑旧 sync 的 `--apply`** |
 | **每天（可选，全量体检）** | `python tools/model_probe.py` → `python tools/model_alias.py --slot auto --probe-file ~/.zcode/v2/model_probe.json --apply`；定时任务不跑全量 probe，各 sync 自带定向探测。规则见 [MODEL-ALIAS.md](MODEL-ALIAS.md) §6 |
 | **每天 08:00 / 22:00 + 工作日 09:00 / 12:00 / 14:00 / 18:00** | `python providers/workbuddy/workbuddy_fetch_pricing.py` → `python tools/model_alias.py --slot auto --apply`（峰谷价切换，见 [MODEL-ALIAS.md](MODEL-ALIAS.md) §4.1） |
 | **每月** | 复核 [MODEL-PROVIDERS.md](MODEL-PROVIDERS.md) 里的价格 / 额度（`wb_pricing.json` 已由每日任务自动刷新） |
 | **换套餐 / 换账号池后** | 全量重探 WorkBuddy（`--sleep 20`）+ 重跑同步 |
+| **每月 / 千问额度到期前后** | 千问已被降级为「主力链尾跳」：集合体与单型号都已下线（2026-10-29，理由见 [QWEN.md](QWEN.md) §4.5）。只需确认主力链的 `QW` 尾跳还在（`model_alias.py --check` 无漂移即可）；¥300 预付额度到期（2027-10-28）后 `QW_CREDIT_UNTIL` 会让该跳自动消失 | 详见 [QWEN.md](QWEN.md) §3、§4.6.1 |
 | **每次接入新供应商** | 照 §1.1 的通用做法写一份取数脚本 + 在 [MODEL-PROVIDERS.md](MODEL-PROVIDERS.md) §0 的表里补一行；凭据按 [SECRETS.md](SECRETS.md) §2、§3.5 加环境变量 |
 | **每次改动脚本** | 同步 [TOOLS.md](TOOLS.md) 的工具表 |
 | **每次新增 / 删除文档** | 同步 [docs/README.md](README.md) 索引（孤儿文档零容忍） |
@@ -369,7 +373,7 @@ Qoder 由 zgate 托管（默认 `ondemand`，签到/保活窗口自动唤醒）�
 | 每日同步 | `python tools/model_probe.py`（可加 `--group 免费`）→ `python tools/model_alias.py --slot auto --probe-file ~/.zcode/v2/model_probe.json --apply`；Qoder 显示名为 `Q/积分/型号` |
 
 > Qoder 的专用 `qoder_probe_zcode.py` / `qoder_zcode_sync.py` 现在只作数据采集与兼容；
-> 四组统一探测用 `tools/model_probe.py`，最终写入用 `tools/model_alias.py`。
+> 统一探测用 `tools/model_probe.py`，最终写入用 `tools/model_alias.py`。
 > 账号、签到与模型细节见 [QODER.md](QODER.md)。
 
 ---
@@ -382,7 +386,7 @@ Qoder 由 zgate 托管（默认 `ondemand`，签到/保活窗口自动唤醒）�
 | Release 说明怎么写 | [release-notes/README.md](release-notes/README.md) |
 | 凭据（OpenCode-Go key / 网关 key / ZCode 配置路径）在哪 | [SECRETS.md](SECRETS.md) |
 | provider 分组、协议类型、参数矩阵 | [MODEL-PROVIDERS.md](MODEL-PROVIDERS.md) |
-| 统一命名、积分换算、四组、alias map 与协议桥 | [MODEL-ALIAS.md](MODEL-ALIAS.md) |
+| 统一命名、积分换算、三组、alias map 与协议桥 | [MODEL-ALIAS.md](MODEL-ALIAS.md) |
 | 脚本改 ZCode 配置的哪几处、三个 `--apply` 脚本的行为差异 | [MODEL-PROVIDERS.md](MODEL-PROVIDERS.md) §1、§1.1 |
 | Qoder 的端口、账号、同步与探测 | [QODER.md](QODER.md) |
 | 排障步骤 | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) |

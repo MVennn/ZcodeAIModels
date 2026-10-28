@@ -416,3 +416,26 @@ func TestChainSpansChannels(t *testing.T) {
 		t.Fatalf("per-hop auth wrong: %v", auth)
 	}
 }
+
+func TestHopFatal(t *testing.T) {
+	cases := []struct {
+		name   string
+		status int
+		body   string
+		want   bool
+	}{
+		{"qwen free quota exhausted (403)", 403,
+			`event:error
+data:{"code":"AccessDenied","message":"Free quota exhausted. To continue accessing the model on a paid basis, please add funds or disable the \"use free tier only\" mode in the management console."}`, true},
+		{"model id missing (400)", 400, `{"code":"InvalidParameter","message":"Model not exist."}`, true},
+		{"arrearage (400)", 400, `{"code":"Arrearage","message":"account in arrears"}`, true},
+		{"plain auth failure (403) must NOT be skipped", 403, `{"message":"invalid api key"}`, false},
+		{"bad request (400) must NOT be skipped", 400, `{"message":"invalid tools schema"}`, false},
+		{"rate limit (429) is transient, not fatal", 429, `{"message":"rate limit"}`, false},
+	}
+	for _, tc := range cases {
+		if got := hopFatal(tc.status, []byte(tc.body)); got != tc.want {
+			t.Errorf("%s: hopFatal(%d) = %v, want %v", tc.name, tc.status, got, tc.want)
+		}
+	}
+}

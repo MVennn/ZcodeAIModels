@@ -23,7 +23,7 @@
 - **记录** —— 把踩过的坑、协议归属、参数矩阵固化成文档，换套餐时不用重试一遍。
 
 仓里的 `providers/opencode-go/`、`providers/workbuddy/` 与 `providers/qoder/` 是三个跑通的**完整示例**（OpenCode-Go 套餐、
-WorkBuddy2API 网关、qoder2api-hub 网关）；现在统一成**四组**（主力 / 免费 / 低耗 / 高耗），
+WorkBuddy2API 网关、qoder2api-hub 网关）；现在统一成**三组**（主力 / 免费 / 省钱），
 模型 ID 只用型号名（如 `DeepSeek-4.1-Fs`），同型号跨渠道合并成一条按价格升序的链路，由 `tools/model_alias.py` 生成、`gateways/zgate`（Go，单进程）按 alias map 分流并托管两个本地网关。方法本身与供应商无关，接一个新供应商要做的四步见
 [docs/MODEL-PROVIDERS.md](https://github.com/MVennn/ZcodeAIModels/blob/main/docs/MODEL-PROVIDERS.md) §0。
 
@@ -51,7 +51,7 @@ WorkBuddy2API 网关、qoder2api-hub 网关）；现在统一成**四组**（主
 3. **探测** —— `providers/workbuddy/workbuddy_probe_zcode.py --sleep 20`、`providers/opencode-go/probe/probe_models.py`、
    `providers/qoder/qoder_probe_zcode.py`。必须用 ZCode 的真实请求体：裸 body 能通不代表 ZCode 能通。
 4. **探测并归一化** —— 先更新主力候选（可选），再跑统一探测，最后由 `model_alias.py`
-   生成四组 + alias map：
+   生成三组 + alias map：
 
 ```bash
 python tools/arena_leaderboard.py --refresh --write   # 可选：外部榜单 → 主力候选

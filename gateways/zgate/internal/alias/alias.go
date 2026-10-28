@@ -21,6 +21,10 @@ type Hop struct {
 	Price     float64 `json:"price"`
 	Original  string  `json:"original"`
 	BaseModel string  `json:"base_model"`
+	// Protocol 是这一跳自己的线路协议（chat / messages / responses）。
+	// 同一型号可以把 chat 与 messages 合成一条链，所以协议必须按跳记；
+	// 空值表示沿用条目级 Target.Protocol。
+	Protocol string `json:"protocol"`
 }
 
 // Target is one upstream behind a display name.

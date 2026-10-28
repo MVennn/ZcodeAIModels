@@ -400,3 +400,83 @@ prune。它同时也认不出这些模型已经配置过，会把整个 Go 目�
 - **验证**：`python tools/model_alias.py --check` 退出码 0（幂等）；
   `python -m unittest discover -s tests -v` 里
   `test_chain_price_is_not_inherited` / `test_dead_hop_is_dropped` 通过。
+
+## 23. 错误路径读异常属性，异常的字段契约必须先兜住 【通用】
+
+- **现象**：上游排队（`10605` / `isQueued`）重试耗尽后，客户端什么也没收到；
+  `qoder-proxy.err.log` 里是一条 `AttributeError: 'RateLimited' object has no
+  attribute 'status'` 的线程 traceback，但 `/ping` 一直 200、进程也没退。
+  同一时刻非流式请求拿到的是 502，而不是 429 + Retry-After。
+- **根因**：两套异常并存。`UpstreamStatus` 有 `.status` / `.detail`，而排队转换
+  `_as_rate_limited_for_queue()` 产出的是 `RateLimited`（只有 `.detail` / `.wait`）。
+  流式 pump 的错误收尾统一写 `record_error(model, exc.status, ...)`，这个属性一缺，
+  异常在 `do_POST` 里二次抛出 —— `BaseHTTPRequestHandler` 只打印 traceback，
+  **不再发任何响应**。非流式路径则因为没有 `except RateLimited` 分支，掉进通用
+  `except Exception` → 502，客户端看到的是「上游故障」而不是「请退避」。
+- **为什么难发现**：崩在请求线程里，主线程与 `/ping` 不受影响；日志前一行还是
+  HTTP 200（SSE 响应头已发），看不出请求其实没结束。
+- **解法**：异常类自己承担错误路径的字段契约（`RateLimited.status = 429`、
+  `retry_after` 与 `wait` 同源）；所有会进入错误收尾的聚合路径显式
+  `except RateLimited` → `_rate_limited()`。**不要**在错误处理里用
+  `getattr(exc, "status", 502)` 掩盖缺字段：状态码会被悄悄改成 502。
+- **验证**：`python tests/_test_issue71_queue_error_paths.py` 全绿；
+  排队场景实测返回 `HTTP 429` 且日志不再出现 traceback。
+
+---
+
+## 24. 控制台「有额度」不等于 API「能调用」；桥接基址必须带 `/v1` 【通用】
+
+- **现象**：千问控制台「权益」页列着 506 条免费额度，但把清单直接播种进配置后，
+  一部分模型请求回来 `400 InvalidParameter: Model not exist.`；换成别的写法又是
+  `404 InvalidParameter: Not support`。
+- **根因**两个，互不相关：
+  1. 额度页是**商业化目录**，与 API 网关的可用集合不是同一份。
+     `qwen3-max` / `qwen3-coder-plus` / `qwq-plus` 有额度但网关没有这些 id
+     （`qwen-max` 才有）；`Model not exist.` 是唯一的判据。
+  2. `zgate` 的协议桥把地址拼成 `TrimRight(base,"/") + "/messages"`，
+     **不会**自己补 `/v1`。基址写成 `.../apps/anthropic` 就打到
+     `/apps/anthropic/messages`，上游回 `Not support`（它的 404 不区分「路径不认识」
+     与「模型不认识」，只看 `message` 字段）。
+- **为什么难发现**：两种错误都是 4xx + 一句短语，`model_probe` 一律归类成
+  `error`，看起来像「模型坏了」；而 `Not support` 其实是地址错，改价格/改模型都没用。
+- **解法**：
+  - 目录一律**先探测再收录**，不要信控制台列表（漏斗最后一层就是真实体探测）；
+  - 配 `QW` 这类桥接上游时，基址写全 `…/v1`（`QWEN_BASE` 也一样）；
+  - 看到 `Not support` 先查 base，看到 `Model not exist.` 才查 id。
+- **验证**：`curl /health` 里 `qwen.base` 以 `/v1` 结尾；14 个收录模型
+  `tools/model_probe.py` 全部 `ok`（2026-10-28）。
+
+---
+
+## 25. 桥接条目会抢走原型名，把聊天条目挤成 `-2` 【通用】
+
+- **现象**：接入千问后，`GLM-5.3` / `Qwen-3.8-Max` / `DeepSeek-4-Pro` 的显示名还在，
+  但指向从「Qoder 聊天」变成了「千问桥接」；原来的聊天条目改名成 `GLM-5.3-2`。
+  老会话里选中的 `GLM-5.3` 于是静默换了渠道。
+- **根因**：命名去重按**条目录入顺序**先到先得，而「免费组」在「高耗组」之前生成，
+  桥接（messages）条目先拿到原型名，规则里「桥接那条加 `-Msg`」根本没被用上。
+- **解法**：命名时先看**同一 abbr 存在哪些协议**——只要同时有 chat 与桥接，
+  原型名永久留给 chat，桥接那条按协议加 `-Msg` / `-Resp`。这条与
+  [MODEL-ALIAS.md](MODEL-ALIAS.md) §2 的规则一致，且与生成顺序无关。
+- **验证**：`ListModels` 里 `GLM-5.3`(高耗/QD chat) 与 `GLM-5.3-Msg`(免费/QW)
+  并存；`tools/model_alias.py --check` 零漂移；四组内无重复 id。
+
+---
+
+## 26. 合成条目过关时会被 inventory 按跳拆开，下一轮翻倍 【通用】
+
+- **现象**：三个集合体（一条显示名派生 91 跳）写进配置后，下一轮
+  `model_alias.py --apply` 里千问的模型条数从 17 跳到 117：每个跳都成了一条
+  独立显示名（`qwen3-max`、`qwen-turbo`…），再下一轮还会继续膨胀。
+- **根因**：`inventory()` 对配置里的每个 id 调 `expand_hops()`，而
+  `expand_hops` 的语义是「把一条链展开成每一跳」，于是集合体被拆成了 91 个
+  `(channel, upstream, protocol)` 单项；每项 base_model 不同 → `abbr` 不同 →
+  各自成一个 family → 各自写回配置。名字还都是裸 id，因为 `ABBR` 里没有它们。
+- **为什么难发现**：第一轮输出看起来完全正常（3 个池子 + 14 个单型号），
+  膨胀发生在**下一轮**；`--check` 也不会报，因为两轮都是自洽的。
+- **解法**：集合体在 alias map 里标 `kind: pool`；`classify()` 见到这个标记
+  直接返回 `None` —— 池子只由 `pools.json` 生成，永不参与 inventory。
+  配套给 `legacy` 加了守卫：带渠道前缀的 key 必须真能对上目标条目的某一跳，
+  否则视为陈旧映射（否则一个旧 key 会把新模型静默指到别的条目上）。
+- **验证**：连续跑两次 `model_alias.py --slot auto --apply`，alias map 条目数
+  稳定在 52；`--check` 退出码 0。

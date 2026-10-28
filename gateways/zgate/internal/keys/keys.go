@@ -1,4 +1,4 @@
-// Package keys finds the three upstream credentials without ever writing them
+// Package keys finds the four upstream credentials without ever writing them
 // to a log or to the health endpoint.
 //
 // Order per channel (same as the old Node router):
@@ -6,6 +6,7 @@
 //	OC: env OPENCODE_GO_KEY -> provider_config.json (opencode base / providerId)
 //	WB: env WB_GATEWAY_KEY   -> provider_config.json (7863 / workbuddy-*) -> gateway config.json
 //	QD: env QD_API_KEY       -> qoder .env.local -> provider_config.json (8790 / providerId qoder)
+//	QW: env QWEN_API_KEY     -> qwen .env.local  -> provider_config.json (qianwenaiapi / providerId)
 package keys
 
 import (
@@ -15,9 +16,9 @@ import (
 	"strings"
 )
 
-// Set is the three credentials; empty means "not configured".
+// Set is the four credentials; empty means "not configured".
 type Set struct {
-	OC, WB, QD string
+	OC, WB, QD, QW string
 }
 
 func env(name string) string { return strings.TrimSpace(os.Getenv(name)) }
@@ -103,15 +104,17 @@ var (
 	reWBID   = regexp.MustCompile(`^workbuddy-`)
 	reQDBase = regexp.MustCompile(`(?i)(127\.0\.0\.1|localhost):8790`)
 	reQDID   = regexp.MustCompile(`^qoder$`)
+	reQWBase = regexp.MustCompile(`(?i)(qianwenaiapi|qianwenai)\.com`)
 )
 
-// Load resolves all three, falling back to the files the repo already keeps.
-func Load(providerConfig, wbGatewayConfig, qoderEnvFile string) Set {
+// Load resolves all four, falling back to the files the repo already keeps.
+func Load(providerConfig, wbGatewayConfig, qoderEnvFile, qwenEnvFile string) Set {
 	rules := readProviderRules(providerConfig)
 	var s Set
 	s.OC = env("OPENCODE_GO_KEY")
 	s.WB = env("WB_GATEWAY_KEY")
 	s.QD = env("QD_API_KEY")
+	s.QW = env("QWEN_API_KEY")
 	if s.OC == "" {
 		s.OC = find(rules, reOCBase, reOCID)
 	}
@@ -129,10 +132,18 @@ func Load(providerConfig, wbGatewayConfig, qoderEnvFile string) Set {
 	if s.QD == "" {
 		s.QD = find(rules, reQDBase, reQDID)
 	}
+	if s.QW == "" {
+		if v := readEnvFile(qwenEnvFile)["QWEN_API_KEY"]; v != "" {
+			s.QW = v
+		}
+	}
+	if s.QW == "" {
+		s.QW = find(rules, reQWBase, nil)
+	}
 	return s
 }
 
-// For returns the key for a channel name (OC / WB / QD).
+// For returns the key for a channel name (OC / WB / QD / QW).
 func (s Set) For(channel string) string {
 	switch channel {
 	case "OC":
@@ -141,6 +152,8 @@ func (s Set) For(channel string) string {
 		return s.WB
 	case "QD":
 		return s.QD
+	case "QW":
+		return s.QW
 	}
 	return ""
 }

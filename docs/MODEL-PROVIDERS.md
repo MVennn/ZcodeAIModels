@@ -54,6 +54,10 @@
 是 `/v1/models`；它**并入** OpenCode 的五个 chat 组，模型 id 加 `qoder:` 前缀，
 由 7871 路由剥前缀转发，见 §4.9。
 
+第四个实例（千问）只有 **Anthropic Messages** 端点、没有 `/v1/models`，所以目录靠
+控制台导出、协议靠 zgate 桥；它是 `QW` 渠道，模型 id 加 `qwen:` 前缀，见 §4.10。
+它的价不是「越便宜越好」而是**限时 0 积分**（试用额度，2026-12-15 到期）。
+
 ### 0.3 不随供应商变的三件事
 
 1. **ZCode 侧的落点** —— 只有 §1 那三处，换供应商不用改；
@@ -456,6 +460,29 @@ python providers/qoder/qoder_zcode_sync.py                                  # dr
 python providers/qoder/qoder_probe_zcode.py                                 # 真实 body 探测
 python providers/qoder/qoder_zcode_sync.py --probe-file providers/qoder/qoder_probe.json --apply
 ```
+
+---
+
+## 4.10 千问 AI 平台（qianwenai，本次实例四）
+
+网关：`https://maas.qianwenaiapi.com/apps/anthropic`，**只有 Anthropic Messages**
+（`/v1/messages`），`x-api-key` + `anthropic-version: 2023-06-01`；`/v1/models` 与
+OpenAI 兼容路径都是 404。所以它走 zgate 的协议桥，模型 id 加 `qwen:` 前缀并入免费组。
+完整操作与筛选过程见 [QWEN.md](QWEN.md)。
+
+| 项 | 值（2026-10-28） |
+|---|---|
+| 渠道 | `QW`，远程直连，无本地子进程 |
+| 协议 | `anthropic-messages`（桥接；上游非流式） |
+| 免费额度 | 每模型 1M tokens，统一 2026-12-15 到期，**用完即停已开** |
+| 控制台 | 506 条 → 294 条 token 计量 → 209 个可对话 → 118 家族 → **14 个收录** |
+| 积分 | 窗口内 0（`QW_TRIAL_UNTIL`），窗口外缺价自动剔除 |
+| 思考参数 | 桥不转发思考字段 → **始终思考**；`reasoningLevel.map` 必须为 `"{}"` |
+| 发现的反例 | `qwen3-max` / `qwen3-coder-plus` / `qwq-plus` 控制台有额度但 API `Model not exist.` |
+
+**与前三例的关键差异**：目录不可自助拉取（要导控制台）、协议必须桥、
+免费是**限时试用**而不是长期 0 元。因此它的定位是「免费备选 / 批处理」，
+不进主力，也不与同型号的 chat 链合并（`-Msg` 独立成条）。
 
 ---
 

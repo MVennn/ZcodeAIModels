@@ -35,11 +35,56 @@ type Server struct {
 	client  *http.Client
 	log     *logx.Logger
 	started time.Time
+	// 冷却表：一跳被判「这跳现在没用」（模型不存在 / 额度耗尽 / 欠费）后就跳过它一段时间。
+	// 集合体的链路有几十跳，不记住这些死跳，每个请求都要先把它们撞一遍。
+	coolMu sync.Mutex
+	cool   map[string]time.Time
 }
+
+// hopCooldown 是死跳的默认冷却时长；与额度窗口同一量级的短周期，够跨过一轮使用。
+const hopCooldown = 30 * time.Minute
 
 // New wires the server. client is shared with the bridge.
 func New(cfg *config.Config, ks keys.Set, am *alias.Map, sup *supervisor.Supervisor, client *http.Client, log *logx.Logger) *Server {
-	return &Server{cfg: cfg, keys: ks, aliases: am, sup: sup, client: client, log: log, started: time.Now()}
+	return &Server{cfg: cfg, keys: ks, aliases: am, sup: sup, client: client, log: log,
+		started: time.Now(), cool: map[string]time.Time{}}
+}
+
+func hopKey(hop alias.Hop) string { return hop.Channel + "|" + hop.Upstream }
+
+func (s *Server) cooling(hop alias.Hop) bool {
+	s.coolMu.Lock()
+	defer s.coolMu.Unlock()
+	until, ok := s.cool[hopKey(hop)]
+	if !ok {
+		return false
+	}
+	if time.Now().After(until) {
+		delete(s.cool, hopKey(hop))
+		return false
+	}
+	return true
+}
+
+func (s *Server) markCooling(hop alias.Hop) {
+	s.coolMu.Lock()
+	s.cool[hopKey(hop)] = time.Now().Add(hopCooldown)
+	s.coolMu.Unlock()
+}
+
+func (s *Server) coolingCount() int {
+	s.coolMu.Lock()
+	defer s.coolMu.Unlock()
+	n := 0
+	now := time.Now()
+	for key, until := range s.cool {
+		if now.After(until) {
+			delete(s.cool, key)
+			continue
+		}
+		n++
+	}
+	return n
 }
 
 var hopByHop = map[string]bool{
@@ -114,8 +159,8 @@ func (s *Server) serveHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	isChat := path == "/chat/completions"
-	if !isChat && (isQoder(model) || isWorkBuddy(model)) {
-		writeJSON(w, 400, errorBody("WorkBuddy/Qoder models only support chat/completions", "invalid_request_error"))
+	if !isChat && (isQoder(model) || isWorkBuddy(model) || isQwen(model)) {
+		writeJSON(w, 400, errorBody("WorkBuddy/Qoder/Qwen models only support chat/completions", "invalid_request_error"))
 		return
 	}
 
@@ -206,6 +251,27 @@ func (s *Server) routeFallback(w http.ResponseWriter, r *http.Request, body []by
 			return
 		}
 		body = rewritten
+	case isChat && isQwen(model):
+		// 千问平台只认 Anthropic Messages；裸 `qwen:` id 还没进 alias map 时
+		// （播种后、归一化前）也要能落到正确上游，而不是被当成 OpenCode 模型。
+		channel, label, key = "QW", "qwen", ks.QW
+		base = cfg.Upstreams["QW"].Base
+		if key == "" {
+			writeJSON(w, 502, errorBody("Qwen key not configured", "configuration_error"))
+			return
+		}
+		s.log.Infof("%s %s%s model=%s -> QW:messages", r.Method, path, search, model)
+		result := bridge.Forward(s.client, bridge.Options{
+			Protocol:      "messages",
+			Base:          base,
+			Key:           key,
+			Body:          body,
+			UpstreamModel: trimPrefixFold(model, "qwen:"),
+			DisplayModel:  model,
+			Ctx:           r.Context(),
+		})
+		writeResult(w, result)
+		return
 	case isChat && isWorkBuddy(model):
 		channel, label, key = "WB", "workbuddy", ks.WB
 		base = cfg.Upstreams["WB"].Base
@@ -260,7 +326,7 @@ func (s *Server) forwardHeaders(r *http.Request, body []byte, channel, key strin
 		h.Set("User-Agent", "unified-router/1.0")
 	}
 	switch channel {
-	case "WB", "QD":
+	case "WB", "QD", "QW":
 		h.Set("Authorization", "Bearer "+key)
 	case "OC":
 		h.Set("Authorization", "Bearer "+key)
@@ -393,11 +459,13 @@ func (s *Server) health(w http.ResponseWriter) {
 		"opencode":  upstreamView("OC"),
 		"workbuddy": upstreamView("WB"),
 		"qoder":     upstreamView("QD"),
+		"qwen":      upstreamView("QW"),
 		"alias": map[string]any{
 			"path":   s.aliases.Path(),
 			"models": s.aliases.Count(),
 		},
 		"children": s.sup.States(),
+		"cooling":  s.coolingCount(),
 		"uptime_s": int(time.Since(s.started).Seconds()),
 	}
 	writeJSON(w, 200, payload)
@@ -410,14 +478,12 @@ func (s *Server) routeChain(w http.ResponseWriter, r *http.Request, body []byte,
 	if protocol == "" {
 		protocol = "chat"
 	}
-	if protocol != "chat" {
-		if !isChat {
-			writeJSON(w, 400, errorBody("bridged models only support chat/completions", "invalid_request_error"))
-			return
-		}
-		s.attemptBridge(w, r, body, model, t, protocol, path, search, 0)
+	if protocol != "chat" && !isChat {
+		writeJSON(w, 400, errorBody("bridged models only support chat/completions", "invalid_request_error"))
 		return
 	}
+	// 每跳按自己的协议派发（chat 直转 / messages·responses 过桥），
+	// 所以一条链里可以既有原生 chat 跳也有桥接跳。
 	s.attemptChain(w, r, body, model, t, path, search, 0)
 }
 
@@ -427,6 +493,11 @@ func (s *Server) attemptChain(w http.ResponseWriter, r *http.Request, body []byt
 		return
 	}
 	hop := t.Chain[index]
+	if s.cooling(hop) {
+		s.log.Infof("[router] %s 冷却中，跳过", hopKey(hop))
+		s.attemptChain(w, r, body, model, t, path, search, index+1)
+		return
+	}
 	key := s.keyset().For(hop.Channel)
 	if key == "" {
 		s.log.Warnf("通道 %s 缺少 key，跳过 %s", hop.Channel, hop.Upstream)
@@ -438,6 +509,41 @@ func (s *Server) attemptChain(w http.ResponseWriter, r *http.Request, body []byt
 		s.attemptChain(w, r, body, model, t, path, search, index+1)
 		return
 	}
+	proto := hop.Protocol
+	if proto == "" {
+		proto = t.Protocol
+	}
+	if proto == "" {
+		proto = "chat"
+	}
+	if proto != "chat" {
+		// 这一跳是桥接上游（千问）。链里可以混协议：前面几跳原生 chat，
+		// 尾巴这一跳走 Messages 桥，失败照样换下一跳。
+		s.log.Infof("%s %s%s model=%s -> %s:%s [%s] (%d/%d)", r.Method, path, search,
+			model, hop.Channel, hop.Upstream, proto, index+1, len(t.Chain))
+		result := bridge.Forward(s.client, bridge.Options{
+			Protocol:      proto,
+			Base:          hop.Base,
+			Key:           key,
+			Body:          body,
+			UpstreamModel: hop.Upstream,
+			DisplayModel:  model,
+			Ctx:           r.Context(),
+		})
+		if hopFatal(result.Status, result.Body) {
+			s.markCooling(hop)
+			if index+1 < len(t.Chain) {
+				s.attemptChain(w, r, body, model, t, path, search, index+1)
+				return
+			}
+		}
+		if (result.Status >= 500 || result.Status == 429) && index+1 < len(t.Chain) {
+			s.attemptChain(w, r, body, model, t, path, search, index+1)
+			return
+		}
+		writeResult(w, result)
+		return
+	}
 	rewritten, ok := rewriteModel(body, hop.Upstream)
 	if !ok {
 		writeJSON(w, 400, errorBody("invalid JSON body", "invalid_request_error"))
@@ -445,7 +551,14 @@ func (s *Server) attemptChain(w http.ResponseWriter, r *http.Request, body []byt
 	}
 	headers := s.forwardHeaders(r, body, hop.Channel, key)
 	s.log.Infof("%s %s%s model=%s -> %s:%s (%d/%d)", r.Method, path, search, model, hop.Channel, hop.Upstream, index+1, len(t.Chain))
-	s.doForwardWith(w, r, rewritten, hop.Base, path, search, headers, chainAccept, func(reason string) {
+	accept := func(status int, head []byte) bool {
+		if hopFatal(status, head) {
+			s.markCooling(hop)
+			return false
+		}
+		return chainAccept(status, head)
+	}
+	s.doForwardWith(w, r, rewritten, hop.Base, path, search, headers, accept, func(reason string) {
 		s.log.Infof("[router] %s -> %s, fallback %s", hop.Upstream, reason, nextHopName(t.Chain, index))
 		s.attemptChain(w, r, body, model, t, path, search, index+1)
 	})
@@ -457,6 +570,11 @@ func (s *Server) attemptBridge(w http.ResponseWriter, r *http.Request, body []by
 		return
 	}
 	hop := t.Chain[index]
+	if s.cooling(hop) {
+		s.log.Infof("[router] %s 冷却中，跳过", hopKey(hop))
+		s.attemptBridge(w, r, body, model, t, protocol, path, search, index+1)
+		return
+	}
 	key := s.keyset().For(hop.Channel)
 	if key == "" {
 		s.attemptBridge(w, r, body, model, t, protocol, path, search, index+1)
@@ -479,12 +597,44 @@ func (s *Server) attemptBridge(w http.ResponseWriter, r *http.Request, body []by
 	// Retry only on server-side failures; a 4xx (bad request, bad key) would
 	// fail identically on every hop. The last hop's real error is passed
 	// through instead of a generic "all upstreams failed".
+	// 模型不存在 / 额度耗尽 / 欠费与请求无关：这一跳作废，冷却它并换下一跳。
+	if hopFatal(result.Status, result.Body) {
+		s.markCooling(hop)
+		if index+1 < len(t.Chain) {
+			s.log.Infof("[router] %s -> %s, fallback %s", hop.Upstream,
+				strings.TrimSpace(string(result.Body))[:min(len(result.Body), 120)], nextHopName(t.Chain, index))
+			s.attemptBridge(w, r, body, model, t, protocol, path, search, index+1)
+			return
+		}
+	}
 	if (result.Status >= 500 || result.Status == 429) && index+1 < len(t.Chain) {
 		s.log.Infof("[router] %s -> HTTP %d, fallback %s", hop.Upstream, result.Status, nextHopName(t.Chain, index))
 		s.attemptBridge(w, r, body, model, t, protocol, path, search, index+1)
 		return
 	}
 	writeResult(w, result)
+}
+
+// hopFatal 标记「这一跳现在就是不能用」的响应：模型 id 不存在、免费额度耗尽、欠费。
+// 这类 4xx 与请求本身无关，换下一跳大概率能成，所以要回落并把该跳冷却一段时间。
+func hopFatal(status int, head []byte) bool {
+	switch status {
+	case 400, 402, 403:
+	default:
+		return false
+	}
+	for _, marker := range [][]byte{
+		[]byte("model_unavailable"), []byte("Model not exist"),
+		[]byte("Arrearage"), []byte("AllocationQuota"), []byte("FreeTierOnly"),
+		[]byte("insufficient_quota"), []byte("quota exhausted"),
+		// 千问：`403 AccessDenied` + 这句表示免费额度用完且「用完即停」开着
+		[]byte("Free quota exhausted"), []byte("use free tier only"),
+	} {
+		if bytes.Contains(head, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 // chainAccept decides whether a chain attempt should fall through to the next hop.
@@ -528,7 +678,7 @@ func (s *Server) reload(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 400, errorBody("配置读取失败: "+err.Error(), "configuration_error"))
 		return
 	}
-	ks := keys.Load(next.ProviderConfig, next.WBGatewayConfig, next.QoderEnvFile)
+	ks := keys.Load(next.ProviderConfig, next.WBGatewayConfig, next.QoderEnvFile, next.QwenEnvFile)
 	applied, stale, added := s.sup.ApplyConfig(next.Children)
 	s.setRuntime(next, ks)
 	s.aliases.Reload()
@@ -637,6 +787,10 @@ func isWorkBuddy(model string) bool {
 
 func isQoder(model string) bool {
 	return strings.HasPrefix(strings.ToLower(model), "qoder:")
+}
+
+func isQwen(model string) bool {
+	return strings.HasPrefix(strings.ToLower(model), "qwen:")
 }
 
 func orDash(s string) string {

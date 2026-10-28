@@ -97,13 +97,31 @@ class PriceIsDerivedTest(unittest.TestCase):
         item = chain_item(("WB", "cn:gone-model", 0.0))
         self.assertEqual(M.family_entries(M.expand_hops(item), {}, {}, "auto"), [])
 
-    def test_free_promo_expiry_moves_group(self):
-        """限免到期：价格从 0 变 0.33，分组必须从免费挪到高耗。"""
+    def test_free_promo_expiry_drops_unlisted_model(self):
+        """限免到期：价格从 0 变 0.33，又不在 MAIN_IDS / LOW_PICKS 里 -> 不收录。"""
         item = chain_item(("WB", "cn:step-5-preview", 0.0))
         entries = M.family_entries(
             M.expand_hops(item), {"cn:step-5-preview": wb_record(0.33)}, {}, "auto"
         )
-        self.assertEqual(M.entry_group(entries[0], {}), ("high", ""))
+        self.assertEqual(M.entry_group(entries[0], {}), ("drop", ""))
+
+    def test_group_rules(self):
+        """主力看名单（豁免价格），省钱要同时命中名单与 0.11 上限，其余不收录。"""
+        def entry_for(upstream: str, price: float) -> dict:
+            item = chain_item(("WB", upstream, 0.0))
+            built = M.family_entries(
+                M.expand_hops(item), {upstream: wb_record(price)}, {}, "auto"
+            )[0]
+            return dict(built, price=price)
+
+        # 贵备份：0.43 仍在名单里 -> 主力
+        self.assertEqual(M.entry_group(entry_for("cn:Qwen3.8-Max", 0.43), {}), ("main", "manual"))
+        # 名单里的便宜模型 -> 省钱
+        self.assertEqual(M.entry_group(entry_for("cn:glm-5.3-flash", 0.08), {}), ("low", ""))
+        # 不在名单的贵模型 -> 不收录
+        self.assertEqual(M.entry_group(entry_for("cn:glm-5.3", 0.69), {}), ("drop", ""))
+        # 免费模型永远进免费组，不受名单影响
+        self.assertEqual(M.entry_group(entry_for("cn:some-free", 0.0), {}), ("free", ""))
 
 
 class DriftCheckTest(unittest.TestCase):

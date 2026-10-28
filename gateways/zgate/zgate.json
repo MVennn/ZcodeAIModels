@@ -4,12 +4,14 @@
   "providerConfig": "~/.zcode/v2/provider_config.json",
   "wbGatewayConfig": "../upstream/workbuddy/config.json",
   "qoderEnvFile": "../../providers/qoder/.env.local",
+  "qwenEnvFile": "../../providers/qwen/.env.local",
   "session": "unified-router",
   "log": { "dir": "%LOCALAPPDATA%/ZCodeGateway", "file": "zgate.log", "maxMB": 5 },
   "upstreams": {
     "OC": { "base": "https://opencode.ai/zen/go/v1" },
     "WB": { "base": "http://127.0.0.1:7863/v1", "child": "workbuddy" },
-    "QD": { "base": "http://127.0.0.1:8790/v1", "child": "qoder" }
+    "QD": { "base": "http://127.0.0.1:8790/v1", "child": "qoder" },
+    "QW": { "base": "https://maas.qianwenaiapi.com/apps/anthropic/v1", "keyEnv": "QWEN_API_KEY" }
   },
   "children": {
     "workbuddy": {

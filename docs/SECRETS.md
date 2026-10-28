@@ -34,6 +34,7 @@
 | **Qoder API key**（`qd-…`） | qoder2api-hub 的 `gateways/upstream/qoder/accounts/settings.json`；本地脚本与 7871 路由从 `providers/qoder/.env.local` 的 `QD_API_KEY` 读 | `providers/qoder/qoder_zcode_sync.py` / `qoder_probe_zcode.py` 只从环境变量或本地 `.env.local` 读；合并模式**不**把 key 写进 provider_config（separate 模式才写） | **不入库**。轮换后同步改 `settings.json` 与 `.env.local` |
 | **Qoder 面板密码** | `gateways/upstream/qoder/accounts/settings.json` 的 PBKDF2 摘要；初始值来自 `providers/qoder/.env.local` 的 `QD_PANEL_PASSWORD` | 本仓不出现值；`.env.local` 与整个 clone 都 gitignore | **不入库**。看板「设置」可改 |
 | **Qoder 账号凭据**（OAuth device token / refresh token） | `gateways/upstream/qoder/accounts/<uid>.json` | 整个 `gateways/upstream/qoder/` 被 `.gitignore` 排除 | **不入库**。换账号时整目录操作 |
+| **千问平台 API key**（`sk-ws-…`） | 控制台 `platform.qianwenai.com/home/api-keys`；本机写在 `providers/qwen/.env.local`（`.gitignore` 排除） | 脚本与 `zgate` 只从环境变量或该文件读；`/health` 只报 key 是否存在 | **不入库**。轮换后改 `.env.local` 并重启 zgate |
 | **其它供应商的凭据**（你自己接的） | 该服务商自己的控制台 / 账号设置 | **一律走环境变量**，不落进源码、文档、缓存、日志。命名建议 `<供应商>_KEY` / `<供应商>_BASE`，与 §3.5 的表同格式 | **不入库**。加变量时同步补 §3.5 的表 |
 | **ZCode provider 配置**（含各 provider 的 `apiKey`） | 本机 `~/.zcode/v2/provider_config.json` | 不在本仓；`--apply` 产生的 `provider_config.json.bak-*` 备份同样含 key，已被 `.gitignore` 排除 | **不入库**。回退步骤见 [MAINTENANCE.md](MAINTENANCE.md) §4 |
 | **网关模型目录快照** | 网关 `/panel/api/models` | `evidence/wb_panel_models.json` —— 目录结构证据，**不含凭据**，随仓库分发 | 可入库 |
@@ -118,6 +119,8 @@ export WB_GATEWAY_KEY='<网关 api_key>'
 | **`QD_API_KEY`** | `providers/qoder/qoder_zcode_sync.py`、`providers/qoder/qoder_probe_zcode.py`（缺省回退 `providers/qoder/.env.local`） | 无 | 明确报错退出（不静默） |
 | **`QD_GATEWAY_BASE`** | 同上 | `http://127.0.0.1:8790/v1` | 用默认值 |
 | `QD_PANEL_PASSWORD` | 首次启动 qoder2api-hub 时用；之后以 `accounts/settings.json` 的摘要为准 | 无 | 用已持久化的面板密码 |
+| **`QWEN_API_KEY`** | `providers/qwen/qwen_zcode_sync.py`、`gateways/zgate`（缺省回退 `providers/qwen/.env.local`） | 无 | 脚本明确报错退出；路由的千问渠道 502 |
+| **`QWEN_BASE`** | `providers/qwen/qwen_zcode_sync.py` | `https://maas.qianwenaiapi.com/apps/anthropic/v1` | 用默认值（**必须带 `/v1`**：桥会直接拼 `/messages`） |
 
 ### 3.6 Qoder（qoder2api-hub）
 

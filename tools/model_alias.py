@@ -13,8 +13,8 @@ The display id is:
 Channel letters are W (WorkBuddy), O (OpenCode-Go), Q (Qoder). Model names
 drop the `V` and version dots (`DeepSeek-V4.1-FS` -> `DeepSeek-41-Fs`).
 
-The four providers are 主力 / 免费 / 低耗 / 高耗. 备用 is dissolved into
-高耗 by price. `gateways/zgate` reads the generated alias map and
+The three providers are 主力 / 免费 / 省钱. Anything above 0.11 that is not in
+MAIN_IDS or LOW_PICKS is dropped instead of getting its own group. `gateways/zgate` reads the generated alias map and
 forwards each display id to its original upstream model, so the display name
 never has to be parseable.
 
@@ -32,7 +32,7 @@ so their old ids are normalized away. It is idempotent and backs up first.
 
 `~/.zcode/v2/arena-main.json` (written by `tools/arena_leaderboard.py`) can
 extend 主力 with models that score near the DeepSeek baseline at a similar
-price. Pass `--no-arena` to ignore it.
+price. The leaderboard is opt-in now: pass `--arena` to allow it.
 
 Usage
 -----
@@ -67,33 +67,57 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parent
 WB_PRICING = REPO / "providers" / "workbuddy" / "cache" / "wb_pricing.json"
 QD_ENV = REPO / "providers" / "qoder" / ".env.local"
+# 千问的集合体（旗舰/代码/快速）：每条是一串上游 id，路由按顺序逐个烧。
+POOLS_FILE = REPO / "providers" / "qwen" / "pools.json"
 DEFAULT_ARENA = Path.home() / ".zcode" / "v2" / "arena-main.json"
 
 PROVIDER_MAIN = "opencode-go-chat"
 PROVIDER_FREE = "opencode-go-chat-free"
 PROVIDER_LOW = "opencode-go-chat-fast"
-PROVIDER_HIGH = "opencode-go-chat-slow"
-PROVIDER_IDS = [PROVIDER_MAIN, PROVIDER_FREE, PROVIDER_LOW, PROVIDER_HIGH]
+PROVIDER_IDS = [PROVIDER_MAIN, PROVIDER_FREE, PROVIDER_LOW]
 PROVIDER_NAMES = {
     PROVIDER_MAIN: "主力",
     PROVIDER_FREE: "免费",
-    PROVIDER_LOW: "低耗",
-    PROVIDER_HIGH: "高耗",
+    PROVIDER_LOW: "省钱",
 }
+GROUPS = ("main", "free", "low")
 ROUTER_BASE = "http://127.0.0.1:7871/v1"
 WB_BASE = "http://127.0.0.1:7863/v1"
 QD_BASE = "http://127.0.0.1:8790/v1"
 OC_BASE = "https://opencode.ai/zen/go/v1"
+QW_BASE = "https://maas.qianwenaiapi.com/apps/anthropic/v1"
+# 千问渠道是**预付额度**：先用掉「每模型 1M tokens」的试用池（2026-12-15 到期），
+# 之后走 ¥300 学生额度（一年有效，到期作废，用不完也不退）。
+# 预付额度的边际单价就是 0，所以整段窗口内按 0 记账；额度真烧光时上游返回配额错误，
+# 路由的 hopFatal + 冷却会把这跳摘掉，不需要有人回来改配置。
+QW_CREDIT_UNTIL = "2027-10-28"
 
 # Hand-picked core. `~/.zcode/v2/arena-main.json` can add more (see
 # tools/arena_leaderboard.py); `--no-arena` restores this list only.
+# 键一律 `<协议>:<上游 id>`：同一型号会以 chat / messages 两种形态出现
+# （千问桥接版是 messages），只写型号名会把两条一起吸进主力。
 MAIN_IDS = {
-    "cn:deepseek-v4.1-flash",
-    "deepseek-v4.1-flash",
-    "mimo-v2.6-pro",
-    # 2026-10-23: benchmark #4 (372.95) at 0.09 credits, vs DeepSeek V4.1
-    # Flash #11 (342.40) at 0.11; higher intelligence and cheaper.
-    "qwen3.8-flash",
+    # 日常主力：唯一的付费心智负担
+    "chat:cn:deepseek-v4.1-flash",
+    "chat:deepseek-v4.1-flash",
+    # 贵备份：AA 榜上唯一高于 DeepSeek 基准的模型（2026-10-28 1122 vs 1093，
+    # #44 vs #56），只在 DeepSeek 两跳同时不可用时手动切。
+    "chat:Qwen3.8-Max",
+    # 免费 DeepSeek（千问渠道，messages 协议）：¥300 预付额度先烧这一条。
+    # 协议不同不能并进 chat 那条链，所以它单独成一个显示名。
+    "messages:deepseek-v4.1-flash",
+}
+# 省钱组：每个厂商留一个。价格上限 = LOW_MAX（0.11，DeepSeek 的 OC 价）。
+# 命中这里才进组，未命中的付费模型直接不收录 —— 组里不会出现用不上的模型。
+LOW_PICKS = {
+    "messages:qwen3.8-flash",        # Qwen：中文 / 长输出（AA 基准附近）
+    "chat:cn:glm-5.3-flash",         # 智谱：工具调用稳（AA 993）
+    "chat:cn:minimax-m3.1-flash",    # MiniMax：1M 上下文
+    "chat:mimo-v2.6-flash",          # 小米：每积分最耐用（AA 1087）
+    "chat:cn:hy3-x",                 # 腾讯：最便宜（0.05）
+    "messages:claude-haiku-5-5",     # Anthropic：子代理 / 小改动（AA 1026）
+    "responses:gpt-6-luna",          # OpenAI：responses 协议（AA 992）
+    "chat:cn:space-bunny",           # Space：AA 1074，性价比最高之一
 }
 # Sorted first inside 主力 regardless of channel/region. Keyed by upstream id,
 # so it must track whichever hop actually survives in the chain.
@@ -103,6 +127,11 @@ MAIN_FIRST = {"cn:deepseek-v4.1-flash", "deepseek-v4.1-flash"}
 # listed separately: the paid entry tries the free upstream first, then the paid
 # one, then CN. Display name keeps the paid price.
 MERGE_FREE_GB = {"deepseek-v4.1-flash"}
+# 同一型号允许 chat 与 messages 跳并进同一条链（路由按每跳自己的协议派发）。
+MERGE_ACROSS_PROTOCOL = {"deepseek-v4.1-flash"}
+# 这些跳排到链尾，不看价格：千问的额度是一年期预付，按「OC 先用完再用它」的
+# 顺序来花，所以它必须排在付费跳之后，只有当付费全挂时才轮到。
+TAIL_HOPS = {("QW", "deepseek-v4.1-flash")}
 FREE_MAX = 0.0
 LOW_MAX = 0.11
 QD_FACTOR = 0.86
@@ -160,6 +189,13 @@ ABBR = {
     "qwen3.7-max": "Qwen-3.7-Max",
     "qwen3.7-plus": "Qwen-3.7-Plus",
     "qwen3.7-flash": "Qwen-3.7-Flash",
+    "qwen-max": "Qwen-Max",
+    "qwen3-coder-plus": "Qwen-3-Coder-Plus",
+    "qwen3-coder-flash": "Qwen-3-Coder-Flash",
+    "qwen-plus": "Qwen-Plus",
+    "qwen-flash": "Qwen-Flash",
+    "qwen3-vl-plus": "Qwen-3-VL-Plus",
+    "qwq-plus": "QwQ-Plus",
     "glm-5.3": "GLM-5.3",
     "glm-5.3-flash": "GLM-5.3-Flash",
     "glm-5.2": "GLM-5.2",
@@ -408,8 +444,14 @@ def in_oc_peak() -> bool:
     return (60 <= minutes < 240) or (360 <= minutes < 600)
 
 
+def qw_credit_active() -> bool:
+    return datetime.now().strftime("%Y-%m-%d") <= QW_CREDIT_UNTIL
+
+
 def price_of(channel: str, upstream: str, wb: dict[str, dict],
              qd: dict[str, dict], slot: str) -> float | None:
+    if channel == "QW":
+        return 0.0 if qw_credit_active() else None
     if channel == "WB":
         record = wb.get(upstream)
         if not record:
@@ -457,7 +499,7 @@ def abbreviate(model: str) -> str:
 
 
 VENDOR_PREFIXES = (
-    ("DeepSeek", "DSP"), ("Qwen", "QW"), ("GLM", "GLM"), ("MiniMax", "MM"),
+    ("DeepSeek", "DSP"), ("Qwen", "QW"), ("QwQ", "QW"), ("GLM", "GLM"), ("MiniMax", "MM"),
     ("Kimi", "KIMI"), ("HY", "HY"), ("MiMo", "MIMO"), ("LongCat", "LONG"),
     ("Beam", "BEAM"), ("Claude", "CL"), ("GPT", "GPT"), ("Muse", "MUSE"),
     ("Step", "STEP"), ("Space", "SPB"),
@@ -491,10 +533,26 @@ def protocol_hints() -> dict:
     return _PROTOCOL_HINTS
 
 
+PREFIXES = ("qwen:", "qoder:", "cn:", "global:")
+
+
+def _bare(model_id: str) -> str:
+    """去掉渠道前缀后的裸 id，用于比较 legacy 映射是否还指得对。"""
+    text = str(model_id)
+    for prefix in PREFIXES:
+        if text.lower().startswith(prefix):
+            return text[len(prefix):].lower()
+    return text.lower()
+
+
 def classify(model: str, protocol: str, alias_models: dict, legacy: dict) -> dict | None:
     """Map any config model id (old or already-renamed) to its inventory fields."""
     if model in alias_models:
         entry = alias_models[model]
+        # 集合体只由 pools.json 生成：不能让它进 inventory 被 expand_hops 按跳拆开，
+        # 否则每一跳都会变成一条独立模型，下一轮再翻倍。
+        if entry.get("kind") == "pool":
+            return None
         channel = str(entry.get("channel") or "")
         upstream = str(entry.get("upstream") or "")
         base_model = str(entry.get("base_model") or (
@@ -516,8 +574,17 @@ def classify(model: str, protocol: str, alias_models: dict, legacy: dict) -> dic
             "chain": list(entry.get("chain") or []),
             "legacy_ids": list(entry.get("legacy_ids") or [entry.get("original") or model, upstream]),
         }
-    if model in legacy and legacy[model] in alias_models:
-        result = classify(legacy[model], protocol, alias_models, {})
+    legacy_target = legacy.get(model)
+    if legacy_target in alias_models and ":" in model:
+        # 带渠道前缀的 key 必须真能对上目标条目的某一跳：否则这是上一轮
+        # 改名/展开留下的陈旧映射，会把这个 id 静默指到完全无关的模型上。
+        target = alias_models[legacy_target]
+        hops = target.get("chain") or [target]
+        upstreams = {_bare(h.get("upstream") or "") for h in hops}
+        if _bare(model) not in upstreams:
+            legacy_target = None
+    if legacy_target in alias_models:
+        result = classify(legacy_target, protocol, alias_models, {})
         if result is None:
             return None
         result = dict(result)
@@ -549,6 +616,21 @@ def classify(model: str, protocol: str, alias_models: dict, legacy: dict) -> dic
             "upstream": upstream,
             "base_model": upstream,
             "protocol": protocol,
+            "fallbacks": [],
+            "legacy_ids": [model],
+        }
+    if model.startswith("qwen:"):
+        upstream = model[len("qwen:"):]
+        return {
+            "raw": model,
+            "original": model,
+            "channel": "QW",
+            "region": "CN",
+            "upstream": upstream,
+            "base_model": upstream,
+            # 千问平台只提供 Anthropic Messages 端点：协议必须钉成 messages，
+            # 否则 zgate 会按 chat 直转，上游直接 404。
+            "protocol": "messages",
             "fallbacks": [],
             "legacy_ids": [model],
         }
@@ -607,6 +689,11 @@ def inventory(cfg: dict, alias_models: dict, legacy: dict) -> list[dict]:
     return list(seen.values())
 
 
+# 千问平台只有 Anthropic Messages 端点，任何 QW 跳的协议都必须是 messages。
+# 这是渠道属性，不依赖 alias map 里存了什么（上一版存错时会被这里纠正）。
+CHANNEL_PROTOCOL = {"QW": "messages"}
+
+
 def expand_hops(item: dict) -> list[dict]:
     """One item per upstream: v2 chain, v1 fallbacks, or the item itself."""
     chain = item.get("chain") or []
@@ -619,6 +706,13 @@ def expand_hops(item: dict) -> list[dict]:
                 "upstream": hop.get("upstream") or item["upstream"],
                 "base_model": hop.get("base_model") or item["base_model"],
                 "original": hop.get("original") or hop.get("upstream") or item["upstream"],
+                # 每跳保留自己的协议：跨协议合并的条目（主力的 DeepSeek 链）
+                # 条目级是 chat，尾跳是 messages，覆盖成条目级会让路由按 chat
+                # 直转 messages 上游，直接 404。
+                "protocol": CHANNEL_PROTOCOL.get(
+                    hop.get("channel") or item["channel"],
+                    hop.get("protocol") or item["protocol"],
+                ),
                 # 价格一律由 price_of() 从当轮价格源重算：继承上一版 alias map
                 # 里的 price 会把上游改价/限免到期永久冻结在旧值上
                 # （2026-10-28 Step-5-Pre 限免结束仍显示 0.00 即此因）。
@@ -664,7 +758,7 @@ def raw_models(cfg: dict, alias_models: dict, legacy: dict) -> list[dict]:
     return out
 
 
-CHANNEL_BASE = {"WB": WB_BASE, "QD": QD_BASE, "OC": OC_BASE}
+CHANNEL_BASE = {"WB": WB_BASE, "QD": QD_BASE, "OC": OC_BASE, "QW": QW_BASE}
 
 
 def base_of(channel: str) -> str:
@@ -694,10 +788,19 @@ def family_entries(items: list[dict], wb: dict, qd: dict, slot: str) -> list[dic
         hop = dict(item)
         hop["price"] = round(float(price), 2)
         abbr = abbreviate(item["base_model"])
-        key = (abbr, item["protocol"])
+        if str(item["base_model"]).lower() in MERGE_ACROSS_PROTOCOL:
+            key = (abbr, "merged")
+        else:
+            key = (abbr, item["protocol"])
         families.setdefault(key, {})[(item["channel"], item["upstream"])] = hop
 
     entries: list[dict] = []
+    # 同一型号若同时存在 chat 与桥接协议（messages / responses），原型名必须留给
+    # chat 那条：否则桥接条目会先占名，聊天条目被挤成 `-2`，老会话里选中的
+    # `GLM-5.3` 会悄悄指到另一个渠道上去。
+    abbr_protocols: dict[str, set[str]] = {}
+    for (abbr, protocol) in families:
+        abbr_protocols.setdefault(abbr, set()).add(protocol)
     for (abbr, protocol), hop_map in families.items():
         hops = sorted(hop_map.values(), key=lambda h: (h["price"], h["upstream"]))
         if not hops:
@@ -714,17 +817,22 @@ def family_entries(items: list[dict], wb: dict, qd: dict, slot: str) -> list[dic
 
         for group in groups:
             group = sorted(group, key=lambda h: (
+                1 if (h["channel"], h["upstream"]) in TAIL_HOPS else 0,
                 h["price"],
                 0 if h["upstream"].startswith("global:") else 1 if h["upstream"].startswith("cn:") else 2,
                 0 if h["channel"] == "WB" else 1 if h["channel"] == "QD" else 2,
                 h["upstream"],
             ))
             is_free_entry = all(h["price"] <= 0 for h in group)
-            name = abbr + ("-Free" if is_free_entry and len(groups) > 1 else "")
+            base_name = abbr
+            if protocol != "chat" and "chat" in abbr_protocols.get(abbr, ()):
+                base_name = abbr + ("-Msg" if protocol == "messages" else "-Resp")
+            name = base_name + ("-Free" if is_free_entry and len(groups) > 1 else "")
             chain = [{
                 "upstream": h["upstream"],
                 "base": base_of(h["channel"]),
                 "channel": h["channel"],
+                "protocol": h["protocol"],
                 "price": h["price"],
                 "original": h["original"],
                 "base_model": h["base_model"],
@@ -738,7 +846,7 @@ def family_entries(items: list[dict], wb: dict, qd: dict, slot: str) -> list[dic
             entry.update({
                 "name": name,
                 "abbr": abbr,
-                "protocol": protocol,
+                "protocol": "chat" if protocol == "merged" else protocol,
                 "channel": chain[0]["channel"],
                 "upstream": chain[0]["upstream"],
                 "base": chain[0]["base"],
@@ -753,10 +861,78 @@ def family_entries(items: list[dict], wb: dict, qd: dict, slot: str) -> list[dic
     return entries
 
 
+def load_pools(path: Path) -> list[dict]:
+    """集合体定义：每个池子是一条按顺序试的长链路。文件不存在就跳过。"""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return []
+    except Exception as exc:
+        print(f"warning: 读不了集合体定义 {path}（{exc}），本次不生成池子", file=sys.stderr)
+        return []
+    return [pool for pool in (data.get("pools") or []) if pool.get("name") and pool.get("hops")]
+
+
+def pool_entries(pools: list[dict], slot: str) -> list[dict]:
+    """把池子变成合成条目：一条显示名，chain 是整串上游。
+
+    池内每一跳都是千问渠道（QW），价格取 `price_of`；试用窗口外整池无价 -> 不生成。
+    """
+    entries: list[dict] = []
+    for pool in pools:
+        hops: list[dict] = []
+        for upstream in pool["hops"]:
+            price = price_of("QW", upstream, {}, {}, slot)
+            if price is None:
+                continue
+            hops.append({
+                "upstream": upstream,
+                "base": QW_BASE,
+                "channel": "QW",
+                "price": round(float(price), 2),
+                "original": "qwen:" + upstream,
+                "base_model": upstream,
+            })
+        if not hops:
+            continue
+        entries.append({
+            "name": str(pool["name"]),
+            "abbr": str(pool["name"]),
+            "protocol": "messages",
+            "channel": "QW",
+            "upstream": hops[0]["upstream"],
+            "original": hops[0]["original"],
+            "base": QW_BASE,
+            "base_model": hops[0]["base_model"],
+            "price": hops[0]["price"],
+            "chain": hops,
+            "fallbacks": [hop["upstream"] for hop in hops[1:]],
+            "legacy_ids": [str(pool["name"])],
+            "is_free_entry": all(hop["price"] <= 0 for hop in hops),
+            "is_pool": True,
+            "label": str(pool.get("label") or ""),
+        })
+    return entries
+
+
+def _picked(entry: dict, hop: dict, wanted: set[str]) -> bool:
+    """按 `<协议>:<上游>` 命中：协议是必需的，同型号的 chat / 桥接版名字一样。"""
+    protocol = str(entry.get("protocol") or "chat")
+    for value in (hop.get("upstream"), hop.get("base_model")):
+        if value and f"{protocol}:{value}" in wanted:
+            return True
+    return False
+
+
 def entry_group(entry: dict, arena_targets: dict[tuple[str, str], dict]) -> tuple[str, str]:
-    """Return (group, reason) for a merged entry."""
+    """Return (group, reason) for a merged entry. `drop` = 不收录。"""
+    # 集合体是「一整串上游」的人造条目：它的跳会包含很多被单型号名单点名的 id，
+    # 按跳匹配会把它误吸进主力（91 跳的快速池命中 deepseek-v4.1-flash 的桥接版）。
+    # 池子只按价格归组 —— 0 积分就是免费。
+    if entry.get("is_pool"):
+        return ("free", "") if entry["price"] <= 0 else ("drop", "")
     for hop in entry["chain"]:
-        if hop["original"] in MAIN_IDS:
+        if _picked(entry, hop, MAIN_IDS):
             return "main", "manual"
     for hop in entry["chain"]:
         if (hop["channel"], hop["upstream"]) in arena_targets:
@@ -764,12 +940,14 @@ def entry_group(entry: dict, arena_targets: dict[tuple[str, str], dict]) -> tupl
     price = entry["price"]
     if price <= 0:
         return "free", ""
-    if price <= LOW_MAX:
+    if price <= LOW_MAX and any(_picked(entry, hop, LOW_PICKS) for hop in entry["chain"]):
         return "low", ""
-    return "high", ""
+    return "drop", ""
 
 
-_GROUP_LABELS = {"main": "主力", "free": "免费", "low": "低耗", "high": "高耗"}
+# "high"（高耗）已不产出，但保留标签：迁移期的旧 alias map 里还有这一组，
+# 漂移检测要能读得懂它，才不会在收缩当天报 KeyError。
+_GROUP_LABELS = {"main": "主力", "free": "免费", "low": "省钱", "drop": "不收录", "high": "高耗"}
 
 
 def _hop_label(hop: dict) -> str:
@@ -862,8 +1040,14 @@ def main() -> int:
                         help="model_probe.py 的结果；只保留 ok（或曾 ok 的瞬时限流）")
     parser.add_argument("--arena-main",
                         help=f"榜单候选文件（默认 {DEFAULT_ARENA}）")
+    parser.add_argument("--arena", action="store_true",
+                        help="允许榜单自动扩主力（默认关闭：它会把主力越塞越肿）")
     parser.add_argument("--no-arena", action="store_true",
-                        help="忽略榜单候选，主力只用人工 MAIN_IDS")
+                        help="兼容旧参数：榜单本来就是默认关闭的")
+    parser.add_argument("--pools",
+                        help=f"集合体定义（默认 {POOLS_FILE.name}；一条显示名对应一串上游）")
+    parser.add_argument("--no-pools", action="store_true",
+                        help="忽略集合体定义，只生成单型号条目")
     parser.add_argument("--force-unpriced", action="store_true",
                         help="允许在某个渠道全部无价时仍然 --apply（默认拒绝，避免整批剔除）")
     args = parser.parse_args()
@@ -884,9 +1068,12 @@ def main() -> int:
     wb, qd = wb_prices(), qd_prices()
     items = inventory(cfg, existing_models, legacy)
     entries = family_entries(items, wb, qd, args.slot)
+    pool_file = Path(args.pools).expanduser() if args.pools else POOLS_FILE
+    pool_rows = [] if args.no_pools else pool_entries(load_pools(pool_file), args.slot)
+    entries.extend(pool_rows)
     raw = raw_models(cfg, existing_models, legacy)
     arena_file = arena_main_path(args.arena_main)
-    arena_targets = {} if args.no_arena else load_arena_targets(arena_file)
+    arena_targets = load_arena_targets(arena_file) if (args.arena and not args.no_arena) else {}
 
     # Copy the original model rule (optionSpecs / properties) before removing
     # the old rules. A renamed id no longer matches ZCode's builtin patterns,
@@ -895,7 +1082,7 @@ def main() -> int:
     for entry in model_rules(cfg):
         old_rules.setdefault(str(entry.get("modelId")), entry.get("config") or {})
 
-    grouped: dict[str, list[dict]] = {key: [] for key in ("main", "free", "low", "high")}
+    grouped: dict[str, list[dict]] = {key: [] for key in GROUPS}
     skipped: list[str] = []
     used: set[str] = set()
     # 上一版的名字按 (渠道, 上游, 协议) 记下来：同一个 hop 继续用旧名，
@@ -912,7 +1099,10 @@ def main() -> int:
             prev_names.setdefault(key, prev_name)
     for entry in entries:
         group, main_reason = entry_group(entry, arena_targets)
-        if args.max_price > 0 and entry["price"] > args.max_price:
+        if group == "drop":
+            skipped.append(f"{entry['name']} (price {entry['price']:g}，未在主力/省钱名单)")
+            continue
+        if args.max_price > 0 and entry["price"] > args.max_price and group != "main":
             skipped.append(f"{entry['name']} (price {entry['price']:g} > {args.max_price:g})")
             continue
         new_id = entry["name"]
@@ -996,10 +1186,15 @@ def main() -> int:
             grouped[group] = kept
 
     print("分组 / 新 ID / 原模型 / 协议 / 积分")
-    for group in ("main", "free", "low", "high"):
-        print(f"\n## {PROVIDER_NAMES[{'main':PROVIDER_MAIN,'free':PROVIDER_FREE,'low':PROVIDER_LOW,'high':PROVIDER_HIGH}[group]]} ({len(grouped[group])})")
+    for group in GROUPS:
+        print(f"\n## {PROVIDER_NAMES[{'main':PROVIDER_MAIN,'free':PROVIDER_FREE,'low':PROVIDER_LOW}[group]]} ({len(grouped[group])})")
         for item in grouped[group]:
             print(f"  {item['new_id']:<34} {item['original']:<34} {item['protocol']:<10} {item['price']:.2f}")
+    if pool_rows:
+        print("## 集合体（%s）" % pool_file.name)
+        for pool in pool_rows:
+            head = " -> ".join(hop["upstream"] for hop in pool["chain"][:3])
+            print(f"  {pool['name']:<16} {len(pool['chain'])} 跳  {head} …")
     arena_rows = [row for row in grouped["main"] if row.get("main_reason") == "arena"]
     if arena_rows:
         print(f"\n## 主力扩充来源（{arena_file.name}）")
@@ -1063,7 +1258,7 @@ def main() -> int:
     new_model_rules = []
     alias_models = {}
     for group, provider_id in (("main", PROVIDER_MAIN), ("free", PROVIDER_FREE),
-                               ("low", PROVIDER_LOW), ("high", PROVIDER_HIGH)):
+                               ("low", PROVIDER_LOW)):
         rows = grouped[group]
         ids = [row["new_id"] for row in rows]
         new_providers.append({
@@ -1095,7 +1290,7 @@ def main() -> int:
                 "config": config,
                 "providerId": provider_id,
             })
-            base = WB_BASE if row["channel"] == "WB" else QD_BASE if row["channel"] == "QD" else OC_BASE
+            base = base_of(row["channel"])
             alias_models[row["new_id"]] = {
                 "channel": row["channel"],
                 "region": "",
@@ -1110,6 +1305,9 @@ def main() -> int:
                 "chain": list(row.get("chain") or []),
                 "legacy_ids": list(row.get("legacy_ids") or [row["original"], row["upstream"]]),
             }
+            if row.get("is_pool"):
+                alias_models[row["new_id"]]["kind"] = "pool"
+                alias_models[row["new_id"]]["label"] = row.get("label") or ""
             if row.get("main_reason"):
                 alias_models[row["new_id"]]["main_reason"] = row["main_reason"]
             for legacy_id in row.get("legacy_ids") or [row["original"], row["upstream"]]:

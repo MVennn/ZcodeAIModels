@@ -1,7 +1,8 @@
-# 统一模型命名与四组
+# 统一模型命名与分组
 
 > **一句话**：模型 ID 只用型号名（如 `DeepSeek-4.1-Fs`），同一型号跨渠道合并成一条
-> 按价格升序的链路；四组按「免费 / 低于 DeepSeek 基准价 / 高于」划分，主力另由人工 + 榜单决定。
+> 按价格升序的链路；**2026-10-28 起只保留三组**——主力（人工两条）、免费、
+> 省钱（每厂商一个），高于 0.11 且不在名单里的模型**不收录**。
 
 ---
 
@@ -12,12 +13,18 @@
 
 | 文件 | 作用 |
 |---|---|
-| `~/.zcode/v2/provider_config.json` | ZCode 看到的四个 provider 与显示名列表 |
+| `~/.zcode/v2/provider_config.json` | ZCode 看到的三个 provider 与显示名列表 |
 | `~/.zcode/v2/model-alias-map.json` | 显示名 → `{protocol, price, chain:[{channel, upstream, base, price}], group}`；路由读它 |
 
 `chain` 是**有序链路**：路由从第一跳开始试，遇到 429 / 502 / 503 / 504 或
 `400 model_unavailable` 就换下一跳。每一跳自带 `base`，所以一条链路可以横跨
-WorkBuddy（7863）、Qoder（8790）和 OpenCode-Go（远程）。
+WorkBuddy（7863）、Qoder（8790）、千问（远程 Messages）和 OpenCode-Go（远程）。
+
+**与请求无关的 4xx 也算「这跳作废」**：`Model not exist`（上游没有这个 id）、
+`Arrearage` / `AllocationQuota` / `FreeTierOnly`（额度耗尽）、以及 402，都会立即换
+下一跳，并把该跳放进 **30 分钟冷却**（内存态，重启清零，`/health` 的 `cooling`
+是当前数量）。没有这条，几十跳的集合体每轮都要先把死跳撞一遍。
+集合体（池子）的定义见 [QWEN.md](QWEN.md) §4.5。
 
 alias map **不含凭据**；上游 key 仍由路由按渠道从 `provider_config.json` /
 `gateways/upstream/workbuddy/config.json` / `providers/qoder/.env.local` 读取。
@@ -43,7 +50,7 @@ alias map **不含凭据**；上游 key 仍由路由按渠道从 `provider_confi
 | 情况 | 做法 |
 |---|---|
 | 同型号既有免费档又有付费档 | 免费那条单独成条，名字加 `-Free`（如 `HY3-Free`、`HY4-Pre-Free`、`DeepSeek-4-Flash-Free`）；付费那条用原名 |
-| 同名但协议不同（chat / messages / responses） | 桥接那条加 `-Msg` / `-Resp`（目前没有触发） |
+| 同名但协议不同（chat / messages / responses） | 桥接那条加 `-Msg` / `-Resp`（2026-10-28 首次触发：千问桥接版） |
 
 `deepseek-v4.1-flash` 是唯一例外：免费档**并入**付费条目并放在链路第一跳，见 §3。
 
@@ -90,19 +97,37 @@ DeepSeek-4.1-Fs
 
 ---
 
-## 4. 四组规则
+## 4. 三组规则（2026-10-28 起）
 
-| 组 | 规则 |
-|---|---|
-| 主力 `opencode-go-chat` | `MAIN_IDS`（人工）+ `arena-main.json`（榜单）；命中任意一跳即进主力。DeepSeek 固定第一 |
-| 免费 `opencode-go-chat-free` | 整条链路价格 = 0（免费档单独成条，带 `-Free`） |
-| 低耗 `opencode-go-chat-fast` | `0 < 最低跳价格 ≤ 0.11`（DeepSeek 的 OC 价，即基准价） |
-| 高耗 `opencode-go-chat-slow` | 最低跳价格 > 0.11，不设上限 |
+分组**不再按价格四档自动切**，而是「人工名单 + 价格兜底」。起因：实测 4 天 74.6 亿
+token 里 86% 是 `DeepSeek-4.1-Flash` 一个模型，高耗组 16 条全部零使用。
 
-- **主力优先于价格分组**：模型在 `MAIN_IDS` 或榜单候选里就进主力，不看价格。
-- **组内排序**：DeepSeek 永远最前；其余按厂商（DeepSeek、Qwen、GLM、MiniMax、Kimi、
-  HY、MiMo、LongCat、Beam、Claude、GPT、Muse、Step、Space），再按最低价升序。
-- 分档基准是**固定常数 0.11**（`LOW_MAX`），不随峰谷价漂移。
+| 组（providerId） | 装什么 | 判定 |
+|---|---|---|
+| **主力** `opencode-go-chat` | 两条：`DeepSeek-4.1-Flash`（三跳链：WB → OC → 千问兜底）+ `Qwen-3.8-Max`（贵备份） | `MAIN_IDS`，键是 `<协议>:<上游 id>`，**不受价格上限约束** |
+| **免费** `opencode-go-chat-free` | 真免费 + 千问试用额度 + 2 个集合体 | 链路最低价 = 0 |
+| **省钱** `opencode-go-chat-fast` | 每个厂商一个特色型号（8 条，0.05–0.09） | `LOW_PICKS` 命中且价格 ≤ `LOW_MAX`(0.11) |
+| ~~高耗~~ | 已删除 | 不在两个名单里且价格 > 0.11 → **不收录** |
+
+为什么这么切：用户的实际选择只有「DeepSeek」和「免费」。按价格四档会让
+16 个永远不点的贵模型占着选择器，也让主力被榜单越塞越肿。
+
+三条硬口径：
+
+- **名单的键必须带协议**（`chat:cn:deepseek-v4.1-flash`）。同一型号会以 chat 与
+  messages 两种形态同时存在（千问桥接版），只写型号名会把两条一起吸进主力。
+- **跨协议合并是例外而非默认**：`MERGE_ACROSS_PROTOCOL` 里的型号（目前只有
+  `deepseek-v4.1-flash`）把 chat 与 messages 跳并成一条链，每跳自带 `protocol`，
+  路由逐跳派发。`TAIL_HOPS` 再把指定跳钉到链尾，实现「先把月度额度用完，再用
+  一年期预付额度」。
+- **主力豁免价格上限**：贵备份 `Qwen-3.8-Max` 是 0.43，其余超限模型一律不收录，
+  所以 `--max-price` 只对非主力生效。
+- **榜单不再自动扩主力**：`arena_leaderboard.py` 仍能产候选，但
+  `model_alias.py` 默认忽略，要 `--arena` 才生效。
+
+改名单 = 改 `tools/model_alias.py` 的 `MAIN_IDS` / `LOW_PICKS`，然后
+`python tools/model_alias.py --slot auto --apply`。**收缩名单要跑两次**：第一次
+落新分组，第二次才收敛名字（`-Free` / `-Msg` 后缀取决于同型号还有没有别的形态）。
 
 ### 4.1 峰谷价（早晚不同）
 
@@ -128,20 +153,20 @@ python providers/workbuddy/workbuddy_fetch_pricing.py
 python tools/model_alias.py --slot auto --apply
 ```
 
-### 4.2 主力扩充（外部榜单）
+### 4.2 主力扩充（外部榜单，默认关闭）
 
-主力有两个人选来源：
+2026-10-28 起**默认只用人工 `MAIN_IDS`**，榜单扩充需要显式 `--arena`。
 
 1. **人工**：`model_alias.py` 里的 `MAIN_IDS`，按厂商/额度/协议挑，不随榜单变；
-2. **榜单**：`tools/arena_leaderboard.py` 拉 ArenaGalleri 实时榜，按
+2. **榜单（opt-in）**：`tools/arena_leaderboard.py` 拉 ArenaGalleri 实时榜，按
    「分数 ≥ DeepSeek 基准 95%、积分 ≤ 0.11、非临时、≥50 局、积分 > 0」筛出候选，
    写 `~/.zcode/v2/arena-main.json`；`model_alias.py` 默认读它，任意一跳命中
    `(channel, upstream)` 就放进主力。
 
 ```bash
-python tools/arena_leaderboard.py --refresh --apply   # 重拉 + 落候选 + 重写四组
+python tools/arena_leaderboard.py --refresh --apply   # 重拉 + 落候选 + 重写三组
 python tools/arena_leaderboard.py --status            # 看当前候选
-python tools/model_alias.py --no-arena --apply        # 回到纯人工主力
+python tools/model_alias.py --no-arena --apply        # 回到纯人工主力（默认即是）
 ```
 
 - 榜单口径、名字映射与 2026-10-23 的候选表见 [BENCHMARKS.md](BENCHMARKS.md) §8。
@@ -169,10 +194,10 @@ python tools/model_alias.py --no-arena --apply        # 回到纯人工主力
 # 0. 重拉外部榜单，更新主力候选（候选没变时不会触发重写）
 python tools/arena_leaderboard.py --refresh --write
 
-# 1. 用真实 ZCode body 探测四组模型（经 7871，按 provider 套用 optionSpecs）
+# 1. 用真实 ZCode body 探测全部模型（经 7871，按 provider 套用 optionSpecs）
 python tools/model_probe.py
 
-# 2. 生成四组 + alias map；只保留探测 ok（或曾 ok 的瞬时限流）的模型
+# 2. 生成三组 + alias map；只保留探测 ok（或曾 ok 的瞬时限流）的模型
 python tools/model_alias.py --slot auto --probe-file ~/.zcode/v2/model_probe.json --apply
 
 # 3. 漂移自检：重算结果应与刚落盘的 alias map 完全一致（退出码 0）
@@ -188,7 +213,7 @@ python tools/model_alias.py --check
 - 旧的 `workbuddy_zcode_sync.py` / `go_model_sync.py` / `qoder_zcode_sync.py`
   现在只当**数据采集器**：它们写旧 ID，随后由 `model_alias.py` 归一化。不要
   在 `model_alias.py` 之后单独跑它们的 `--apply`，否则会临时把旧 ID 写回去
-  （实测会把 `cn:*` 原始 id 混进四组的 `personalModelIds`，下一次生成的命名顺序
+  （实测会把 `cn:*` 原始 id 混进分组的 `personalModelIds`，下一次生成的命名顺序
   也会跟着变）。
 
 ---
