@@ -44,6 +44,19 @@ type Server struct {
 // hopCooldown 是死跳的默认冷却时长；与额度窗口同一量级的短周期，够跨过一轮使用。
 const hopCooldown = 30 * time.Minute
 
+// rateLimitCooldown 是 429 的冷却时长。比死跳短得多：429 多半是瞬时 QPS 限制，
+// 但每次都去撞它会让每个请求白付一次往返（实测 WorkBuddy 一跳今天被限流 182 次，
+// 而 OC 只有 16 次），所以退避重试仍失败后先把它摘出一小段时间。
+const rateLimitCooldown = 45 * time.Second
+
+// rateLimitBackoff 是收到 429 后的就地退避：先睡一小会儿重试同一跳，
+// 限流窗口通常不到 1 秒，这样多数突发根本不会让你看到失败。
+const rateLimitBackoff = 700 * time.Millisecond
+
+// timeoutCooldown 是桥接上游「连上但不说话」超时后的冷却时长。
+// 实测 Conatus 会静默到总超时，不冷却就会每个请求都再等一次。
+const timeoutCooldown = 5 * time.Minute
+
 // New wires the server. client is shared with the bridge.
 func New(cfg *config.Config, ks keys.Set, am *alias.Map, sup *supervisor.Supervisor, client *http.Client, log *logx.Logger) *Server {
 	return &Server{cfg: cfg, keys: ks, aliases: am, sup: sup, client: client, log: log,
@@ -67,9 +80,40 @@ func (s *Server) cooling(hop alias.Hop) bool {
 }
 
 func (s *Server) markCooling(hop alias.Hop) {
+	s.markCoolingFor(hop, hopCooldown)
+}
+
+// markCoolingFor 按指定时长冷却一跳（429 用 45s，僵死上游用 5min，死跳用 30min）。
+func (s *Server) markCoolingFor(hop alias.Hop, d time.Duration) {
 	s.coolMu.Lock()
-	s.cool[hopKey(hop)] = time.Now().Add(hopCooldown)
+	s.cool[hopKey(hop)] = time.Now().Add(d)
 	s.coolMu.Unlock()
+}
+
+// retryBridgeOn429 在桥接跳收到 429 时先就地退避重试一次。
+// 只在还没向客户端写过任何 chunk 时重试（写过了就不能重放，会把 SSE 弄乱）。
+func (s *Server) retryBridgeOn429(r *http.Request, hop alias.Hop, cw *bridgeChunkWriter, opts bridge.Options, result bridge.Result) bridge.Result {
+	if result.Status != 429 || cw.written {
+		return result
+	}
+	s.log.Infof("[router] %s 429，退避 %v 后重试同一跳", hopKey(hop), rateLimitBackoff)
+	select {
+	case <-time.After(rateLimitBackoff):
+	case <-r.Context().Done():
+		return result
+	}
+	return bridge.Forward(s.client, opts)
+}
+
+// coolBridgeFailure 给桥接失败分级冷却：429 短暂摘掉，上游静默超时（504）摘得久一些。
+func (s *Server) coolBridgeFailure(hop alias.Hop, result bridge.Result) {
+	switch result.Status {
+	case 429:
+		s.markCoolingFor(hop, rateLimitCooldown)
+	case 504:
+		s.log.Infof("[router] %s 上游静默超时，冷却 %v", hopKey(hop), timeoutCooldown)
+		s.markCoolingFor(hop, timeoutCooldown)
+	}
 }
 
 func (s *Server) coolingCount() int {
@@ -372,7 +416,7 @@ func (s *Server) forwardHeaders(r *http.Request, body []byte, channel, key strin
 }
 
 func (s *Server) forward(w http.ResponseWriter, r *http.Request, body []byte, base, path, search string, headers http.Header) {
-	s.doForwardWith(w, r, body, base, path, search, headers, nil, nil)
+	s.doForwardWith(w, r, body, base, path, search, headers, nil, nil, nil)
 }
 
 func (s *Server) forwardChain(w http.ResponseWriter, r *http.Request, body []byte, base, path, search string, headers http.Header, chain []string, index int) {
@@ -393,73 +437,92 @@ func (s *Server) forwardChain(w http.ResponseWriter, r *http.Request, body []byt
 		}
 		writeJSON(w, 502, errorBody("unified-router upstream error: "+reason, "proxy_error"))
 	}
-	s.doForwardWith(w, r, rewritten, base, path, search, headers, chainAccept, retry)
+	s.doForwardWith(w, r, rewritten, base, path, search, headers, chainAccept, retry, nil)
 }
 
 func (s *Server) doForwardWith(w http.ResponseWriter, r *http.Request, body []byte, base, path, search string, headers http.Header,
-	accept func(status int, head []byte) bool, retry func(reason string)) {
+	accept func(status int, head []byte) bool, retry func(reason string), onThrottled func()) {
 
 	target := strings.TrimRight(base, "/") + path + search
-	req, err := http.NewRequestWithContext(r.Context(), r.Method, target, bytes.NewReader(body))
-	if err != nil {
-		writeJSON(w, 502, errorBody("unified-router upstream error: "+err.Error(), "proxy_error"))
-		return
-	}
-	req.Header = headers.Clone()
-	if len(body) > 0 {
-		req.ContentLength = int64(len(body))
-	}
-	resp, err := s.client.Do(req)
-	if err != nil {
-		if retry != nil {
-			retry(err.Error())
+	// 429 就地退避重试一次：限流窗口通常很短，先等一小会儿再试同一跳，
+	// 比立刻回落/直接失败更划算。重试仍 429 时再交给 onThrottled 冷却。
+	for attempt := 0; ; attempt++ {
+		req, err := http.NewRequestWithContext(r.Context(), r.Method, target, bytes.NewReader(body))
+		if err != nil {
+			writeJSON(w, 502, errorBody("unified-router upstream error: "+err.Error(), "proxy_error"))
 			return
 		}
-		writeJSON(w, 502, errorBody("unified-router upstream error: "+err.Error(), "proxy_error"))
-		return
-	}
-	defer resp.Body.Close()
-
-	var head []byte
-	if accept != nil {
-		// Peek at error bodies: a 400 can still mean "pool cooling down",
-		// which should fall through to the next region. Successful responses
-		// stream without buffering, and a bounded ReadAll avoids the
-		// single-Read partial-segment trap on error bodies.
-		if resp.StatusCode >= 400 {
-			head, _ = io.ReadAll(io.LimitReader(resp.Body, 8192))
+		req.Header = headers.Clone()
+		if len(body) > 0 {
+			req.ContentLength = int64(len(body))
 		}
-		if !accept(resp.StatusCode, head) {
-			_, _ = io.Copy(io.Discard, resp.Body)
-			retry(fmt.Sprintf("%s %s", http.StatusText(resp.StatusCode), retryHint(head)))
-			return
-		}
-	}
-
-	copyHeaders(w.Header(), resp.Header)
-	w.WriteHeader(resp.StatusCode)
-	if len(head) > 0 {
-		if _, err := w.Write(head); err != nil {
-			return
-		}
-	}
-	flusher, _ := w.(http.Flusher)
-	if len(head) > 0 && flusher != nil {
-		flusher.Flush()
-	}
-	buf := make([]byte, 32*1024)
-	for {
-		n, readErr := resp.Body.Read(buf)
-		if n > 0 {
-			if _, writeErr := w.Write(buf[:n]); writeErr != nil {
+		resp, err := s.client.Do(req)
+		if err != nil {
+			if retry != nil {
+				retry(err.Error())
 				return
 			}
-			if flusher != nil {
-				flusher.Flush()
+			writeJSON(w, 502, errorBody("unified-router upstream error: "+err.Error(), "proxy_error"))
+			return
+		}
+
+		var head []byte
+		if accept != nil {
+			// Peek at error bodies: a 400 can still mean "pool cooling down",
+			// which should fall through to the next region. Successful responses
+			// stream without buffering, and a bounded ReadAll avoids the
+			// single-Read partial-segment trap on error bodies.
+			if resp.StatusCode >= 400 {
+				head, _ = io.ReadAll(io.LimitReader(resp.Body, 8192))
+			}
+			if !accept(resp.StatusCode, head) {
+				_, _ = io.Copy(io.Discard, resp.Body)
+				resp.Body.Close()
+				if resp.StatusCode == 429 {
+					if attempt == 0 {
+						s.log.Infof("[router] 429 退避 %v 后重试同一跳", rateLimitBackoff)
+						select {
+						case <-time.After(rateLimitBackoff):
+						case <-r.Context().Done():
+							return
+						}
+						continue
+					}
+					if onThrottled != nil {
+						onThrottled()
+					}
+				}
+				retry(fmt.Sprintf("%s %s", http.StatusText(resp.StatusCode), retryHint(head)))
+				return
 			}
 		}
-		if readErr != nil {
-			return
+
+		defer resp.Body.Close()
+		copyHeaders(w.Header(), resp.Header)
+		w.WriteHeader(resp.StatusCode)
+		if len(head) > 0 {
+			if _, err := w.Write(head); err != nil {
+				return
+			}
+		}
+		flusher, _ := w.(http.Flusher)
+		if len(head) > 0 && flusher != nil {
+			flusher.Flush()
+		}
+		buf := make([]byte, 32*1024)
+		for {
+			n, readErr := resp.Body.Read(buf)
+			if n > 0 {
+				if _, writeErr := w.Write(buf[:n]); writeErr != nil {
+					return
+				}
+				if flusher != nil {
+					flusher.Flush()
+				}
+			}
+			if readErr != nil {
+				return
+			}
 		}
 	}
 }
@@ -559,7 +622,7 @@ func (s *Server) attemptChain(w http.ResponseWriter, r *http.Request, body []byt
 		// 就没法再换下一跳了（整段缓冲后一次性写出，与旧版一致）。
 		streaming := wantsStream(body) && index == len(t.Chain)-1
 		cw := newBridgeChunkWriter(w)
-		result := bridge.Forward(s.client, bridge.Options{
+		opts := bridge.Options{
 			Protocol:      proto,
 			Base:          hop.Base,
 			Key:           key,
@@ -569,7 +632,9 @@ func (s *Server) attemptChain(w http.ResponseWriter, r *http.Request, body []byt
 			Ctx:           r.Context(),
 			Stream:        streaming,
 			OnChunk:       cw.write,
-		})
+		}
+		result := bridge.Forward(s.client, opts)
+		result = s.retryBridgeOn429(r, hop, cw, opts, result)
 		if hopFatal(result.Status, result.Body) {
 			s.markCooling(hop)
 			if index+1 < len(t.Chain) {
@@ -577,6 +642,7 @@ func (s *Server) attemptChain(w http.ResponseWriter, r *http.Request, body []byt
 				return
 			}
 		}
+		s.coolBridgeFailure(hop, result)
 		if (result.Status >= 500 || result.Status == 429) && index+1 < len(t.Chain) {
 			s.attemptChain(w, r, body, model, t, path, search, index+1)
 			return
@@ -601,6 +667,9 @@ func (s *Server) attemptChain(w http.ResponseWriter, r *http.Request, body []byt
 	s.doForwardWith(w, r, rewritten, hop.Base, path, search, headers, accept, func(reason string) {
 		s.log.Infof("[router] %s -> %s, fallback %s", hop.Upstream, reason, nextHopName(t.Chain, index))
 		s.attemptChain(w, r, body, model, t, path, search, index+1)
+	}, func() {
+		s.log.Infof("[router] %s 退避后仍 429，冷却 %v", hopKey(hop), rateLimitCooldown)
+		s.markCoolingFor(hop, rateLimitCooldown)
 	})
 }
 
@@ -628,7 +697,7 @@ func (s *Server) attemptBridge(w http.ResponseWriter, r *http.Request, body []by
 	// 只有「链尾跳」才走流式：前面某跳失败时需要安全回落，不能先写半截 SSE。
 	streaming := wantsStream(body) && index == len(t.Chain)-1
 	cw := newBridgeChunkWriter(w)
-	result := bridge.Forward(s.client, bridge.Options{
+	opts := bridge.Options{
 		Protocol:      protocol,
 		Base:          hop.Base,
 		Key:           key,
@@ -638,7 +707,9 @@ func (s *Server) attemptBridge(w http.ResponseWriter, r *http.Request, body []by
 		Ctx:           r.Context(),
 		Stream:        streaming,
 		OnChunk:       cw.write,
-	})
+	}
+	result := bridge.Forward(s.client, opts)
+	result = s.retryBridgeOn429(r, hop, cw, opts, result)
 	// Retry only on server-side failures; a 4xx (bad request, bad key) would
 	// fail identically on every hop. The last hop's real error is passed
 	// through instead of a generic "all upstreams failed".
@@ -652,6 +723,7 @@ func (s *Server) attemptBridge(w http.ResponseWriter, r *http.Request, body []by
 			return
 		}
 	}
+	s.coolBridgeFailure(hop, result)
 	if (result.Status >= 500 || result.Status == 429) && index+1 < len(t.Chain) {
 		s.log.Infof("[router] %s -> HTTP %d, fallback %s", hop.Upstream, result.Status, nextHopName(t.Chain, index))
 		s.attemptBridge(w, r, body, model, t, protocol, path, search, index+1)

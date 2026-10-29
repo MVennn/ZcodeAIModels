@@ -255,3 +255,46 @@ data: {"type":"message_stop"}
 		t.Fatalf("finish_reason should be tool_calls: %q", joined)
 	}
 }
+func TestForwardStreamIdleTimeout(t *testing.T) {
+	// 上游接受连接后一个字节都不发（七牛 Conatus 的实测行为）：
+	// 必须按 idle 上限返回 504，而不是干等 DefaultTimeout，也不许提前写 SSE 头。
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(200)
+		if fl, ok := w.(http.Flusher); ok {
+			fl.Flush()
+		}
+		time.Sleep(1 * time.Second)
+	}))
+	defer up.Close()
+
+	wrote := false
+	start := time.Now()
+	res := Forward(up.Client(), Options{
+		Protocol:      "messages",
+		Base:          up.URL,
+		Key:           "k",
+		Body:          []byte(`{"model":"m","messages":[{"role":"user","content":"hi"}]}`),
+		UpstreamModel: "m",
+		DisplayModel:  "Display-M",
+		Stream:        true,
+		Idle:          200 * time.Millisecond,
+		OnChunk: func(b []byte) error {
+			wrote = true
+			return nil
+		},
+	})
+	elapsed := time.Since(start)
+	if res.Status != 504 {
+		t.Fatalf("want 504 on silent upstream, got %d %s", res.Status, res.Body)
+	}
+	if wrote {
+		t.Fatalf("must not write any chunk when nothing was produced")
+	}
+	if elapsed > 2*time.Second {
+		t.Fatalf("idle watchdog did not fire early: %v", elapsed)
+	}
+	if !strings.Contains(string(res.Body), "upstream_timeout") {
+		t.Fatalf("unexpected body: %s", res.Body)
+	}
+}

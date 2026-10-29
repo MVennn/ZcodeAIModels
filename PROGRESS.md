@@ -1717,3 +1717,52 @@ mimo 甚至到后面去了」；③「省钱里面应该留下的都是各公司
   `global:deepseek-v4.1-flash` 若本应免费，这条免费首跳目前是丢的，需复核面板。
 
 ## 状态: 已完成
+
+
+# 2026-10-29 第 N+1 轮：上游僵死可判定 + 429 退避/分级冷却
+
+## 任务目标
+
+用户反馈：①「现在使用模型很容易第一次连接的时候连不上，我还要重试才行」；
+②「conatus 这个模型 2 分钟没响应」。要求直接改。
+
+## 已完成变更
+
+- [x] **定位 Conatus 2 分钟无响应**：请求 `https://api.qnaigc.com/v1/messages`
+      连上后一个字节都不发，唯一的兜底是 `bridge.DefaultTimeout`(120s)，
+      实测 `HTTP 502 ... context deadline exceeded` 恰好 120.04s。
+- [x] **桥接空闲看门狗**：新增 `DefaultIdle = 30s` 与 `idleReader`；上游连续 30 秒
+      无任何字节就断开连接并返回 `504 upstream_timeout`。流式（`forwardStream`）与
+      非流式（`postJSON`）两条路径都接上，`Options.Idle` 可覆盖。
+- [x] **首块 role 延迟写**：`forwardStream` 的 `role` chunk 改为「有第一个真实 delta
+      时才写」，`emitted` 标记是否动过客户端。超时前零写入 → 能返回 504 而不是
+      留一个已发 SSE 头的空流。
+- [x] **429 就地退避**：`doForwardWith` 改为循环，429 时先退避
+      `rateLimitBackoff = 700ms` 重试同一跳一次。
+- [x] **分级冷却**：新增 `markCoolingFor(hop, d)`；429 冷却
+      `rateLimitCooldown = 45s`，桥接静默超时（504）冷却
+      `timeoutCooldown = 5min`，`hopFatal` 死跳仍 `hopCooldown = 30min`。
+      桥接侧封装成 `retryBridgeOn429` / `coolBridgeFailure` 两个 helper。
+- [x] 新增 `TestForwardStreamIdleTimeout`（静默上游 → 空闲上限内 504 且零 chunk）。
+- [x] 二进制用「先构建 `zgate-next.exe` → 停机 → 替换 → `Start-Process ... serve`」
+      的安全顺序切换，没有再出现上一轮「停完忘了拉起」的中断。
+
+## 验收
+
+- `go build ./...` + `go test ./...`（gateways/zgate）全绿，含新增空闲超时用例。
+- 重启后 `/health` `"ok":true`、`alias.models=19`、7871 LISTENING。
+- 实测 `DeepSeek-4.1-Flash` 0.85s；`Conatus` 本次 6.06s 正常返回（僵死是间歇的，
+  看门狗已由单测锁定为 30 秒上限）。
+- 流式工具调用未回归：`claude-haiku-5-5` / `gpt-6-luna` 均
+  `finish_reason=tool_calls`，参数完整，role 于 1.24s 到达。
+- 429 依据（今日日志）：WorkBuddy 首跳 182 次、OC 16 次、QW 跳冷却中。
+
+## 待解决 / 注意事项
+
+- ⚠️ Conatus 的僵死是**上游行为**，网关只能限制等待时长（30s）并冷却 5 分钟，
+  不能修好它。若频繁遇到，考虑把它移出免费组或降级为手动可选。
+- ⚠️ 非流式桥接仍受 120 秒总超时约束（现在也有 30 秒空闲兜底）；ZCode 实际走流式。
+- ⚠️ 429 退避会给单次请求增加最多 700ms；若某跳长期限流，靠 45 秒冷却跳过它，
+  不会每个请求都付这次退避。
+
+## 状态: 已完成

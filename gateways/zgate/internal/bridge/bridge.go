@@ -16,6 +16,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -26,6 +27,15 @@ const maxUpstreamTokens = 65536
 // bridge call is a single non-streaming round trip, so a hard ceiling is safe
 // and stops a hung upstream from pinning the request forever.
 const DefaultTimeout = 120 * time.Second
+
+// DefaultIdle 是流式桥接的「空闲上限」：上游连上后若连续这么久一个字节都没发，
+// 就主动断开并返回 504，而不是干等到 DefaultTimeout。
+//
+// 为什么需要它：七牛的 Conatus 是聚合端点，实测会接受连接后完全静默，
+// 唯一的兜底是 120 秒总超时 —— 用户端表现为「2 分钟没响应」。
+// 桥接模型的正常首字实测在 0.5–1.8s，30 秒有十几倍余量；
+// 只有真正僵死的上游才会触发。
+const DefaultIdle = 30 * time.Second
 
 // Options describes one bridged call.
 type Options struct {
@@ -44,6 +54,9 @@ type Options struct {
 	// OnChunk 为空（非流式调用方）时退化为原行为：整段合成一个 chunk（与旧版一致）。
 	Stream   bool
 	OnChunk func([]byte) error
+	// Idle 是流式路径的空闲上限（0 = DefaultIdle）。上游连续这么久没有任何字节
+	// 到达就断开并返回 504，把「上游僵死」变成可判定的错误。
+	Idle time.Duration
 }
 
 // Result is what the router writes back.
@@ -146,8 +159,14 @@ func postJSON(ctx context.Context, client *http.Client, url string, headers map[
 		return 502, []byte(err.Error())
 	}
 	defer resp.Body.Close()
-	raw, err := io.ReadAll(resp.Body)
+	// 非流式同样要防「连上但不说话」：否则 Conatus 这类僵死上游会干等满总超时。
+	ir := newIdleReader(resp.Body, DefaultIdle)
+	defer ir.stop()
+	raw, err := io.ReadAll(ir)
 	if err != nil {
+		if ir.timedOut() {
+			return 504, []byte("upstream silent for " + DefaultIdle.String())
+		}
 		return 502, []byte(err.Error())
 	}
 	return resp.StatusCode, raw
@@ -199,7 +218,15 @@ func forwardStream(ctx context.Context, client *http.Client, opts Options, url s
 		return jsonResult(resp.StatusCode, errorBody("bridge upstream error: "+msg, "upstream_error"))
 	}
 
-	emit := func(delta map[string]any, finish any) error {
+	// 空闲看门狗：上游连上后一直不发字节时，主动断开，让 Read 返回错误。
+	idle := opts.Idle
+	if idle <= 0 {
+		idle = DefaultIdle
+	}
+	ir := newIdleReader(resp.Body, idle)
+	defer ir.stop()
+
+	writeChunk := func(delta map[string]any, finish any) error {
 		chunk := map[string]any{
 			"id":      "chatcmpl-" + longID(),
 			"object":  "chat.completion.chunk",
@@ -213,20 +240,37 @@ func forwardStream(ctx context.Context, client *http.Client, opts Options, url s
 		return opts.OnChunk(out)
 	}
 
-	// 首块：role，让客户端先把对话占位建起来。
-	if err := emit(map[string]any{"role": "assistant"}, nil); err != nil {
-		return Result{Status: 200}
+	// 首块 role 延迟到「真有数据要发」时才写：否则上游僵死时我们已经落了 SSE 头，
+	// 既回不了真实错误码、也没法让路由回落。emitted 记录是否已经动过客户端。
+	emitted := false
+	emit := func(delta map[string]any, finish any) error {
+		if !emitted {
+			emitted = true
+			if err := writeChunk(map[string]any{"role": "assistant"}, nil); err != nil {
+				return err
+			}
+		}
+		return writeChunk(delta, finish)
 	}
 
 	var sawTool bool
 	var streamErr error
 	if opts.Protocol == "responses" {
-		sawTool, streamErr = streamResponses(resp.Body, emit)
+		sawTool, streamErr = streamResponses(ir, emit)
 	} else {
-		sawTool, streamErr = streamAnthropic(resp.Body, emit)
+		sawTool, streamErr = streamAnthropic(ir, emit)
 	}
 	if streamErr != nil {
-		// 中途失败：发一个错误 delta（chat 客户端通常把它拼到正文里），再收尾。
+		if !emitted {
+			// 一个字节都没转出去：干净地返回错误码，路由可以正常回落/报错。
+			if ir.timedOut() {
+				return jsonResult(504, errorBody(
+					fmt.Sprintf("bridge upstream silent for %s: %s", idle, opts.UpstreamModel),
+					"upstream_timeout"))
+			}
+			return jsonResult(502, errorBody("bridge upstream error: "+streamErr.Error(), "upstream_error"))
+		}
+		// 已经流出去一部分：只能在流里报错并收尾（SSE 头已发，改不了状态码）。
 		_ = emit(map[string]any{"content": "\n[bridge stream error: " + streamErr.Error() + "]"}, "stop")
 		_ = opts.OnChunk([]byte("data: [DONE]\n\n"))
 		return Result{Status: 200}
@@ -242,6 +286,44 @@ func forwardStream(ctx context.Context, client *http.Client, opts Options, url s
 	}
 	_ = opts.OnChunk([]byte("data: [DONE]\n\n"))
 	return Result{Status: 200}
+}
+
+// idleReader 在连续 idle 时长没有任何字节到达时关闭底层连接。
+// 用于把「上游接受了连接但永远不说话」变成一次可判定的读错误。
+type idleReader struct {
+	r      io.Reader
+	rc     io.ReadCloser
+	d      time.Duration
+	timer  *time.Timer
+	mu     sync.Mutex
+	tripped bool
+}
+
+func newIdleReader(rc io.ReadCloser, d time.Duration) *idleReader {
+	ir := &idleReader{r: rc, rc: rc, d: d}
+	ir.timer = time.AfterFunc(d, func() {
+		ir.mu.Lock()
+		ir.tripped = true
+		ir.mu.Unlock()
+		_ = rc.Close()
+	})
+	return ir
+}
+
+func (ir *idleReader) Read(p []byte) (int, error) {
+	n, err := ir.r.Read(p)
+	if n > 0 {
+		ir.timer.Reset(ir.d)
+	}
+	return n, err
+}
+
+func (ir *idleReader) stop() { ir.timer.Stop() }
+
+func (ir *idleReader) timedOut() bool {
+	ir.mu.Lock()
+	defer ir.mu.Unlock()
+	return ir.tripped
 }
 
 // streamAnthropic 解析 Anthropic Messages 的 SSE 流，把 text/thinking/tool_use
