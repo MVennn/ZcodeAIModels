@@ -584,3 +584,25 @@ prune。它同时也认不出这些模型已经配置过，会把整个 Go 目�
   静默超时说明上游真僵死，冷却短了就每个请求都要再等一次 30 秒。
 - **验证**：`go test ./...`（`TestForwardStreamIdleTimeout` 断言静默上游 200ms 内
   返回 504 且零 chunk）；实测 Conatus 从 120s 干等变为 30s 内可判定错误。
+
+## 33. 「地区受限」不是这一跳坏了：403 不回落会让兜底跳永远轮不到 【通用】
+
+- **现象**：`gpt-6-luna` 从中国 IP 直连 opencode 拿 403
+  `unsupported_country_region_territory`，链上明明排了「同上游、经机场」的第二跳，
+  zgate 却把 403 原样返回给客户端；`beam-free` 拿 `RegionError` 时同理。
+- **根因**：两处判定都只顾了「跳坏了」的情况 ——
+  ① `chainAccept` 只对 `429/502/503/504` 回落，403 一律 accept；
+  ② 桥接路径（`messages` / `responses`）**根本不走** `chainAccept`，
+  只判 `status >= 500 || 429 || hopFatal`，所以 `responses` 模型的地区 403 一定漏。
+  另外 `hopFatal` 只认额度类关键字，地区受限不算 fatal 也不能算 accept。
+- **解法**：
+  1. 抽出 `regionBlocked(status, head)`，认两种真实写法
+     （`unsupported_country_region_territory`、`RegionError`、`not available in your country`、
+     `region, or territory not supported`），`chainAccept` 与两条桥接回落分支都问它。
+  2. 冷却键 `hopKey` 里加 proxy：同上游的「直连跳」和「机场孪生跳」必须是两个键，
+     否则直连的 403 会把机场跳一起冷却，兜底当场失效。
+  3. 出口不要写在代码里 —— `chain[].proxy` 由 alias map 给（见 [MODEL-ALIAS](MODEL-ALIAS.md) §3.0），
+     加/减受限型号只改生成器名单。
+- **验证**：`go test ./internal/router/`（`TestRegionBlockedFallsThroughToNextHop`、
+  `TestRegionBlockedHelper`、`TestHopKeySeparatesEgress`）；线上 `GPT-6-Luna`
+  日志出现 `(1/2)` 直连 403 → `(2/2)` 机场 200。

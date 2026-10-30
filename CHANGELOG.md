@@ -17,6 +17,22 @@
 
 ## [未发布]
 
+### 每跳自己的出口（`chain[].proxy`）+ 地区受限自动换机场（2026-10-30）
+
+- alias map 的每一跳新增可选 `proxy` 字段：同一 upstream 可以在链里出现两次、只差出口。
+  `alias.Hop` 加 `Proxy`，zgate 用 `EgressRouter`（按请求 context 挑 `*http.Transport`）
+  实现，`bridge.Forward` / `doForwardWith` 签名都不动
+- **地区受限的 403 现在会换跳**：新增 `regionBlocked()`，认
+  `unsupported_country_region_territory` / `RegionError` / `not available in your country`；
+  `chainAccept` 与两条桥接回落分支都接上 —— 此前 `responses`/`messages` 模型
+  （如 `gpt-6-luna`）的 403 会原样返回给客户端，链上的兜底跳永远轮不到
+- 冷却键 `hopKey` 带上 proxy：直连跳与机场孪生跳是两个键，直连的 403 不会把兜底跳一起冷却
+- `tools/model_alias.py`：新增 `AIRPORT_PROXY`（默认 `http://10.0.0.1:7896`）与
+  `with_airport_fallback()`，给每条 OC 直连跳在**链尾**补一条同上游的机场孪生跳；
+  重新生成后 18 个条目里 11 条的链变长（DeepSeek 变成 cn → OC → QW → OC@机场）
+- 文档：`MODEL-ALIAS.md` §3.0（新字段与排序理由）、`PITFALLS.md` §33（403 不回落）
+- 实测：直连 403 → `(2/2)` 机场跳 200；`Claude-Haiku-5.5` / `DeepSeek-4.1-Flash` 全走直连
+
 ### 上游僵死 30 秒可判定 + 429 先退避再摘跳（2026-10-29 续）
 
 - **空转看门狗（修 Conatus「两分钟没响应」）**：桥接上游接受连接后一个字节都不发时，
@@ -30,8 +46,8 @@
 - 实测依据：今天 429 来自 WorkBuddy 首跳 182 次、OC 仅 16 次 —— 每次请求都先撞
   WB 再回落，突发时两跳同时 429 就整链失败，用户只能手动重试
 
-### 文档：补「模型自述不可信」口径（2026-10-29）
-
+### 文档：补「模型自述不可信」口径（2026-10-29）
+
 - 新增 `PITFALLS.md` §31：自述是生成结果不是元数据；集合体/中转模型没有单一作者，
   以 `GET /models` 的 `id` / `owned_by` 与结算账目为事实
 - `QINIU.md` §2 改为官方口径 —— Conatus 是**多种模型的集合体**，其「我是

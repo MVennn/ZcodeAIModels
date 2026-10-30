@@ -146,6 +146,39 @@ MERGE_ACROSS_PROTOCOL = {"deepseek-v4.1-flash"}
 # 这些跳排到链尾，不看价格：千问的额度是一年期预付，按「OC 先用完再用它」的
 # 顺序来花，所以它必须排在付费跳之后，只有当付费全挂时才轮到。
 TAIL_HOPS = {("QW", "deepseek-v4.1-flash")}
+
+# 机场出口：opencode.ai 的「地区受限」型号（gpt / beam / muse）从中国 IP 拿
+# 403 `unsupported_country_region_territory`，必须经机场出去。路由器上这个入站口
+# 绑死 🤖 AI接口 组（ShellcrashRules 的 `config/yamls/user.yaml` → listeners），
+# 不看规则匹配，所以它只表示「这条出口是机场」。
+# 2026-10-30 起 opencode.ai 本身走直连，机场只留给真正进不去的型号。
+AIRPORT_PROXY = "http://10.0.0.1:7896"
+
+
+def with_airport_fallback(hops: list[dict]) -> list[dict]:
+    """给 OC 跳补一条「同上游、经机场」的孪生跳，排在链尾。
+
+    为什么排链尾：回落是顺序的，机场是最后手段 —— 前面还有国内免费跳
+    （DeepSeek 的千问尾跳）时，先试它们再花机场流量。地区受限的型号
+    本来只有 OC 一跳，孪生跳就成了「直连被拒 → 换机场」的第二跳。
+    已经有孪生跳就不再加，反复生成保持幂等。
+    """
+    out = list(hops)
+    have = {
+        (h["channel"], h["upstream"])
+        for h in hops
+        if str(h.get("proxy") or "") == AIRPORT_PROXY
+    }
+    for h in hops:
+        if h.get("channel") != "OC" or str(h.get("proxy") or ""):
+            continue
+        if (h["channel"], h["upstream"]) in have:
+            continue
+        twin = dict(h)
+        twin["proxy"] = AIRPORT_PROXY
+        out.append(twin)
+        have.add((h["channel"], h["upstream"]))
+    return out
 FREE_MAX = 0.0
 LOW_MAX = 0.11
 QD_FACTOR = 0.86
@@ -718,7 +751,9 @@ def inventory(cfg: dict, alias_models: dict, legacy: dict) -> list[dict]:
                 continue
             item["provider_id"] = provider_id
             for hop in expand_hops(item):
-                key = (hop["channel"], hop["upstream"], hop["protocol"])
+                # proxy 也进键：同一个 upstream 的「直连跳」和「机场孪生跳」
+                # 必须各自留下，否则去重时后者被前者吃掉，兜底就没了。
+                key = (hop["channel"], hop["upstream"], hop["protocol"], str(hop.get("proxy") or ""))
                 if key in seen:
                     previous = seen[key]
                     values = previous.setdefault("legacy_ids", [])
@@ -760,6 +795,8 @@ def expand_hops(item: dict) -> list[dict]:
                 "price": None,
                 "fallbacks": [],
             })
+            # 机场孪生跳的出口要跟着跳走，否则下一轮它会被当成普通直连跳。
+            sub["proxy"] = str(hop.get("proxy") or "")
             out.append(sub)
         return out
     out = [dict(item)]
@@ -834,7 +871,7 @@ def family_entries(items: list[dict], wb: dict, qd: dict, slot: str) -> list[dic
             key = (abbr, "merged")
         else:
             key = (abbr, item["protocol"])
-        families.setdefault(key, {})[(item["channel"], item["upstream"])] = hop
+        families.setdefault(key, {})[(item["channel"], item["upstream"], str(item.get("proxy") or ""))] = hop
 
     entries: list[dict] = []
     # 同一型号若同时存在 chat 与桥接协议（messages / responses），原型名必须留给
@@ -865,20 +902,29 @@ def family_entries(items: list[dict], wb: dict, qd: dict, slot: str) -> list[dic
                 0 if h["channel"] == "WB" else 1 if h["channel"] == "QD" else 2,
                 h["upstream"],
             ))
+            # 机场兜底排在链尾（见 with_airport_fallback 的注释）。
+            group = with_airport_fallback(group)
             is_free_entry = all(h["price"] <= 0 for h in group)
             base_name = abbr
             if protocol != "chat" and "chat" in abbr_protocols.get(abbr, ()):
                 base_name = abbr + ("-Msg" if protocol == "messages" else "-Resp")
             name = base_name + ("-Free" if is_free_entry and len(groups) > 1 else "")
-            chain = [{
-                "upstream": h["upstream"],
-                "base": base_of(h["channel"]),
-                "channel": h["channel"],
-                "protocol": h["protocol"],
-                "price": h["price"],
-                "original": h["original"],
-                "base_model": h["base_model"],
-            } for h in group]
+            chain = []
+            for h in group:
+                hop = {
+                    "upstream": h["upstream"],
+                    "base": base_of(h["channel"]),
+                    "channel": h["channel"],
+                    "protocol": h["protocol"],
+                    "price": h["price"],
+                    "original": h["original"],
+                    "base_model": h["base_model"],
+                }
+                # 只有机场孪生跳带 proxy；直连跳不写这个键，存量 alias map 里的
+                # 条目因此看起来和以前一模一样。
+                if h.get("proxy"):
+                    hop["proxy"] = h["proxy"]
+                chain.append(hop)
             legacy_ids: list[str] = []
             for h in group:
                 for lid in h.get("legacy_ids") or [h["original"], h["upstream"]]:

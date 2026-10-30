@@ -127,7 +127,9 @@ func serve() error {
 	am := alias.New(cfg.AliasMap)
 	sup := supervisor.New(cfg.Children, log.Dir(), log)
 	client := &http.Client{
-		Transport: &http.Transport{
+		// 模板 Transport 按直连；哪一跳要走代理由 alias map 的 hop.proxy 决定，
+		// EgressRouter 按 context 挑实例（同一进程里直连与机场并存）。
+		Transport: router.NewEgressRouter(&http.Transport{
 			Proxy:               nil, // same as the old Node router: no env proxy
 			DisableCompression:  true,
 			ForceAttemptHTTP2:   true,
@@ -140,7 +142,7 @@ func serve() error {
 			TLSHandshakeTimeout:   8 * time.Second,
 			ExpectContinueTimeout: time.Second,
 			DialContext:           (&net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
-		},
+		}),
 	}
 
 	ln, err := net.Listen("tcp", cfg.Listen)

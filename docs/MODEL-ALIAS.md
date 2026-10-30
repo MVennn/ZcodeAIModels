@@ -75,6 +75,28 @@ DeepSeek-4.1-Flash
 - 生成器**幂等**：链路会写回 alias map 的 `chain`，下一次运行从 `chain` 还原全部跳，
   不会因为配置里只剩一个条目而丢掉其它渠道。
 
+### 3.0 每跳自己的出口（`chain[].proxy`，2026-10-30 起）
+
+`chain` 的每一跳可以带 `"proxy": "http://host:port"`，表示**这一跳走这个 HTTP 代理**，
+不带就是直连。它解决的是「同一个上游、同一个域名，但有的型号只能从境外 IP 调」：
+opencode 的型号共用 `opencode.ai`，规则层分不开，只有 `gpt-*` / `beam-free` /
+`muse-spark-*` 拿 403 地区限制（`unsupported_country_region_territory` / `RegionError`）。
+
+生成器给每条 OC 直连跳补一条**同上游的孪生跳**（`AIRPORT_PROXY`，默认
+`http://10.0.0.1:7896` —— 路由器上的入站固定绑 🤖 AI接口 组），**排在链尾**：
+
+```
+GPT-6-Luna         1. OC gpt-6-luna 直连
+                   2. OC gpt-6-luna @机场   ← 直连 403 才走它
+DeepSeek-4.1-Flash 1. WB cn → 2. OC 直连 → 3. QW 直连 → 4. OC @机场
+```
+
+- zgate 把地区受限的 403 当「换出口」处理，不是「这一跳坏了」；冷却键 `hopKey`
+  里含 proxy，否则直连那跳的 403 会把机场跳一起冷却掉（= 兜底被吃掉）。
+- 机场跳排链尾而不是紧跟直连跳：前面还有免费的国内跳（千问尾跳）时先试它们。
+- 改 `AIRPORT_PROXY` 时路由器侧必须同时有对应的 `listeners` 入站，
+  否则这一跳直接连不上（见 ShellcrashRules `docs/ARCHITECTURE.md` §2.2）。
+
 ### 3.1 价格是派生量，不继承
 
 `chain` 里存的是「有哪些跳、怎么路由」；`chain[].price` 只是上一轮的记录，

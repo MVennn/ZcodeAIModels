@@ -63,7 +63,10 @@ func New(cfg *config.Config, ks keys.Set, am *alias.Map, sup *supervisor.Supervi
 		started: time.Now(), cool: map[string]time.Time{}}
 }
 
-func hopKey(hop alias.Hop) string { return hop.Channel + "|" + hop.Upstream }
+// hopKey 是冷却表的主键。出口也算进去：同一条链里「直连」和「经机场」是同一个
+// upstream 的两跳，共用一个 key 会让直连那跳被地区受限的 403 冷却掉，
+// 紧接着的机场跳就被当成「冷却中，跳过」—— 恰好把兜底吃掉。
+func hopKey(hop alias.Hop) string { return hop.Channel + "|" + hop.Upstream + "|" + hop.Proxy }
 
 func (s *Server) cooling(hop alias.Hop) bool {
 	s.coolMu.Lock()
@@ -590,6 +593,9 @@ func (s *Server) attemptChain(w http.ResponseWriter, r *http.Request, body []byt
 		return
 	}
 	hop := t.Chain[index]
+	// 这一跳的出口交给 context（EgressRouter 按它挑 Transport），
+	// 往下传的 r 也带着它，回落到下一跳时会被下一跳覆盖。
+	r = r.WithContext(WithProxy(r.Context(), hop.Proxy))
 	if s.cooling(hop) {
 		s.log.Infof("[router] %s 冷却中，跳过", hopKey(hop))
 		s.attemptChain(w, r, body, model, t, path, search, index+1)
@@ -643,7 +649,10 @@ func (s *Server) attemptChain(w http.ResponseWriter, r *http.Request, body []byt
 			}
 		}
 		s.coolBridgeFailure(hop, result)
-		if (result.Status >= 500 || result.Status == 429) && index+1 < len(t.Chain) {
+		// 地区受限按失败处理：桥接路径不走 chainAccept，必须单独判，
+		// 否则 gpt-6-luna 这类 responses 模型会拿 403 直接返回给客户端。
+		if (result.Status >= 500 || result.Status == 429 || regionBlocked(result.Status, result.Body)) && index+1 < len(t.Chain) {
+			s.log.Infof("[router] %s -> HTTP %d, fallback %s", hop.Upstream, result.Status, nextHopName(t.Chain, index))
 			s.attemptChain(w, r, body, model, t, path, search, index+1)
 			return
 		}
@@ -679,6 +688,7 @@ func (s *Server) attemptBridge(w http.ResponseWriter, r *http.Request, body []by
 		return
 	}
 	hop := t.Chain[index]
+	r = r.WithContext(WithProxy(r.Context(), hop.Proxy))
 	if s.cooling(hop) {
 		s.log.Infof("[router] %s 冷却中，跳过", hopKey(hop))
 		s.attemptBridge(w, r, body, model, t, protocol, path, search, index+1)
@@ -724,7 +734,7 @@ func (s *Server) attemptBridge(w http.ResponseWriter, r *http.Request, body []by
 		}
 	}
 	s.coolBridgeFailure(hop, result)
-	if (result.Status >= 500 || result.Status == 429) && index+1 < len(t.Chain) {
+	if (result.Status >= 500 || result.Status == 429 || regionBlocked(result.Status, result.Body)) && index+1 < len(t.Chain) {
 		s.log.Infof("[router] %s -> HTTP %d, fallback %s", hop.Upstream, result.Status, nextHopName(t.Chain, index))
 		s.attemptBridge(w, r, body, model, t, protocol, path, search, index+1)
 		return
@@ -757,13 +767,41 @@ func hopFatal(status int, head []byte) bool {
 	return false
 }
 
+// regionBlocked 判断这一跳是不是「地区受限」：不是跳坏了，是这条出口进不去。
+// opencode 转发上游时原样带回（2026-10-30 实测里两种写法都出现过）：
+//   chat 端点  {"type":"error","error":{"type":"RegionError",...}}
+//   responses {"error":{"code":"unsupported_country_region_territory",...}}
+// 桥接路径（messages / responses）不走 chainAccept，必须单独问这个，
+// 否则 403 会原样返回给客户端，链上的机场跳永远轮不到。
+func regionBlocked(status int, head []byte) bool {
+	if status != 403 && status != 400 {
+		return false
+	}
+	for _, marker := range [][]byte{
+		[]byte("unsupported_country_region_territory"),
+		[]byte("RegionError"),
+		[]byte("not available in your country"),
+		[]byte("region, or territory not supported"),
+	} {
+		if bytes.Contains(head, marker) {
+			return true
+		}
+	}
+	return false
+}
+
 // chainAccept decides whether a chain attempt should fall through to the next hop.
 func chainAccept(status int, head []byte) bool {
 	switch status {
 	case 429, 502, 503, 504:
 		return false
-	case 400:
-		return !bytes.Contains(head, []byte(`"model_unavailable"`))
+	case 403, 400:
+		if regionBlocked(status, head) {
+			return false
+		}
+		if status == 400 {
+			return !bytes.Contains(head, []byte(`"model_unavailable"`))
+		}
 	}
 	return true
 }

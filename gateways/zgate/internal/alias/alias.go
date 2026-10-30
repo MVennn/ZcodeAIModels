@@ -25,6 +25,11 @@ type Hop struct {
 	// 同一型号可以把 chat 与 messages 合成一条链，所以协议必须按跳记；
 	// 空值表示沿用条目级 Target.Protocol。
 	Protocol string `json:"protocol"`
+	// Proxy 是这一跳专属的出口（"http://host:port"），空值表示按直连走。
+	// 同一个 upstream 允许在链里出现两次、只差出口：一次直连、一次经机场。
+	// 地区受限的模型（gpt / beam / muse）就靠这第二跳兜住，机型写在
+	// alias map 里，不改代码。
+	Proxy string `json:"proxy,omitempty"`
 }
 
 // Target is one upstream behind a display name.
