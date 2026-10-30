@@ -53,6 +53,11 @@ const rateLimitCooldown = 45 * time.Second
 // 限流窗口通常不到 1 秒，这样多数突发根本不会让你看到失败。
 const rateLimitBackoff = 700 * time.Millisecond
 
+// transportRetryDelay 是「传输层失败」后重试同一跳前的等待。
+// 这类失败（EOF / TLS 握手超时 / 连接被重置）说明请求多半没被上游受理，
+// 换一次同一条腿往往就过了；等待只是给链路一个喘息窗口。
+const transportRetryDelay = 300 * time.Millisecond
+
 // timeoutCooldown 是桥接上游「连上但不说话」超时后的冷却时长。
 // 实测 Conatus 会静默到总超时，不冷却就会每个请求都再等一次。
 const timeoutCooldown = 5 * time.Minute
@@ -449,6 +454,8 @@ func (s *Server) doForwardWith(w http.ResponseWriter, r *http.Request, body []by
 	target := strings.TrimRight(base, "/") + path + search
 	// 429 就地退避重试一次：限流窗口通常很短，先等一小会儿再试同一跳，
 	// 比立刻回落/直接失败更划算。重试仍 429 时再交给 onThrottled 冷却。
+	// txRetry 单独计数：传输层失败的重试不能消耗 429 的退避预算，反之亦然。
+	txRetry := 0
 	for attempt := 0; ; attempt++ {
 		req, err := http.NewRequestWithContext(r.Context(), r.Method, target, bytes.NewReader(body))
 		if err != nil {
@@ -461,6 +468,20 @@ func (s *Server) doForwardWith(w http.ResponseWriter, r *http.Request, body []by
 		}
 		resp, err := s.client.Do(req)
 		if err != nil {
+			// 传输层失败（EOF / TLS 握手超时 / 连接被重置）说明请求大概率没被上游
+			// 受理过，重试同一条腿通常就能过 —— 先重试本跳一次，再谈回落。
+			// 2026-10-31 实测：机场某节点对 opencode.ai 的大包短暂黑洞，5 KB 以上的
+			// POST 全部 5s 超时，而 GET 健康检查一直 200（url-test 看不出来）。
+			if txRetry == 0 {
+				txRetry++
+				s.log.Infof("[router] %s 传输层失败（%v），%v 后重试同一跳", base, err, transportRetryDelay)
+				select {
+				case <-time.After(transportRetryDelay):
+				case <-r.Context().Done():
+					return
+				}
+				continue
+			}
 			if retry != nil {
 				retry(err.Error())
 				return
@@ -640,6 +661,16 @@ func (s *Server) attemptChain(w http.ResponseWriter, r *http.Request, body []byt
 			OnChunk:       cw.write,
 		}
 		result := bridge.Forward(s.client, opts)
+		// 传输层失败且还没写出任何 chunk：重试同一跳一次（理由见 transportFailed）。
+		if !cw.written && transportFailed(result) {
+			s.log.Infof("[router] %s 传输层失败，%v 后重试同一跳", hopKey(hop), transportRetryDelay)
+			select {
+			case <-time.After(transportRetryDelay):
+			case <-r.Context().Done():
+				return
+			}
+			result = bridge.Forward(s.client, opts)
+		}
 		result = s.retryBridgeOn429(r, hop, cw, opts, result)
 		if hopFatal(result.Status, result.Body) {
 			s.markCooling(hop)
@@ -719,6 +750,16 @@ func (s *Server) attemptBridge(w http.ResponseWriter, r *http.Request, body []by
 		OnChunk:       cw.write,
 	}
 	result := bridge.Forward(s.client, opts)
+	// 传输层失败且还没写出任何 chunk：重试同一跳一次（理由见 transportFailed）。
+	if !cw.written && transportFailed(result) {
+		s.log.Infof("[router] %s 传输层失败，%v 后重试同一跳", hopKey(hop), transportRetryDelay)
+		select {
+		case <-time.After(transportRetryDelay):
+		case <-r.Context().Done():
+			return
+		}
+		result = bridge.Forward(s.client, opts)
+	}
 	result = s.retryBridgeOn429(r, hop, cw, opts, result)
 	// Retry only on server-side failures; a 4xx (bad request, bad key) would
 	// fail identically on every hop. The last hop's real error is passed
@@ -761,6 +802,25 @@ func hopFatal(status int, head []byte) bool {
 		[]byte("Free quota exhausted"), []byte("use free tier only"),
 	} {
 		if bytes.Contains(head, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+// transportFailed 判断桥接结果是不是「请求根本没被上游受理」的传输层失败。
+// 桥接把 client.Do 的错误包成 502 + 原始错误文本，只能按文本认。
+// 只有这种情况重试同一跳才安全：上游已经读过请求再断开的，重试会重复计费。
+func transportFailed(result bridge.Result) bool {
+	if result.Status < 500 {
+		return false
+	}
+	body := string(result.Body)
+	for _, marker := range []string{
+		"EOF", "TLS handshake timeout", "connection reset", "i/o timeout",
+		"broken pipe", "server closed idle connection", "connection refused",
+	} {
+		if strings.Contains(body, marker) {
 			return true
 		}
 	}

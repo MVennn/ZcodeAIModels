@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"zgate/internal/alias"
+	"zgate/internal/bridge"
 	"zgate/internal/config"
 	"zgate/internal/keys"
 	"zgate/internal/logx"
@@ -180,6 +181,71 @@ func TestRegionBlockedHelper(t *testing.T) {
 	}
 	if regionBlocked(429, []byte(`{"error":{"type":"RegionError"}}`)) {
 		t.Fatal("429 is throttling, not a region block")
+	}
+}
+
+func TestTransportFailureRetriesSameHop(t *testing.T) {
+	// 复刻 2026-10-31 凌晨那次：机场节点对 opencode.ai 的大包短暂黑洞，
+	// 连接在请求发出后被动断开（EOF）。这一跳只出现一次，没有下一跳可落，
+	// 唯一能救的就是「重试同一跳一次」。
+	var mu sync.Mutex
+	n := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		n++
+		cur := n
+		mu.Unlock()
+		if cur == 1 {
+			if hj, ok := w.(http.Hijacker); ok {
+				if conn, _, err := hj.Hijack(); err == nil {
+					_ = conn.Close() // 不写任何字节就断开 → 客户端拿到 EOF
+					return
+				}
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(okBody()))
+	}))
+	defer srv.Close()
+
+	srv2 := newEgressServer(t, `{
+		"models":{"M":{"channel":"OC","upstream":"m","base":"`+srv.URL+`","protocol":"chat",
+			"chain":[{"upstream":"m","base":"`+srv.URL+`","channel":"OC","protocol":"chat","price":0.1}]}},
+		"legacy":{}
+	}`)
+	front := httptest.NewServer(srv2.Handler())
+	defer front.Close()
+
+	resp, raw := postJSON(t, front.URL+"/v1/chat/completions",
+		`{"model":"M","messages":[{"role":"user","content":"hi"}],"max_tokens":8}`)
+	mu.Lock()
+	got := n
+	mu.Unlock()
+	if resp.StatusCode != 200 {
+		t.Fatalf("transport failure was not retried: status %d, body %s", resp.StatusCode, raw)
+	}
+	if got != 2 {
+		t.Fatalf("expected exactly 2 attempts (1 fail + 1 retry), got %d", got)
+	}
+}
+
+func TestTransportFailedMarkers(t *testing.T) {
+	cases := []struct {
+		status int
+		body   string
+		want   bool
+	}{
+		{502, `Post "https://x/y": EOF`, true},
+		{502, `Post "https://x/y": net/http: TLS handshake timeout`, true},
+		{502, `read tcp 1.2.3.4: connection reset by peer`, true},
+		{502, `dial tcp 1.2.3.4: connection refused`, true},
+		{502, `bridge upstream error: boom`, false}, // 普通 5xx，重试没有意义
+		{200, `EOF`, false},                        // 成功响应里出现 EOF 字样不算
+	}
+	for _, c := range cases {
+		if got := transportFailed(bridge.Result{Status: c.status, Body: []byte(c.body)}); got != c.want {
+			t.Fatalf("transportFailed(%d, %q) = %v, want %v", c.status, c.body, got, c.want)
+		}
 	}
 }
 

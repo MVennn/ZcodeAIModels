@@ -606,3 +606,25 @@ prune。它同时也认不出这些模型已经配置过，会把整个 Go 目�
 - **验证**：`go test ./internal/router/`（`TestRegionBlockedFallsThroughToNextHop`、
   `TestRegionBlockedHelper`、`TestHopKeySeparatesEgress`）；线上 `GPT-6-Luna`
   日志出现 `(1/2)` 直连 403 → `(2/2)` 机场 200。
+
+## 34. 传输层瞬时失败没重试，一跳链直接 502；GET 健康检查看不出来 【通用】
+
+- **现象**：2026-10-31 01:14 起浏览器里调 `Beam` 连续 502（它只有一跳机场兜底），
+  zgate 日志 `Post "https://opencode.ai/zen/go/v1/chat/completions": EOF`。
+  同期 `robots.txt`（GET）一直 200，`/proxies/<组>/delay` 也全绿。
+- **根因 1（链路）**：机场节点到 opencode.ai 的路径对**大包**短暂黑洞 ——
+  实测同一时刻 POST body ≥5 KB 全挂在 5.0s（curl `000`），≤2 KB 正常。
+  GET 没有 body，所以 url-test / 健康检查完全看不出来（同 P32 的「健康检查过
+  ≠ 数据面能用」）。
+- **根因 2（代码）**：`doForwardWith` 对 `client.Do` 的传输层错误直接交给下一跳；
+  一跳链没有下一跳，于是原样 502。
+- **解法**：
+  1. 传输层错误**先重试同一跳一次**（`transportRetryDelay` 300ms），
+     `txRetry` 与 429 的 `attempt` 分开计数，互不吃预算；
+  2. 桥接路径同样重试，但只在 `!cw.written`（还没写出任何 SSE）时做 ——
+     已经吐了半截 chunk 再重试会重复输出。
+  3. 只对 `EOF / TLS handshake timeout / connection reset / i/o timeout /
+     broken pipe / connection refused` 这类「请求大概率没被受理」的错误重试；
+     普通 5xx 不重试（上游可能已计费）。
+- **排查口径**：怀疑链路时用 **POST 带 6 KB body** 探（`curl -x <proxy> --data-binary @b.json`），
+  只看 GET/HEAD 会把这种路径判成健康。

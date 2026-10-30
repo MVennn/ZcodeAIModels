@@ -17,6 +17,17 @@
 
 ## [未发布]
 
+### 传输层瞬时失败重试同一跳（2026-10-31）
+
+- 事故：机场节点到 opencode.ai 的路径对大包短暂黑洞（POST ≥5 KB 挂 5s，GET 正常），
+  zgate 把 `client.Do` 的 EOF 直接交给下一跳，一跳链（`Beam`）没有下一跳 → 502
+- 修：`doForwardWith` 里传输层错误先重试同一跳一次（300ms，`txRetry` 与 429 的
+  `attempt` 分开计数）；桥接路径同样重试，但只在 `!cw.written` 时做，避免重复输出
+- 只重试 `EOF / TLS handshake timeout / connection reset / i/o timeout / broken pipe /
+  connection refused`；普通 5xx 不重试（上游可能已计费）
+- 新增 `TestTransportFailureRetriesSameHop`（hijack 后不写字节即断 = 复刻 EOF）、
+  `TestTransportFailedMarkers`；PITFALLS §34
+
 ### 每跳自己的出口（`chain[].proxy`）+ 地区受限自动换机场（2026-10-30）
 
 - alias map 的每一跳新增可选 `proxy` 字段：同一 upstream 可以在链里出现两次、只差出口。
