@@ -1766,3 +1766,92 @@ mimo 甚至到后面去了」；③「省钱里面应该留下的都是各公司
   不会每个请求都付这次退避。
 
 ## 状态: 已完成
+
+---
+
+# 2026-10-30 第八轮：WorkBuddy2API 上游升级到 v2026.10.30.1049
+
+## 任务目标
+上游 `misakano/main` 自 10-27 起累积 40 个提交（4 个发布标签 10-28→10-30），含 WorkBuddy 5.9.3
+客户端契约对齐（反检测加固）、新增思考档位策略、删除夜猫子排程、/v1/models 只列官方菜单。
+把本地克隆 `misakano-base` 升级到发布标签 `v2026.10.30.1049` 并重建 `wb2api.exe`，验证可用。
+
+## 已完成变更
+- [x] 停旧网关（pid 3432）、备份旧 exe `wb2api.exe.bak-20261030-192325`。
+- [x] `git stash` 本地改动（main.go key 不打印修复 + run/stop 脚本 + .gitignore 密钥）→ `git checkout v2026.10.30.1049`（纯快进，HEAD 是该 tag 祖先，无冲突）→ `git stash pop` 干净恢复本地 key 修复。
+- [x] 清理 `config.json`：删已失效的 `blackcat_hours`/`blackcat_enabled` 两行；补 `thinking` 默认节（`client_priority:true` 尊重 ZCode 档位）、`cn` 段、`watchdog`（关）。JSON 校验通过。
+- [x] `cd cmd/server && go build -o ../../wb2api.exe .`（Go 1.26.10，go.mod 要求 1.26.10 匹配）→ 新 exe 16.4 MB，PE32+。
+- [x] 启动新网关（pid 25608），`/panel/` 返回 200。
+- [x] `workbuddy_fetch_pricing.py` 跑通：上游 52 条（全 cn 域）→ 归一化 52 条；倍率变化 5（`cn:glm-5.2` 0.5→0.79、`cn:hy4-preview/-ctrl/-exp` 0.0→0.29）、新增 3（`cn:hy4-preview-exp1/2/3`）；写 `providers/workbuddy/cache/wb_pricing.json`。
+- [x] `workbuddy_probe_zcode.py` 跑通（复用缓存 + 实时）：summary ok=49 / blocked=2 / unavailable=13 / rate_limited=3，**全为 cn 模型**。
+- [x] `workbuddy_zcode_sync.py` 干跑：选中 20（全 cn）、排除 32、合并进 `opencode-go-chat*` 各组；**未 --apply**。
+- [x] 实测 cn 聊天（`cn:deepseek-v4.1-flash` + ZCode 风格 `reasoning_effort:high` body）返回正常含 `reasoning_content` —— **新版反检测契约与思考策略工作正常**。
+
+## 验收
+- 新 exe 进程存在、`/panel/` 200、`/panel/api/models` 返回 52 条（全 cn）。
+- cn 域实测聊天成功，思考档位按 ZCode 发送体执行（client_priority 默认生效）。
+- fetch/probe 脚本无 `TypeError`、正常输出倍率变化与新增。
+- **待确认项**：global 域当前 0 账号（池里只有 1 个 cn 账号 `realm:cn`），故 global 模型全部 `no_healthy_account`，/v1/chat/completions 对 global:* 返回 `no_healthy_account`。这是**账号状态**非构建回归（10-27 基线有 3 global + 1 cn，现 global 账号已不在池中）。
+
+## 待解决 / 注意事项
+- **global 账号缺失**：若需恢复 global 模型（gpt/grok/kimi-k3 等），须先把 global 账号加回 `auths/` 与 `data/state.json`。现状下 sync --apply 会把 ZCode 的 WB 模型缩减为 20 个 cn 模型（符合"跑不通即清"策略，但属用户可见缩减，故未自动 --apply，等用户拍板）。
+- 若确认只保留 cn：在 WB 网关跑 `workbuddy_zcode_sync.py --apply` 即可；统一路由 `127.0.0.1:7871` 当前已服务 28 模型，sync 写入后 ~1s 热加载生效。
+- 旧 `server.log`（10-15）已陈旧；新进程日志去向待定（run.bat 直跑 stdout 未落盘），不影响运行。
+
+## 状态: 已完成（升级与验证完成；sync --apply 与 global 账号恢复留作待确认项）
+
+## 第八轮续：只留 cn、下线国际服账号
+
+### 用户决策（2026-10-30）
+「只留 cn，以后不上国际服账号了」→ 执行 `workbuddy_zcode_sync.py --apply`，把 WB 模型收敛为纯 cn 集合。
+
+### 执行结果
+- [x] `workbuddy_zcode_sync.py --apply`：写入 8 个 cn 模型（备份 `provider_config.json.bak-wbproxy-20261030-193729`）。
+  - 主力 `opencode-go-chat`：`cn:deepseek-v4.1-flash`
+  - 免费 `opencode-go-chat-free`：`cn:hy3`
+  - 省钱 `opencode-go-chat-fast`：`cn:glm-5.3-flash` / `cn:minimax-m3.1-flash` / `cn:mimo-v2.6-pro` / `cn:hy4-preview` / `cn:space-bunny` / `cn:fast-model`
+- [x] 统一路由 `127.0.0.1:7871` 经 ZCode 路径实测 `cn:deepseek-v4.1-flash` → HTTP 200，正常响应。
+- [x] `wb_pricing.json` 仍 52 条基线，`fetch_pricing.py` 的 64% 跌幅护栏正确阻止了误覆盖（见下）。
+
+### 关键发现：网关实时目录从 52 缩到 19（账号权限，非构建回归）
+- 升级后首次 `fetch_pricing.py` 拿到 52 条，是旧进程 `data/state.json` 缓存的目录在重启后被新进程短暂回放；约 15 分钟后网关按**当前单个 cn 账号**实探，目录收敛为 **19 条**（`/panel/api/models` 实测 19，`fetch_pricing.py` 二次跑报「52→19，减少 64%，疑似临时残缺」并**拒绝写入**）。
+- 实测账号 `Empty.(72abae7f)` 健康（credits 1782，ZCode 正用 `cn:hy3` 在跑）；`cn:deepseek-v4-flash`/`cn:minimax-m2.7`/`cn:wb-lite` 均 200，`cn:glm-4.6` 400 `model_unavailable`（该账号当前不可用）。
+- 结论：19 = 该 cn 账号**当前真实可访问模型集**；sync 写入的 8 个是其中「在实时目录 ∩ 倍率≤0.30 ∩ 探测通过」的交集，符合「跑不通即清」。
+- 当前池只有 1 个 cn 账号、0 个 global 账号（global 模型全部 `no_healthy_account`）。用户已确认不上国际服账号，故不恢复 global。
+
+### 待解决 / 注意事项
+- 若日后单 cn 账号权限再变化（如某模型变 400），按既定策略下一轮 sync 自动剔除/加回；`fetch_pricing.py` 的跌幅护栏会在疑似残缺时停写，需人工确认后 `--force`。
+- 新网关日志去向：新进程经 `run.bat` 直跑，stdout 未落盘（旧 `server.log` 停留在 10-15），不影响运行，但排障时只能看 `data/request-logs/*.jsonl`。
+
+## 状态: 已完成
+
+## 第八轮补：修正加模型流程错误（model_alias.py 才是最终写入者）
+
+### 错误
+上一轮直接用 `workbuddy_zcode_sync.py --apply` 把 WB 模型写进 ZCode，是错的：
+- `workbuddy_zcode_sync.py` 只是**前置**（刷新 WB 价格/探测缓存），文档 §4.0 与脚本
+  第 29-31 行明确「最后必须跑 `tools/model_alias.py --apply` 统一重建三组」。
+- sync 默认不含别名折叠/白名单逻辑，把 `cn:fast-model`/`cn:balanced-model`/`cn:deep-model`
+  这三个 §4.1 **明确要排除的路由别名**也写进了 ZCode —— 属错误条目。
+
+### 修正（2026-10-30 19:42）
+- [x] `python tools/model_alias.py --apply`：重建 主力/免费/省钱 三组，备份
+  `provider_config.json.bak-alias-20261030-194246`。
+- [x] 验证：配置内**无路由别名残留**（fast-model/balanced-model/deep-model 已清除）；
+  `cn:deepseek-v4.1-flash` 经 7871 实测 HTTP 200；alias map 映射正确。
+- [x] WB 现状收敛为纯 cn：主力 `cn:deepseek-v4.1-flash`；省钱 `cn:glm-5.3-flash`/
+  `cn:minimax-m3.1-flash`/`cn:mimo-v2.6-pro`/`cn:hy3-x`/`cn:space-bunny` + 非 WB 的
+  MiMo-2.6-Flash/Claude-Haiku-5.5/GPT-6-Luna/Qwen-3.8-Flash；免费含 `cn:hy3`/`cn:hy4-preview-f`。
+- [x] 回退点保留：`providers/workbuddy/cache/provider_config.json.pre-alias-fix-*.bak`（错误 sync 产物）。
+
+### 正确加模型流程（固化）
+1. 各渠道 sync 先跑刷新**缓存**（WB: `workbuddy_fetch_pricing.py` → `workbuddy_probe_zcode.py` → `workbuddy_zcode_sync.py` 仅当分离模式才写）；
+2. **最后** `python tools/model_alias.py [--apply]`：它读 WB 价格缓存 + Qoder 实时 + OC 价格表，
+   按 `MAIN_ORDER`/`LOW_ORDER` 白名单 + `MERGE_FREE_GB`/`MERGE_ACROSS_PROTOCOL` 重建三组并写 alias map。
+3. 路由别名（`cn:auto`/`cn:fast-model`/`cn:balanced-model`/`cn:deep-model` 等）一律由白名单自动排除，不要手动加。
+
+### 注意事项
+- `model_alias.py` 报 Qoder 价格源 8790 不可达（Qoder 网关本次未起）→ Qoder 模型不收录；
+  当前配置本无 qoder 模型，无影响。要带 Qoder 需先起 8790。
+
+## 状态: 已完成
